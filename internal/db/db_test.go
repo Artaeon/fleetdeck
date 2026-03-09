@@ -687,3 +687,75 @@ func TestEncryptedReadWithNoKeyFails(t *testing.T) {
 		t.Error("expected error when reading encrypted value without key")
 	}
 }
+
+// --- Database Integrity Tests ---
+
+func TestIntegrityCheckPasses(t *testing.T) {
+	db := newTestDB(t)
+
+	// Create some data to ensure the DB is non-trivial
+	p := &Project{
+		Name:        "integrity-test",
+		Domain:      "int.com",
+		LinuxUser:   "fleetdeck-integrity",
+		ProjectPath: "/opt/fleetdeck/integrity",
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	if err := db.checkIntegrity(); err != nil {
+		t.Errorf("integrity check should pass on healthy database: %v", err)
+	}
+}
+
+func TestWALCheckpointSucceeds(t *testing.T) {
+	db := newTestDB(t)
+
+	// Create data to generate WAL frames
+	p := &Project{
+		Name:        "wal-test",
+		Domain:      "wal.com",
+		LinuxUser:   "fleetdeck-wal",
+		ProjectPath: "/opt/fleetdeck/wal",
+	}
+	db.CreateProject(p)
+
+	if err := db.walCheckpoint(); err != nil {
+		t.Errorf("WAL checkpoint should succeed: %v", err)
+	}
+
+	// Integrity should still pass after checkpoint
+	if err := db.checkIntegrity(); err != nil {
+		t.Errorf("integrity check should pass after WAL checkpoint: %v", err)
+	}
+}
+
+func TestOpenRunsIntegrityCheck(t *testing.T) {
+	// Open a fresh database — should succeed with no warnings
+	dir := t.TempDir()
+	db, err := Open(filepath.Join(dir, "integrity.db"))
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Verify the database works after the integrity check
+	p := &Project{
+		Name:        "post-integrity",
+		Domain:      "pi.com",
+		LinuxUser:   "fleetdeck-pi",
+		ProjectPath: "/opt/fleetdeck/pi",
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("create project after integrity check: %v", err)
+	}
+
+	got, err := db.GetProject("post-integrity")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if got.Name != "post-integrity" {
+		t.Errorf("expected post-integrity, got %s", got.Name)
+	}
+}
