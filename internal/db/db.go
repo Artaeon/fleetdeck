@@ -135,6 +135,63 @@ func (db *DB) walCheckpoint() error {
 	return err
 }
 
+// backupAndRotate creates a .bak copy of the database file and keeps
+// up to maxBackups rotated copies (e.g. fleetdeck.db.bak.1, .bak.2).
+func backupAndRotate(dbPath string, maxBackups int) error {
+	src, err := os.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	bakPath := dbPath + ".bak"
+
+	// Rotate existing backups: .bak.2 -> .bak.3, .bak.1 -> .bak.2, .bak -> .bak.1
+	// First, find existing backups
+	dir := filepath.Dir(dbPath)
+	base := filepath.Base(dbPath) + ".bak"
+	entries, _ := os.ReadDir(dir)
+	var existing []string
+	for _, e := range entries {
+		name := e.Name()
+		if name == base || strings.HasPrefix(name, base+".") {
+			existing = append(existing, name)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(existing)))
+
+	// Remove oldest if at limit, then shift others up
+	for _, name := range existing {
+		full := filepath.Join(dir, name)
+		if name == base {
+			// .bak -> .bak.1
+			os.Rename(full, full+".1")
+		} else {
+			// .bak.N -> .bak.(N+1)
+			parts := strings.Split(name, ".bak.")
+			if len(parts) == 2 {
+				var n int
+				fmt.Sscanf(parts[1], "%d", &n)
+				if n >= maxBackups {
+					os.Remove(full)
+				} else {
+					newName := filepath.Join(dir, base+fmt.Sprintf(".%d", n+1))
+					os.Rename(full, newName)
+				}
+			}
+		}
+	}
+
+	dst, err := os.Create(bakPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	return err
+}
+
 // Snapshot creates a consistent copy of the database at the given path using
 // SQLite's VACUUM INTO, which works correctly even in WAL mode.
 func (db *DB) Snapshot(destPath string) error {
@@ -200,67 +257,3 @@ func (db *DB) migrate() error {
 	return nil
 }
 
-// backupAndRotate copies the database file to <path>.bak.<timestamp> and
-// removes old backups beyond the keep limit. This ensures we always have a
-// recent backup even if FleetDeck crashes unexpectedly.
-func backupAndRotate(dbPath string, keep int) error {
-	// Only back up if the database file actually exists
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return nil
-	}
-
-	timestamp := time.Now().Format("20060102-150405")
-	bakPath := dbPath + ".bak." + timestamp
-
-	if err := copyDBFile(dbPath, bakPath); err != nil {
-		return fmt.Errorf("creating backup: %w", err)
-	}
-
-	// Rotate: find all .bak.* files and remove the oldest ones
-	dir := filepath.Dir(dbPath)
-	base := filepath.Base(dbPath)
-	prefix := base + ".bak."
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil // non-fatal: backup was created, rotation just failed
-	}
-
-	var bakFiles []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
-			bakFiles = append(bakFiles, entry.Name())
-		}
-	}
-
-	// Sort lexicographically (timestamps sort correctly this way)
-	sort.Strings(bakFiles)
-
-	// Remove oldest files beyond the keep limit
-	if len(bakFiles) > keep {
-		toRemove := bakFiles[:len(bakFiles)-keep]
-		for _, name := range toRemove {
-			os.Remove(filepath.Join(dir, name))
-		}
-	}
-
-	return nil
-}
-
-// copyDBFile copies a file from src to dst. Used for database backups.
-func copyDBFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
-}
