@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/db"
@@ -192,7 +191,3 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 }
 
-func init() {
-	// Ensure templates package is imported for side effects (init registration)
-	_ = filepath.Join
-}
