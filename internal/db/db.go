@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -70,6 +72,23 @@ func Open(path string) (*DB, error) {
 	}
 
 	db := &DB{conn: conn}
+
+	// Run integrity check on startup
+	if err := db.checkIntegrity(); err != nil {
+		log.Printf("WARNING: database integrity check failed: %v", err)
+		log.Printf("Attempting WAL recovery...")
+		if walErr := db.walCheckpoint(); walErr != nil {
+			log.Printf("WAL checkpoint failed: %v", walErr)
+		} else {
+			// Re-check after WAL recovery
+			if err := db.checkIntegrity(); err != nil {
+				log.Printf("WARNING: database still has integrity issues after WAL recovery: %v", err)
+			} else {
+				log.Printf("Database integrity restored after WAL recovery")
+			}
+		}
+	}
+
 	if err := db.migrate(); err != nil {
 		return nil, err
 	}
@@ -78,7 +97,38 @@ func Open(path string) (*DB, error) {
 }
 
 func (db *DB) Close() error {
+	// Checkpoint WAL on close for a clean shutdown
+	if err := db.walCheckpoint(); err != nil {
+		log.Printf("WAL checkpoint on close failed: %v", err)
+	}
 	return db.conn.Close()
+}
+
+// checkIntegrity runs PRAGMA integrity_check and returns an error if the
+// database reports any issues.
+func (db *DB) checkIntegrity() error {
+	var result string
+	if err := db.conn.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
+		return fmt.Errorf("integrity_check query failed: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("integrity_check returned: %s", result)
+	}
+	return nil
+}
+
+// walCheckpoint forces a WAL checkpoint with TRUNCATE mode, which writes
+// all WAL frames back to the database file and truncates the WAL.
+func (db *DB) walCheckpoint() error {
+	_, err := db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
+// Snapshot creates a consistent copy of the database at the given path using
+// SQLite's VACUUM INTO, which works correctly even in WAL mode.
+func (db *DB) Snapshot(destPath string) error {
+	_, err := db.conn.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, destPath))
+	return err
 }
 
 func (db *DB) migrate() error {
