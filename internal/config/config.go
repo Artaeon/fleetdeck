@@ -159,7 +159,7 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 func (c *Config) ProjectPath(name string) string {
