@@ -1,6 +1,8 @@
 package db
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -757,5 +759,204 @@ func TestOpenRunsIntegrityCheck(t *testing.T) {
 	}
 	if got.Name != "post-integrity" {
 		t.Errorf("expected post-integrity, got %s", got.Name)
+	}
+}
+
+// --- backupAndRotate tests ---
+
+func TestBackupAndRotateCreatesBakFile(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	// Create a source file with some content
+	if err := os.WriteFile(dbPath, []byte("test database content"), 0644); err != nil {
+		t.Fatalf("create source file: %v", err)
+	}
+
+	if err := backupAndRotate(dbPath, 3); err != nil {
+		t.Fatalf("backupAndRotate: %v", err)
+	}
+
+	bakPath := dbPath + ".bak"
+	info, err := os.Stat(bakPath)
+	if err != nil {
+		t.Fatalf("expected .bak file to exist: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("expected .bak file to have content")
+	}
+
+	content, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("read .bak file: %v", err)
+	}
+	if string(content) != "test database content" {
+		t.Errorf("expected .bak content to match source, got %q", string(content))
+	}
+}
+
+func TestBackupAndRotateKeepsMaxN(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	maxBackups := 3
+
+	// Run backupAndRotate multiple times with different content
+	// to verify rotation keeps at most maxBackups old copies.
+	for i := 0; i < 5; i++ {
+		content := fmt.Sprintf("version-%d", i)
+		if err := os.WriteFile(dbPath, []byte(content), 0644); err != nil {
+			t.Fatalf("write source (round %d): %v", i, err)
+		}
+		if err := backupAndRotate(dbPath, maxBackups); err != nil {
+			t.Fatalf("backupAndRotate (round %d): %v", i, err)
+		}
+	}
+
+	// After 5 rotations with maxBackups=3, we expect:
+	//   test.db.bak   (latest, round 4)
+	//   test.db.bak.1 (round 3)
+	//   test.db.bak.2 (round 2)
+	// Older ones (round 0, 1) should have been removed.
+
+	bakPath := dbPath + ".bak"
+
+	// The .bak file should contain the latest content
+	content, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("read .bak: %v", err)
+	}
+	if string(content) != "version-4" {
+		t.Errorf("expected .bak to contain version-4, got %q", string(content))
+	}
+
+	// Count total backup files
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	bakCount := 0
+	for _, e := range entries {
+		if e.Name() == "test.db" {
+			continue
+		}
+		bakCount++
+	}
+
+	// We expect at most maxBackups+1 backup files (.bak plus .bak.1 through .bak.N).
+	// The function keeps maxBackups rotated copies, so total = 1 (.bak) + maxBackups rotated.
+	// However, the function removes any with index >= maxBackups, so we expect
+	// .bak, .bak.1, .bak.2 ... up to .bak.(maxBackups-1) at most = maxBackups total files.
+	if bakCount > maxBackups+1 {
+		t.Errorf("expected at most %d backup files, got %d", maxBackups+1, bakCount)
+	}
+}
+
+func TestBackupAndRotateMissingSource(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "nonexistent.db")
+
+	err := backupAndRotate(dbPath, 3)
+	if err == nil {
+		t.Fatal("expected error for missing source file")
+	}
+
+	// The .bak file should not have been created
+	bakPath := dbPath + ".bak"
+	if _, statErr := os.Stat(bakPath); statErr == nil {
+		t.Error("expected .bak file to not exist for missing source")
+	}
+}
+
+// --- Close WAL checkpoint test ---
+
+func TestCloseCheckpointsWAL(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "wal-close.db")
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	// Insert some data to generate WAL frames
+	p := &Project{
+		Name:        "close-wal-test",
+		Domain:      "cw.com",
+		LinuxUser:   "fleetdeck-cw",
+		ProjectPath: "/opt/fleetdeck/cw",
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Close should checkpoint WAL (TRUNCATE mode empties/removes the WAL file)
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// After a TRUNCATE checkpoint, the WAL file should be empty or absent
+	walPath := dbPath + "-wal"
+	info, err := os.Stat(walPath)
+	if err == nil && info.Size() > 0 {
+		t.Errorf("expected WAL file to be empty after Close, got size %d", info.Size())
+	}
+
+	// Verify the data survived the close by reopening
+	db2, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer db2.Close()
+
+	got, err := db2.GetProject("close-wal-test")
+	if err != nil {
+		t.Fatalf("get project after reopen: %v", err)
+	}
+	if got.Name != "close-wal-test" {
+		t.Errorf("expected close-wal-test, got %s", got.Name)
+	}
+}
+
+// --- checkIntegrity on valid DB ---
+
+func TestCheckIntegrityValidDB(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "valid.db")
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// Populate with multiple tables worth of data
+	for _, name := range []string{"proj-a", "proj-b", "proj-c"} {
+		p := &Project{
+			Name:        name,
+			Domain:      name + ".com",
+			LinuxUser:   "fleetdeck-" + name,
+			ProjectPath: "/opt/fleetdeck/" + name,
+		}
+		if err := db.CreateProject(p); err != nil {
+			t.Fatalf("create project %s: %v", name, err)
+		}
+
+		// Add related records to exercise foreign keys
+		db.CreateDeployment(&Deployment{
+			ProjectID: p.ID,
+			CommitSHA: "abc123",
+			Status:    "success",
+		})
+		db.CreateBackupRecord(&BackupRecord{
+			ProjectID: p.ID,
+			Type:      "manual",
+			Trigger:   "user",
+			Path:      "/tmp/" + name,
+		})
+	}
+
+	if err := db.checkIntegrity(); err != nil {
+		t.Errorf("integrity check should pass on valid populated database: %v", err)
 	}
 }
