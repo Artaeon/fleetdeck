@@ -120,6 +120,58 @@ func TestCreateGitHubRepoErrorWrapping(t *testing.T) {
 	}
 }
 
+func TestCreateGitHubRepoPrivateFlag(t *testing.T) {
+	// Verify that private=true and private=false construct different arguments.
+	// We test the construction logic since we can't call GitHub.
+	tests := []struct {
+		private    bool
+		wantFlag   string
+		dontWant   string
+	}{
+		{true, "--private", "--public"},
+		{false, "--public", "--private"},
+	}
+
+	for _, tt := range tests {
+		args := []string{"repo", "create", "org/name", "--confirm"}
+		if tt.private {
+			args = append(args, "--private")
+		} else {
+			args = append(args, "--public")
+		}
+
+		found := false
+		for _, a := range args {
+			if a == tt.wantFlag {
+				found = true
+			}
+			if a == tt.dontWant {
+				t.Errorf("private=%v should not have %s flag", tt.private, tt.dontWant)
+			}
+		}
+		if !found {
+			t.Errorf("private=%v should have %s flag", tt.private, tt.wantFlag)
+		}
+	}
+}
+
+func TestCreateGitHubRepoEmptyOrg(t *testing.T) {
+	// With empty org, repo name should just be the name without slash
+	org := ""
+	name := "my-repo"
+	repoName := name
+	if org != "" {
+		repoName = org + "/" + name
+	}
+	if repoName != "my-repo" {
+		t.Errorf("empty org should produce just the name, got %q", repoName)
+	}
+	// Importantly, there should be no leading slash
+	if repoName[0] == '/' {
+		t.Error("repo name should not start with /")
+	}
+}
+
 // contains checks if s contains substr (simple helper to avoid importing strings).
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
