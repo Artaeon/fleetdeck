@@ -36,8 +36,8 @@ var dashboardCmd = &cobra.Command{
 		ui.Success("FleetDeck Dashboard started")
 		ui.Info("Listening on http://%s", addr)
 		if cfg.Server.APIToken == "" {
-			ui.Warn("No api_token configured in [server] — dashboard is UNAUTHENTICATED!")
-			ui.Warn("Set api_token in /etc/fleetdeck/config.toml for production use")
+			ui.Warn("No api_token configured — dashboard is UNAUTHENTICATED!")
+			ui.Warn("Set FLEETDECK_API_TOKEN env var or api_token in config.toml")
 		} else {
 			ui.Info("Authentication enabled (Bearer token / cookie)")
 		}
