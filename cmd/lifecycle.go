@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"time"
+
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
+	"github.com/fleetdeck/fleetdeck/internal/health"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -72,6 +75,7 @@ var stopCmd = &cobra.Command{
 
 		ui.Info("Stopping %s...", p.Name)
 		if err := project.ComposeDown(p.ProjectPath); err != nil {
+			d.UpdateProjectStatus(p.Name, "error")
 			audit.Log("project.stop", p.Name, err.Error(), false)
 			return err
 		}
@@ -101,8 +105,13 @@ var restartCmd = &cobra.Command{
 
 		ui.Info("Restarting %s...", p.Name)
 		if err := project.ComposeRestart(p.ProjectPath); err != nil {
+			d.UpdateProjectStatus(p.Name, "error")
 			audit.Log("project.restart", p.Name, err.Error(), false)
 			return err
+		}
+
+		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
+			ui.Warn("Could not update status: %v", err)
 		}
 
 		audit.Log("project.restart", p.Name, "restarted", true)
