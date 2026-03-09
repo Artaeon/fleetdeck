@@ -195,7 +195,9 @@ func backupAndRotate(dbPath string, maxBackups int) error {
 // Snapshot creates a consistent copy of the database at the given path using
 // SQLite's VACUUM INTO, which works correctly even in WAL mode.
 func (db *DB) Snapshot(destPath string) error {
-	_, err := db.conn.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, destPath))
+	// Escape single quotes in path to prevent SQL injection
+	escaped := strings.ReplaceAll(destPath, "'", "''")
+	_, err := db.conn.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, escaped))
 	return err
 }
 
