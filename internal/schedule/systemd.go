@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-const (
-	unitDir    = "/etc/systemd/system"
-	unitPrefix = "fleetdeck-backup-"
-)
+const unitPrefix = "fleetdeck-backup-"
+
+// unitDir is the directory where systemd unit files are written.
+// It is a variable so tests can redirect writes to a temp directory.
+var unitDir = "/etc/systemd/system"
 
 // TimerStatus represents the state of a systemd backup timer.
 type TimerStatus struct {
@@ -219,7 +220,8 @@ func GetTimerStatus(projectName string) (*TimerStatus, error) {
 }
 
 // systemctlRun executes a systemctl command with the given arguments.
-func systemctlRun(args ...string) error {
+// It is a variable so tests can replace it with a stub.
+var systemctlRun = func(args ...string) error {
 	cmd := exec.Command("systemctl", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
@@ -228,7 +230,8 @@ func systemctlRun(args ...string) error {
 }
 
 // systemctlProperty queries a systemd unit property via systemctl show.
-func systemctlProperty(unit, property string) string {
+// It is a variable so tests can replace it with a stub.
+var systemctlProperty = func(unit, property string) string {
 	cmd := exec.Command("systemctl", "show", unit, "--property="+property, "--value")
 	out, err := cmd.Output()
 	if err != nil {
