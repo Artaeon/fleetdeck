@@ -3,6 +3,7 @@ module github.com/fleetdeck/fleetdeck
 go 1.23.6
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
 )
