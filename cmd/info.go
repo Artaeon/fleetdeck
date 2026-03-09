@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ var infoCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Printf("  Domain:      %s\n", p.Domain)
 		fmt.Printf("  Status:      %s\n", ui.StatusColor(p.Status))
+		fmt.Printf("  Source:      %s\n", p.Source)
 		fmt.Printf("  Template:    %s\n", p.Template)
 		fmt.Printf("  Path:        %s\n", p.ProjectPath)
 		fmt.Printf("  Linux User:  %s\n", p.LinuxUser)
@@ -32,6 +34,17 @@ var infoCmd = &cobra.Command{
 		if p.GitHubRepo != "" {
 			fmt.Printf("  GitHub:      %s\n", p.GitHubRepo)
 		}
+
+		// Show backup count
+		backups, _ := d.ListBackupRecords(p.ID, 0)
+		if len(backups) > 0 {
+			var totalSize int64
+			for _, b := range backups {
+				totalSize += b.SizeBytes
+			}
+			fmt.Printf("  Backups:     %d (%s total)\n", len(backups), backup.FormatSize(totalSize))
+		}
+
 		fmt.Printf("  Created:     %s\n", p.CreatedAt.Format("2006-01-02 15:04:05"))
 		fmt.Printf("  Updated:     %s\n", p.UpdatedAt.Format("2006-01-02 15:04:05"))
 
