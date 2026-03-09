@@ -151,6 +151,10 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
+	mu := s.projectMutex(p.Name)
+	mu.Lock()
+	defer mu.Unlock()
+
 	dep := &db.Deployment{
 		ID:        uuid.New().String(),
 		ProjectID: p.ID,

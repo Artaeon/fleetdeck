@@ -10,9 +10,11 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/config"
@@ -25,6 +27,7 @@ type Server struct {
 	server        *http.Server
 	webhookSecret string
 	apiToken      string
+	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 }
 
 // GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
@@ -34,6 +37,28 @@ func GenerateAPIToken() string {
 		panic(err)
 	}
 	return hex.EncodeToString(b)
+}
+
+// projectMutex returns a per-project mutex, creating one lazily if needed.
+// This prevents concurrent deployments or compose operations on the same project.
+func (s *Server) projectMutex(name string) *sync.Mutex {
+	v, _ := s.deploymentMu.LoadOrStore(name, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// validProjectName matches valid project name path parameters.
+var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
+
+// securityHeaders wraps a handler to set standard security response headers.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func New(cfg *config.Config, database *db.DB, addr string) *Server {
@@ -68,11 +93,12 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /static/style.css", s.handleCSS)
 
 	s.server = &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:           addr,
+		Handler:        securityHeaders(mux),
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	return s
@@ -134,6 +160,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64KB limit
 	r.ParseForm()
 	token := r.FormValue("token")
 
@@ -143,6 +170,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			Value:    s.apiToken,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   true,
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   86400 * 7, // 7 days
 		})
@@ -210,7 +238,8 @@ type apiStatus struct {
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjects()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("handleListProjects: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -237,9 +266,13 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -267,6 +300,10 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mu := s.projectMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
 	cmd := exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -286,6 +323,10 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mu := s.projectMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
 	cmd := exec.Command("docker", "compose", "down")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -304,6 +345,10 @@ func (s *Server) handleRestartProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
+	mu := s.projectMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
 
 	cmd := exec.Command("docker", "compose", "restart")
 	cmd.Dir = p.ProjectPath
