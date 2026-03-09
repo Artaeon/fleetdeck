@@ -66,6 +66,11 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 			if comp.Type != "config" {
 				continue
 			}
+			// Validate paths to prevent path traversal
+			if strings.Contains(comp.Path, "..") || strings.Contains(comp.Name, "..") {
+				ui.Warn("Skipping suspicious path: %s", comp.Path)
+				continue
+			}
 			src := filepath.Join(backupPath, comp.Path)
 			dst := filepath.Join(projectPath, comp.Name)
 
@@ -90,6 +95,10 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 		volCount := 0
 		for _, comp := range manifest.Components {
 			if comp.Type != "volume" {
+				continue
+			}
+			if strings.Contains(comp.Path, "..") || strings.Contains(comp.Name, "..") {
+				ui.Warn("Skipping suspicious path: %s", comp.Path)
 				continue
 			}
 			archivePath := filepath.Join(backupPath, comp.Path)
