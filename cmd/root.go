@@ -1,7 +1,18 @@
 package cmd
 
 import (
+	"os"
+
+	"github.com/fleetdeck/fleetdeck/internal/config"
+	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
+)
+
+var (
+	cfgFile string
+	cfg     *config.Config
+	database *db.DB
 )
 
 var rootCmd = &cobra.Command{
@@ -12,8 +23,33 @@ multiple Docker projects on a single server with Traefik.
 
 It automates Linux user creation, SSH key generation, GitHub repo setup,
 Docker Compose configuration, and CI/CD workflow generation.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		var err error
+		cfg, err = config.Load(cfgFile)
+		if err != nil {
+			ui.Error("Failed to load config: %v", err)
+			os.Exit(1)
+		}
+	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: /etc/fleetdeck/config.toml)")
 }
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+func openDB() *db.DB {
+	if database != nil {
+		return database
+	}
+	var err error
+	database, err = db.Open(cfg.DBPath())
+	if err != nil {
+		ui.Error("Failed to open database: %v", err)
+		os.Exit(1)
+	}
+	return database
 }
