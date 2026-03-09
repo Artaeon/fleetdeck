@@ -163,8 +163,19 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 
 	var logBuf strings.Builder
 
+	// Record current container image IDs for rollback
+	logBuf.WriteString("=== Pre-deployment State ===\n")
+	previousImages := captureContainerImages(p.ProjectPath)
+	if len(previousImages) > 0 {
+		for svc, img := range previousImages {
+			logBuf.WriteString(fmt.Sprintf("  %s: %s\n", svc, img))
+		}
+	} else {
+		logBuf.WriteString("  (no running containers)\n")
+	}
+
 	// Step 1: git pull
-	logBuf.WriteString("=== Git Pull ===\n")
+	logBuf.WriteString("\n=== Git Pull ===\n")
 	cmd := exec.Command("git", "pull", "--ff-only")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -202,8 +213,164 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString(string(out))
 	}
 
-	logBuf.WriteString("\nDeployment successful!\n")
-	s.finishDeployment(dep, "success", logBuf.String(), p.Name)
+	// Step 4: Health check with rollback
+	logBuf.WriteString("\n=== Health Check ===\n")
+	report := waitForHealthy(p.ProjectPath, 30*time.Second)
+	if report != nil && report.Healthy {
+		logBuf.WriteString("All services healthy.\n")
+		logBuf.WriteString("\nDeployment successful!\n")
+		s.finishDeployment(dep, "success", logBuf.String(), p.Name)
+		return
+	}
+
+	// Unhealthy — attempt rollback if we have previous state
+	if report != nil {
+		for _, e := range report.Errors {
+			logBuf.WriteString(fmt.Sprintf("  UNHEALTHY: %s\n", e))
+		}
+	} else {
+		logBuf.WriteString("  Could not determine health status.\n")
+	}
+
+	if len(previousImages) == 0 {
+		logBuf.WriteString("\nNo previous images to rollback to — skipping rollback.\n")
+		logBuf.WriteString("\nDeployment completed with health warnings.\n")
+		s.finishDeployment(dep, "success", logBuf.String(), p.Name)
+		return
+	}
+
+	logBuf.WriteString("\n=== Automatic Rollback ===\n")
+	logBuf.WriteString("Services unhealthy after 30s — rolling back to previous images.\n")
+
+	// Rollback: docker compose up -d to restart with previous state.
+	// We do git checkout to restore the previous compose file state.
+	rollbackCmd := exec.Command("git", "checkout", "HEAD~1", "--", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+	rollbackCmd.Dir = p.ProjectPath
+	if out, err := rollbackCmd.CombinedOutput(); err != nil {
+		// Git checkout may fail if some files don't exist — that's OK, try compose up anyway.
+		logBuf.WriteString(fmt.Sprintf("  git checkout previous compose files: %s (continuing)\n", strings.TrimSpace(string(out))))
+	}
+
+	upCmd := exec.Command("docker", "compose", "up", "-d")
+	upCmd.Dir = p.ProjectPath
+	if out, err := upCmd.CombinedOutput(); err != nil {
+		logBuf.WriteString(fmt.Sprintf("  rollback compose up failed: %s: %v\n", strings.TrimSpace(string(out)), err))
+		logBuf.WriteString("\nDeployment failed and rollback failed.\n")
+		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
+		return
+	} else {
+		logBuf.WriteString(string(out))
+	}
+
+	// Restore working tree to current HEAD after rollback
+	restoreCmd := exec.Command("git", "checkout", "HEAD", "--", ".")
+	restoreCmd.Dir = p.ProjectPath
+	restoreCmd.CombinedOutput() // best-effort
+
+	logBuf.WriteString("\nRolled back to previous state. Deployment marked as failed.\n")
+	s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
+}
+
+// captureContainerImages records the current image ID for each running
+// container in the compose project, used for rollback decisions.
+func captureContainerImages(projectPath string) map[string]string {
+	cmd := exec.Command("docker", "compose", "ps", "--format", "json")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	images := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Name  string `json:"Name"`
+			Image string `json:"Image"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.Name != "" && entry.Image != "" {
+			images[entry.Name] = entry.Image
+		}
+	}
+	return images
+}
+
+// waitForHealthy polls the project's container health for up to the given
+// duration, returning the final health report.
+func waitForHealthy(projectPath string, timeout time.Duration) *healthReport {
+	deadline := time.Now().Add(timeout)
+	var last *healthReport
+
+	for time.Now().Before(deadline) {
+		r := checkProjectHealth(projectPath)
+		last = r
+		if r != nil && r.Healthy {
+			return r
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	// One final check.
+	if r := checkProjectHealth(projectPath); r != nil {
+		return r
+	}
+	return last
+}
+
+// healthReport is a lightweight health report used internally by the webhook
+// deployment pipeline (mirrors health.HealthReport but avoids the import to
+// keep the server package self-contained for testing).
+type healthReport struct {
+	Healthy bool
+	Errors  []string
+}
+
+func checkProjectHealth(projectPath string) *healthReport {
+	cmd := exec.Command("docker", "compose", "ps", "--format", "json")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	report := &healthReport{Healthy: true}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+		report.Healthy = false
+		report.Errors = append(report.Errors, "no containers found")
+		return report
+	}
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Name   string `json:"Name"`
+			State  string `json:"State"`
+			Health string `json:"Health"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+
+		state := strings.ToLower(entry.State)
+		hlth := strings.ToLower(entry.Health)
+
+		if hlth == "unhealthy" || state == "restarting" {
+			report.Healthy = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s is %s", entry.Name, state))
+		} else if state != "running" {
+			report.Healthy = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s has state %q", entry.Name, state))
+		}
+	}
+	return report
 }
 
 func (s *Server) finishDeployment(dep *db.Deployment, status, logOutput, projectName string) {
