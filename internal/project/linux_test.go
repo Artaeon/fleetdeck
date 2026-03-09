@@ -244,6 +244,128 @@ func TestValidateNameErrorMessages(t *testing.T) {
 	}
 }
 
+func TestSetupAuthorizedKeysInvalidPath(t *testing.T) {
+	// Use a file to block MkdirAll
+	tmpDir := t.TempDir()
+	blockingFile := filepath.Join(tmpDir, "blocker")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0644); err != nil {
+		t.Fatalf("creating blocking file: %v", err)
+	}
+
+	badPath := filepath.Join(blockingFile, "subdir")
+	err := SetupAuthorizedKeys(badPath, "ssh-ed25519 AAAA test@host")
+	if err == nil {
+		t.Fatal("SetupAuthorizedKeys with invalid path should return error")
+	}
+	if !strings.Contains(err.Error(), "creating .ssh directory") {
+		t.Errorf("error should mention 'creating .ssh directory', got: %v", err)
+	}
+}
+
+func TestSetupAuthorizedKeysEmptyKey(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Empty key should still write the restrict prefix
+	err := SetupAuthorizedKeys(tmpDir, "")
+	if err != nil {
+		t.Fatalf("SetupAuthorizedKeys with empty key: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".ssh", "authorized_keys"))
+	if err != nil {
+		t.Fatalf("reading authorized_keys: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "restrict,command=") {
+		t.Error("authorized_keys should contain restrict prefix even with empty key")
+	}
+}
+
+func TestSetupAuthorizedKeysOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	key1 := "ssh-ed25519 AAAA1111 user1@host"
+	key2 := "ssh-ed25519 AAAA2222 user2@host"
+
+	if err := SetupAuthorizedKeys(tmpDir, key1); err != nil {
+		t.Fatalf("first SetupAuthorizedKeys: %v", err)
+	}
+	if err := SetupAuthorizedKeys(tmpDir, key2); err != nil {
+		t.Fatalf("second SetupAuthorizedKeys: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".ssh", "authorized_keys"))
+	if err != nil {
+		t.Fatalf("reading authorized_keys: %v", err)
+	}
+	content := string(data)
+
+	// Should contain the second key, not the first (overwrite behavior)
+	if strings.Contains(content, key1) {
+		t.Error("authorized_keys should not contain the first key after overwrite")
+	}
+	if !strings.Contains(content, key2) {
+		t.Error("authorized_keys should contain the second key")
+	}
+}
+
+func TestLinuxUserNameConsistency(t *testing.T) {
+	// Verify that LinuxUserName is deterministic
+	name1 := LinuxUserName("myapp")
+	name2 := LinuxUserName("myapp")
+	if name1 != name2 {
+		t.Errorf("LinuxUserName should be deterministic: %q != %q", name1, name2)
+	}
+}
+
+func TestLinuxUserNamePrefix(t *testing.T) {
+	// All Linux usernames should have the fleetdeck- prefix
+	names := []string{"a", "test", "my-app", "123", "x1y2z3"}
+	for _, n := range names {
+		result := LinuxUserName(n)
+		if !strings.HasPrefix(result, "fleetdeck-") {
+			t.Errorf("LinuxUserName(%q) = %q, missing 'fleetdeck-' prefix", n, result)
+		}
+		// The part after the prefix should be exactly the input
+		after := strings.TrimPrefix(result, "fleetdeck-")
+		if after != n {
+			t.Errorf("LinuxUserName(%q) suffix = %q, want %q", n, after, n)
+		}
+	}
+}
+
+func TestChownProjectDirErrorWrapping(t *testing.T) {
+	// chown requires root and valid user, so this should fail with error wrapping
+	err := ChownProjectDir("nonexistent-project", "/tmp/nonexistent-path")
+	if err == nil {
+		t.Skip("chown succeeded unexpectedly (running as root?)")
+	}
+	if !strings.Contains(err.Error(), "chown") {
+		t.Errorf("error should mention 'chown', got: %v", err)
+	}
+}
+
+func TestCreateLinuxUserErrorWrapping(t *testing.T) {
+	// useradd requires root, so this should fail
+	err := CreateLinuxUser("test-project", "/tmp/nonexistent-path")
+	if err == nil {
+		t.Skip("useradd succeeded unexpectedly (running as root?)")
+	}
+	// Error should either say user exists or fail from useradd
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "already exists") && !strings.Contains(errMsg, "creating user") {
+		t.Errorf("error should mention user creation, got: %v", err)
+	}
+}
+
+func TestDeleteLinuxUserNonexistent(t *testing.T) {
+	// Deleting a user that doesn't exist should return nil (no-op)
+	err := DeleteLinuxUser("definitely-nonexistent-project-xyz123")
+	if err != nil {
+		t.Errorf("DeleteLinuxUser for nonexistent user should return nil, got: %v", err)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

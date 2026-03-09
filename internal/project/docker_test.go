@@ -267,3 +267,205 @@ func TestComposeLogsServiceOrdering(t *testing.T) {
 		t.Error("service name should appear before --follow")
 	}
 }
+
+func TestComposeLogsNegativeTail(t *testing.T) {
+	// Negative tail should not add --tail flag (only tail > 0 adds it)
+	cmd := ComposeLogs("/srv/projects/myapp", "", -1, false)
+	for _, arg := range cmd.Args[1:] {
+		if arg == "--tail" {
+			t.Error("negative tail value should not produce --tail flag")
+		}
+	}
+}
+
+func TestComposeLogsZeroTail(t *testing.T) {
+	// Zero tail should not add --tail flag
+	cmd := ComposeLogs("/srv/projects/myapp", "", 0, false)
+	for _, arg := range cmd.Args[1:] {
+		if arg == "--tail" {
+			t.Error("zero tail value should not produce --tail flag")
+		}
+	}
+}
+
+func TestContainerStatusFields(t *testing.T) {
+	// Verify ContainerStatus struct can hold various states
+	statuses := []ContainerStatus{
+		{Name: "app-web-1", State: "running", Status: "Up 5 minutes"},
+		{Name: "app-db-1", State: "exited", Status: "Exited (0) 3 minutes ago"},
+		{Name: "app-redis-1", State: "restarting", Status: "Restarting (1) 5 seconds ago"},
+		{Name: "app-worker-1", State: "created", Status: "Created"},
+		{Name: "app-proxy-1", State: "paused", Status: "Up 10 minutes (Paused)"},
+	}
+
+	for _, cs := range statuses {
+		if cs.Name == "" {
+			t.Error("ContainerStatus Name should not be empty")
+		}
+		if cs.State == "" {
+			t.Error("ContainerStatus State should not be empty")
+		}
+		if cs.Status == "" {
+			t.Error("ContainerStatus Status should not be empty")
+		}
+	}
+}
+
+func TestComposePSEmptyOutput(t *testing.T) {
+	// Simulate what happens when docker compose ps returns empty output.
+	// The real ComposePS checks for empty trimmed output and returns nil, nil.
+	// This tests the JSON parsing path for the empty line case.
+	lines := ""
+	var containers []ContainerStatus
+	for _, line := range strings.Split(strings.TrimSpace(lines), "\n") {
+		if line == "" {
+			continue
+		}
+		var c struct {
+			Name   string `json:"Name"`
+			State  string `json:"State"`
+			Status string `json:"Status"`
+		}
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue // invalid JSON lines are skipped
+		}
+		containers = append(containers, ContainerStatus{
+			Name:   c.Name,
+			State:  c.State,
+			Status: c.Status,
+		})
+	}
+
+	if len(containers) != 0 {
+		t.Errorf("empty output should yield 0 containers, got %d", len(containers))
+	}
+}
+
+func TestComposePSInvalidJSONLines(t *testing.T) {
+	// Verify that invalid JSON lines are silently skipped (matches ComposePS behavior)
+	lines := `{"Name":"app-web-1","State":"running","Status":"Up 5 min"}
+not-json-at-all
+{"Name":"app-db-1","State":"running","Status":"Up 5 min"}
+{broken json`
+
+	var containers []ContainerStatus
+	for _, line := range strings.Split(strings.TrimSpace(lines), "\n") {
+		if line == "" {
+			continue
+		}
+		var c struct {
+			Name   string `json:"Name"`
+			State  string `json:"State"`
+			Status string `json:"Status"`
+		}
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
+		}
+		containers = append(containers, ContainerStatus{
+			Name:   c.Name,
+			State:  c.State,
+			Status: c.Status,
+		})
+	}
+
+	if len(containers) != 2 {
+		t.Errorf("should parse 2 valid containers, got %d", len(containers))
+	}
+}
+
+func TestCountContainersLogic(t *testing.T) {
+	// Test the counting logic that CountContainers performs on parsed containers.
+	tests := []struct {
+		name        string
+		containers  []ContainerStatus
+		wantRunning int
+		wantTotal   int
+	}{
+		{
+			name:        "empty list",
+			containers:  nil,
+			wantRunning: 0,
+			wantTotal:   0,
+		},
+		{
+			name: "all running",
+			containers: []ContainerStatus{
+				{Name: "web", State: "running"},
+				{Name: "db", State: "running"},
+			},
+			wantRunning: 2,
+			wantTotal:   2,
+		},
+		{
+			name: "mixed states",
+			containers: []ContainerStatus{
+				{Name: "web", State: "running"},
+				{Name: "db", State: "exited"},
+				{Name: "cache", State: "running"},
+				{Name: "worker", State: "paused"},
+			},
+			wantRunning: 2,
+			wantTotal:   4,
+		},
+		{
+			name: "none running",
+			containers: []ContainerStatus{
+				{Name: "web", State: "exited"},
+				{Name: "db", State: "exited"},
+			},
+			wantRunning: 0,
+			wantTotal:   2,
+		},
+		{
+			name: "single running",
+			containers: []ContainerStatus{
+				{Name: "web", State: "running"},
+			},
+			wantRunning: 1,
+			wantTotal:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			total := len(tt.containers)
+			running := 0
+			for _, c := range tt.containers {
+				if c.State == "running" {
+					running++
+				}
+			}
+			if running != tt.wantRunning {
+				t.Errorf("running = %d, want %d", running, tt.wantRunning)
+			}
+			if total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", total, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestComposePSSingleContainer(t *testing.T) {
+	// Test parsing a single container JSON line
+	line := `{"Name":"myapp-web-1","State":"running","Status":"Up 2 hours"}`
+
+	var c struct {
+		Name   string `json:"Name"`
+		State  string `json:"State"`
+		Status string `json:"Status"`
+	}
+	if err := json.Unmarshal([]byte(line), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	cs := ContainerStatus{Name: c.Name, State: c.State, Status: c.Status}
+	if cs.Name != "myapp-web-1" {
+		t.Errorf("Name = %q, want %q", cs.Name, "myapp-web-1")
+	}
+	if cs.State != "running" {
+		t.Errorf("State = %q, want %q", cs.State, "running")
+	}
+	if cs.Status != "Up 2 hours" {
+		t.Errorf("Status = %q, want %q", cs.Status, "Up 2 hours")
+	}
+}

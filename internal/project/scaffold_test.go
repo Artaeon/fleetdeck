@@ -238,3 +238,194 @@ func TestScaffoldProjectDifferentData(t *testing.T) {
 		t.Error("docker-compose.yml should contain 'app.staging.dev'")
 	}
 }
+
+func TestScaffoldProjectBadDockerfileTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "badtmpl")
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatalf("creating project dir: %v", err)
+	}
+
+	tmpl := &templates.Template{
+		Dockerfile: `FROM alpine:latest
+LABEL project="{{.InvalidField}}"
+`,
+		Compose:     `services: {}`,
+		Workflow:    `name: Deploy`,
+		EnvTemplate: `APP={{.Name}}`,
+		GitIgnore:   `.env`,
+	}
+	data := templates.TemplateData{Name: "test", Domain: "test.dev"}
+
+	err := ScaffoldProject(projectPath, tmpl, data)
+	if err == nil {
+		t.Fatal("ScaffoldProject with bad Dockerfile template should return error")
+	}
+	if !strings.Contains(err.Error(), "rendering Dockerfile") {
+		t.Errorf("error should mention 'rendering Dockerfile', got: %v", err)
+	}
+}
+
+func TestScaffoldProjectBadComposeTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "badcompose")
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatalf("creating project dir: %v", err)
+	}
+
+	tmpl := &templates.Template{
+		Dockerfile: `FROM alpine:latest`,
+		Compose:    `services:
+  app:
+    image: {{.BadField}}
+`,
+		Workflow:    `name: Deploy`,
+		EnvTemplate: `APP={{.Name}}`,
+		GitIgnore:   `.env`,
+	}
+	data := templates.TemplateData{Name: "test", Domain: "test.dev"}
+
+	err := ScaffoldProject(projectPath, tmpl, data)
+	if err == nil {
+		t.Fatal("ScaffoldProject with bad Compose template should return error")
+	}
+	if !strings.Contains(err.Error(), "rendering docker-compose.yml") {
+		t.Errorf("error should mention 'rendering docker-compose.yml', got: %v", err)
+	}
+}
+
+func TestScaffoldProjectInvalidPath(t *testing.T) {
+	tmpl := testTemplate()
+	data := testData()
+
+	// Use a path that can't be created (file in place of directory)
+	tmpDir := t.TempDir()
+	blockingFile := filepath.Join(tmpDir, "blocker")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0644); err != nil {
+		t.Fatalf("creating blocking file: %v", err)
+	}
+
+	// Try to scaffold into a path where a file blocks directory creation
+	badPath := filepath.Join(blockingFile, "project")
+	err := ScaffoldProject(badPath, tmpl, data)
+	if err == nil {
+		t.Fatal("ScaffoldProject with invalid path should return error")
+	}
+}
+
+func TestScaffoldProjectIdempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "myproject")
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatalf("creating project dir: %v", err)
+	}
+
+	tmpl := testTemplate()
+	data := testData()
+
+	// Run scaffold twice - should succeed both times (overwrite)
+	if err := ScaffoldProject(projectPath, tmpl, data); err != nil {
+		t.Fatalf("first ScaffoldProject() error: %v", err)
+	}
+	if err := ScaffoldProject(projectPath, tmpl, data); err != nil {
+		t.Fatalf("second ScaffoldProject() error: %v", err)
+	}
+
+	// Verify files still exist and are correct after second scaffold
+	dockerfile, err := os.ReadFile(filepath.Join(projectPath, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("reading Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), "myproject") {
+		t.Error("Dockerfile should contain 'myproject' after re-scaffold")
+	}
+}
+
+func TestScaffoldProjectDirectoryPermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "myproject")
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatalf("creating project dir: %v", err)
+	}
+
+	tmpl := testTemplate()
+	data := testData()
+
+	if err := ScaffoldProject(projectPath, tmpl, data); err != nil {
+		t.Fatalf("ScaffoldProject() error: %v", err)
+	}
+
+	// Verify directories have 0755 permissions
+	dirs := []string{
+		filepath.Join(projectPath, ".github"),
+		filepath.Join(projectPath, ".github", "workflows"),
+		filepath.Join(projectPath, "deployments"),
+	}
+	for _, d := range dirs {
+		info, err := os.Stat(d)
+		if err != nil {
+			t.Errorf("stat %q: %v", d, err)
+			continue
+		}
+		perm := info.Mode().Perm()
+		if perm != 0755 {
+			t.Errorf("%q permissions = %o, want 0755", d, perm)
+		}
+	}
+}
+
+func TestInitAndPushRepoErrorWrapping(t *testing.T) {
+	// InitAndPushRepo will fail on git init in a nonexistent directory,
+	// but the error should be wrapped with the failing command.
+	err := InitAndPushRepo("/nonexistent/path/that/does/not/exist", "https://github.com/fake/repo.git")
+	if err == nil {
+		t.Fatal("InitAndPushRepo with nonexistent path should return error")
+	}
+	if !strings.Contains(err.Error(), "running git") {
+		t.Errorf("error should mention 'running git', got: %v", err)
+	}
+}
+
+func TestInitAndPushRepoCommandSequence(t *testing.T) {
+	// InitAndPushRepo should fail at git push since there's no remote.
+	// Create a temp dir where git init can succeed to test further into the sequence.
+	tmpDir := t.TempDir()
+	err := InitAndPushRepo(tmpDir, "https://github.com/fake/nonexistent-repo.git")
+	if err == nil {
+		t.Fatal("InitAndPushRepo should fail since remote is fake")
+	}
+	// The error should reference one of the git commands
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "running git") {
+		t.Errorf("error should mention 'running git', got: %v", err)
+	}
+}
+
+func TestScaffoldProjectEmptyTemplateFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectPath := filepath.Join(tmpDir, "minimal")
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatalf("creating project dir: %v", err)
+	}
+
+	// Minimal template with no template variables in any fields
+	tmpl := &templates.Template{
+		Dockerfile:  "FROM scratch\n",
+		Compose:     "services: {}\n",
+		Workflow:    "name: CI\n",
+		EnvTemplate: "",
+		GitIgnore:   "",
+	}
+	data := templates.TemplateData{Name: "minimal", Domain: "min.dev"}
+
+	if err := ScaffoldProject(projectPath, tmpl, data); err != nil {
+		t.Fatalf("ScaffoldProject() error: %v", err)
+	}
+
+	// All files should exist even with minimal content
+	for _, f := range []string{"Dockerfile", "docker-compose.yml", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(projectPath, f)); os.IsNotExist(err) {
+			t.Errorf("expected file %q to exist", f)
+		}
+	}
+}
