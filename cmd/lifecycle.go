@@ -50,6 +50,11 @@ var startCmd = &cobra.Command{
 			return err
 		}
 
+		// Wait for containers to become healthy (up to 30s)
+		ui.Info("Waiting for services to become healthy...")
+		report := health.WaitForHealthy(p.ProjectPath, 30*time.Second)
+		printHealthReport(report)
+
 		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
 			ui.Warn("Could not update status: %v", err)
 		}
@@ -110,6 +115,11 @@ var restartCmd = &cobra.Command{
 			return err
 		}
 
+		// Wait for containers to become healthy (up to 30s)
+		ui.Info("Waiting for services to become healthy...")
+		report := health.WaitForHealthy(p.ProjectPath, 30*time.Second)
+		printHealthReport(report)
+
 		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
 			ui.Warn("Could not update status: %v", err)
 		}
@@ -118,6 +128,28 @@ var restartCmd = &cobra.Command{
 		ui.Success("Project %s restarted", p.Name)
 		return nil
 	},
+}
+
+func printHealthReport(report *health.HealthReport) {
+	if report == nil {
+		ui.Warn("Could not determine health status")
+		return
+	}
+	for _, svc := range report.Services {
+		switch svc.Health {
+		case "healthy":
+			ui.Success("  %s: %s", svc.Name, svc.Health)
+		case "restarting":
+			ui.Warn("  %s: %s (crash loop detected)", svc.Name, svc.Health)
+		case "unhealthy":
+			ui.Error("  %s: %s", svc.Name, svc.Health)
+		default:
+			ui.Warn("  %s: %s", svc.Name, svc.Health)
+		}
+	}
+	if !report.Healthy {
+		ui.Warn("Some services are not healthy yet — they may still be starting")
+	}
 }
 
 func init() {
