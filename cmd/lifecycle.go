@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
@@ -38,6 +39,7 @@ var startCmd = &cobra.Command{
 
 		ui.Info("Starting %s...", p.Name)
 		if err := project.ComposeUp(p.ProjectPath); err != nil {
+			audit.Log("project.start", p.Name, err.Error(), false)
 			return err
 		}
 
@@ -45,6 +47,7 @@ var startCmd = &cobra.Command{
 			ui.Warn("Could not update status: %v", err)
 		}
 
+		audit.Log("project.start", p.Name, "started", true)
 		ui.Success("Project %s started", p.Name)
 		return nil
 	},
@@ -65,6 +68,7 @@ var stopCmd = &cobra.Command{
 
 		ui.Info("Stopping %s...", p.Name)
 		if err := project.ComposeDown(p.ProjectPath); err != nil {
+			audit.Log("project.stop", p.Name, err.Error(), false)
 			return err
 		}
 
@@ -72,6 +76,7 @@ var stopCmd = &cobra.Command{
 			ui.Warn("Could not update status: %v", err)
 		}
 
+		audit.Log("project.stop", p.Name, "stopped", true)
 		ui.Success("Project %s stopped", p.Name)
 		return nil
 	},
@@ -92,9 +97,11 @@ var restartCmd = &cobra.Command{
 
 		ui.Info("Restarting %s...", p.Name)
 		if err := project.ComposeRestart(p.ProjectPath); err != nil {
+			audit.Log("project.restart", p.Name, err.Error(), false)
 			return err
 		}
 
+		audit.Log("project.restart", p.Name, "restarted", true)
 		ui.Success("Project %s restarted", p.Name)
 		return nil
 	},

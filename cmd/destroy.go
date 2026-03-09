@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -82,6 +83,7 @@ var destroyCmd = &cobra.Command{
 		ui.Success("Removed from database")
 
 		fmt.Println()
+		audit.Log("project.destroy", name, "destroyed", true)
 		ui.Success("Project %s destroyed", ui.Bold(name))
 		return nil
 	},

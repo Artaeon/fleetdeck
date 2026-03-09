@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/templates"
@@ -176,6 +177,7 @@ var createCmd = &cobra.Command{
 		ui.Info("To start: fleetdeck start %s", name)
 		ui.Info("To view logs: fleetdeck logs %s", name)
 
+		audit.Log("project.create", name, fmt.Sprintf("template=%s domain=%s", templateName, domain), true)
 		return nil
 	},
 }

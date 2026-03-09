@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -39,12 +40,14 @@ var backupCreateCmd = &cobra.Command{
 			SkipVolumes: skipVolumes,
 		})
 		if err != nil {
+			audit.Log("backup.create", p.Name, err.Error(), false)
 			return fmt.Errorf("creating backup: %w", err)
 		}
 
 		// Enforce retention
 		backup.EnforceRetention(cfg, d, p.ID)
 
+		audit.Log("backup.create", p.Name, fmt.Sprintf("id=%s type=%s", record.ID[:12], backupType), true)
 		fmt.Println()
 		ui.Success("Backup created: %s", record.ID[:12])
 		ui.Info("Size: %s", backup.FormatSize(record.SizeBytes))
@@ -171,9 +174,11 @@ so you can always go back.`,
 			DBOnly:      dbOnly,
 			NoStart:     noStart,
 		}); err != nil {
+			audit.Log("backup.restore", p.Name, err.Error(), false)
 			return fmt.Errorf("restoring backup: %w", err)
 		}
 
+		audit.Log("backup.restore", p.Name, fmt.Sprintf("backup=%s", backupID[:minInt(12, len(backupID))]), true)
 		fmt.Println()
 		ui.Success("Project %s restored from backup %s", ui.Bold(p.Name), backupID[:minInt(12, len(backupID))])
 		return nil
@@ -223,6 +228,7 @@ var backupDeleteCmd = &cobra.Command{
 				return err
 			}
 
+			audit.Log("backup.delete", p.Name, fmt.Sprintf("id=%s", b.ID[:minInt(12, len(b.ID))]), true)
 			ui.Success("Backup %s deleted", b.ID[:minInt(12, len(b.ID))])
 			return nil
 		}
