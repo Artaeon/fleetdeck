@@ -1,0 +1,84 @@
+package cmd
+
+import (
+	"github.com/fleetdeck/fleetdeck/internal/project"
+	"github.com/fleetdeck/fleetdeck/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+var startCmd = &cobra.Command{
+	Use:   "start <name>",
+	Short: "Start a stopped project",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		d := openDB()
+		p, err := d.GetProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		ui.Info("Starting %s...", p.Name)
+		if err := project.ComposeUp(p.ProjectPath); err != nil {
+			return err
+		}
+
+		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
+			ui.Warn("Could not update status: %v", err)
+		}
+
+		ui.Success("Project %s started", p.Name)
+		return nil
+	},
+}
+
+var stopCmd = &cobra.Command{
+	Use:   "stop <name>",
+	Short: "Stop a running project (keeps data)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		d := openDB()
+		p, err := d.GetProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		ui.Info("Stopping %s...", p.Name)
+		if err := project.ComposeDown(p.ProjectPath); err != nil {
+			return err
+		}
+
+		if err := d.UpdateProjectStatus(p.Name, "stopped"); err != nil {
+			ui.Warn("Could not update status: %v", err)
+		}
+
+		ui.Success("Project %s stopped", p.Name)
+		return nil
+	},
+}
+
+var restartCmd = &cobra.Command{
+	Use:   "restart <name>",
+	Short: "Restart all services for a project",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		d := openDB()
+		p, err := d.GetProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		ui.Info("Restarting %s...", p.Name)
+		if err := project.ComposeRestart(p.ProjectPath); err != nil {
+			return err
+		}
+
+		ui.Success("Project %s restarted", p.Name)
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(restartCmd)
+}
