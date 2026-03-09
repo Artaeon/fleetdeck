@@ -462,3 +462,505 @@ func TestGenerateAPIToken(t *testing.T) {
 		t.Error("two generated tokens should not be identical")
 	}
 }
+
+// --- Security Header Tests ---
+
+func TestSecurityHeadersPresent(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Test security headers on multiple endpoint types
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/api/projects"},
+		{"GET", "/api/status"},
+		{"GET", "/"},
+		{"GET", "/static/style.css"},
+	}
+
+	for _, ep := range endpoints {
+		req := httptest.NewRequest(ep.method, ep.path, nil)
+		w := httptest.NewRecorder()
+		srv.server.Handler.ServeHTTP(w, req)
+
+		headers := map[string]string{
+			"X-Frame-Options":        "DENY",
+			"X-Content-Type-Options":  "nosniff",
+			"Referrer-Policy":         "strict-origin-when-cross-origin",
+			"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+		}
+
+		for name, expected := range headers {
+			got := w.Header().Get(name)
+			if got != expected {
+				t.Errorf("%s %s: header %s = %q, want %q", ep.method, ep.path, name, got, expected)
+			}
+		}
+	}
+}
+
+func TestSecurityHeadersOnAuthEndpoints(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+
+	// Even auth-rejected requests should have security headers
+	req := httptest.NewRequest("GET", "/api/projects", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options on 401 response = %q, want DENY", got)
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options on 401 response = %q, want nosniff", got)
+	}
+}
+
+func TestPermissionsPolicyHeader(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/projects", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	pp := w.Header().Get("Permissions-Policy")
+	if pp == "" {
+		t.Error("expected Permissions-Policy header to be set")
+	}
+	if !strings.Contains(pp, "geolocation=()") {
+		t.Errorf("Permissions-Policy should restrict geolocation, got %q", pp)
+	}
+}
+
+// --- Cookie Security Tests ---
+
+func TestLoginCookieSecurityFlags(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+
+	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=test-secret-token"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d", w.Code)
+	}
+
+	cookies := w.Result().Cookies()
+	var session *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "fleetdeck_session" {
+			session = c
+			break
+		}
+	}
+	if session == nil {
+		t.Fatal("expected fleetdeck_session cookie to be set")
+	}
+
+	if !session.HttpOnly {
+		t.Error("cookie should have HttpOnly flag set")
+	}
+	if session.SameSite != http.SameSiteStrictMode {
+		t.Errorf("cookie SameSite = %v, want SameSiteStrictMode", session.SameSite)
+	}
+	if !session.Secure {
+		t.Error("cookie should have Secure flag set")
+	}
+	if session.Path != "/" {
+		t.Errorf("cookie Path = %q, want /", session.Path)
+	}
+	if session.MaxAge != 86400*7 {
+		t.Errorf("cookie MaxAge = %d, want %d (7 days)", session.MaxAge, 86400*7)
+	}
+}
+
+// --- Request Size Limit Tests ---
+
+func TestLoginRejectsOversizedBody(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+
+	// Create a body larger than the 64KB limit (1<<16 = 65536)
+	bigBody := strings.Repeat("token=x&padding=", 5000) // ~80KB
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(bigBody))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	// MaxBytesReader causes the form parse to fail, so the token won't
+	// match and we get 401 (not a 200 redirect). The important thing is
+	// the oversized body does NOT succeed in logging in.
+	if w.Code == http.StatusFound {
+		t.Error("oversized body should not result in successful login redirect")
+	}
+}
+
+// --- Error Message Sanitization Tests ---
+
+func TestErrorMessageSanitization(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Request a non-existent project — the error message should NOT leak
+	// internal details like file paths, SQL queries, or stack traces.
+	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	errMsg := resp["error"]
+	if errMsg == "" {
+		t.Fatal("expected error message in response")
+	}
+
+	// Error should be a clean user-facing message, not a raw internal error
+	if strings.Contains(errMsg, "/") && strings.Contains(errMsg, ".go") {
+		t.Errorf("error message should not contain file paths: %q", errMsg)
+	}
+	if strings.Contains(errMsg, "sql") || strings.Contains(errMsg, "SQL") {
+		t.Errorf("error message should not contain SQL details: %q", errMsg)
+	}
+	if strings.Contains(errMsg, "panic") || strings.Contains(errMsg, "goroutine") {
+		t.Errorf("error message should not contain stack traces: %q", errMsg)
+	}
+}
+
+func TestInternalErrorSanitization(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// handleGetProject now returns "project not found" rather than raw DB error
+	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	errMsg := resp["error"]
+	// Should be a generic message, not raw db error like 'project "nonexistent" not found'
+	if strings.Contains(errMsg, `"nonexistent"`) {
+		t.Errorf("error message should not echo back user input verbatim with quotes: %q", errMsg)
+	}
+}
+
+// --- Project Name Validation Tests ---
+
+func TestProjectNameValidation(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Names that are safe to put in a URL path directly
+	invalidNames := []struct {
+		name string
+		desc string
+	}{
+		{"MY-APP", "uppercase letters"},
+		{"-leadinghyphen", "leading hyphen"},
+		{"trailinghyphen-", "trailing hyphen"},
+		{strings.Repeat("a", 200), "excessively long name"},
+		{"a", "single character (must start and end with alnum, with middle)"},
+		{"my;app", "semicolons"},
+	}
+
+	for _, tt := range invalidNames {
+		req := httptest.NewRequest("GET", "/api/projects/"+tt.name, nil)
+		w := httptest.NewRecorder()
+		srv.server.Handler.ServeHTTP(w, req)
+
+		// Invalid names should get 400 (bad request) from validation,
+		// or 404/405 from the Go router itself for certain patterns
+		if w.Code == http.StatusOK {
+			t.Errorf("project name %q (%s) should be rejected, got 200", tt.name, tt.desc)
+		}
+	}
+}
+
+func TestProjectNameValidRegex(t *testing.T) {
+	// Test the validProjectName regex directly
+	valid := []string{
+		"myapp",
+		"my-app",
+		"app123",
+		"a1",
+		"test-project-01",
+	}
+	for _, name := range valid {
+		if !validProjectName.MatchString(name) {
+			t.Errorf("expected %q to be a valid project name", name)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"-start",
+		"end-",
+		"UPPER",
+		"has space",
+		"has.dot",
+		"has_underscore",
+		"a", // too short (regex requires start + middle + end)
+	}
+	for _, name := range invalid {
+		if validProjectName.MatchString(name) {
+			t.Errorf("expected %q to be an invalid project name", name)
+		}
+	}
+}
+
+// --- Deployments Endpoint Tests ---
+
+func TestDeploymentsEndpointReturnsJSONArray(t *testing.T) {
+	srv, database := setupTestServer(t)
+
+	dir := t.TempDir()
+	p := &db.Project{
+		Name:        "deploy-test",
+		Domain:      "deploy.io",
+		LinuxUser:   "fleetdeck-deploy-test",
+		ProjectPath: dir,
+		Template:    "node",
+	}
+	database.CreateProject(p)
+
+	req := httptest.NewRequest("GET", "/api/projects/deploy-test/deployments", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected application/json, got %s", ct)
+	}
+
+	// Should decode as a JSON array (empty for a new project)
+	var deployments []json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&deployments); err != nil {
+		t.Fatalf("response should be a valid JSON array: %v", err)
+	}
+	if len(deployments) != 0 {
+		t.Errorf("expected 0 deployments for new project, got %d", len(deployments))
+	}
+}
+
+func TestDeploymentsEndpointWithData(t *testing.T) {
+	srv, database := setupTestServer(t)
+
+	dir := t.TempDir()
+	p := &db.Project{
+		Name:        "deploy-data",
+		Domain:      "deploy-data.io",
+		LinuxUser:   "fleetdeck-deploy-data",
+		ProjectPath: dir,
+		Template:    "node",
+	}
+	database.CreateProject(p)
+
+	// Create a deployment record
+	dep := &db.Deployment{
+		ProjectID: p.ID,
+		CommitSHA: "abc123",
+		Status:    "success",
+	}
+	database.CreateDeployment(dep)
+
+	req := httptest.NewRequest("GET", "/api/projects/deploy-data/deployments", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var deployments []json.RawMessage
+	if err := json.NewDecoder(w.Body).Decode(&deployments); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(deployments) != 1 {
+		t.Fatalf("expected 1 deployment, got %d", len(deployments))
+	}
+}
+
+func TestDeploymentsEndpointProjectNotFound(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/projects/nonexistent/deployments", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- Manual Deploy Endpoint Tests ---
+
+func TestManualDeployProjectNotFound(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/webhook/deploy/nonexistent", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestManualDeployExistingProject(t *testing.T) {
+	srv, database := setupTestServer(t)
+
+	dir := t.TempDir()
+	database.CreateProject(&db.Project{
+		Name:        "manual-deploy",
+		Domain:      "manual.io",
+		LinuxUser:   "fleetdeck-manual-deploy",
+		ProjectPath: dir,
+		Template:    "node",
+	})
+
+	req := httptest.NewRequest("POST", "/api/webhook/deploy/manual-deploy", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	// Should accept and start async deployment (returns 200 with deploying status)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["status"] != "deploying" {
+		t.Errorf("expected status=deploying, got %q", resp["status"])
+	}
+	if resp["project"] != "manual-deploy" {
+		t.Errorf("expected project=manual-deploy, got %q", resp["project"])
+	}
+}
+
+// --- Content-Type Validation Tests ---
+
+func TestAPIResponsesAreJSON(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/api/projects"},
+		{"GET", "/api/status"},
+	}
+
+	for _, ep := range endpoints {
+		req := httptest.NewRequest(ep.method, ep.path, nil)
+		w := httptest.NewRecorder()
+		srv.server.Handler.ServeHTTP(w, req)
+
+		ct := w.Header().Get("Content-Type")
+		if ct != "application/json" {
+			t.Errorf("%s %s: Content-Type = %q, want application/json", ep.method, ep.path, ct)
+		}
+	}
+}
+
+func TestNotFoundResponseIsJSON(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("404 Content-Type = %q, want application/json", ct)
+	}
+
+	// Should be valid JSON
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("404 response should be valid JSON: %v", err)
+	}
+	if resp["error"] == "" {
+		t.Error("404 response should contain error field")
+	}
+}
+
+// --- ValidProjectName Edge Cases ---
+
+func TestValidProjectNameMiddleware(t *testing.T) {
+	srv, database := setupTestServer(t)
+
+	dir := t.TempDir()
+	database.CreateProject(&db.Project{
+		Name:        "valid-app",
+		Domain:      "valid.io",
+		LinuxUser:   "fleetdeck-valid-app",
+		ProjectPath: dir,
+		Template:    "node",
+	})
+
+	// Valid name should succeed
+	req := httptest.NewRequest("GET", "/api/projects/valid-app", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid project name, got %d", w.Code)
+	}
+
+	// Invalid name with special characters should be rejected
+	req = httptest.NewRequest("GET", "/api/projects/invalid%00app", nil)
+	w = httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Error("null byte in project name should be rejected")
+	}
+}
+
+// --- Auth on Write Endpoints ---
+
+func TestAuthRequiredForWriteEndpoints(t *testing.T) {
+	srv, database := setupAuthTestServer(t)
+
+	dir := t.TempDir()
+	database.CreateProject(&db.Project{
+		Name:        "authtest",
+		Domain:      "auth.io",
+		LinuxUser:   "fleetdeck-authtest",
+		ProjectPath: dir,
+		Template:    "node",
+	})
+
+	writeEndpoints := []struct {
+		method string
+		path   string
+	}{
+		{"POST", "/api/projects/authtest/start"},
+		{"POST", "/api/projects/authtest/stop"},
+		{"POST", "/api/projects/authtest/restart"},
+		{"GET", "/api/projects/authtest/logs"},
+		{"GET", "/api/projects/authtest/backups"},
+	}
+
+	for _, ep := range writeEndpoints {
+		req := httptest.NewRequest(ep.method, ep.path, nil)
+		w := httptest.NewRecorder()
+		srv.server.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s: expected 401 without auth, got %d", ep.method, ep.path, w.Code)
+		}
+	}
+}
