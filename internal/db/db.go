@@ -20,8 +20,19 @@ type Project struct {
 	ProjectPath string
 	Template    string
 	Status      string
+	Source      string // "created", "imported", "discovered"
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type BackupRecord struct {
+	ID          string
+	ProjectID   string
+	Type        string // "manual", "snapshot", "scheduled"
+	Trigger     string // "user", "pre-stop", "pre-restart", "pre-destroy"
+	Path        string
+	SizeBytes   int64
+	CreatedAt   time.Time
 }
 
 type Deployment struct {
@@ -93,6 +104,23 @@ func (db *DB) migrate() error {
 			value TEXT NOT NULL,
 			UNIQUE(project_id, key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS backups (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			type TEXT NOT NULL DEFAULT 'manual',
+			trigger_name TEXT DEFAULT 'user',
+			path TEXT NOT NULL,
+			size_bytes INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+
+	// Column additions for existing databases (safe to re-run)
+	alterStatements := []string{
+		`ALTER TABLE projects ADD COLUMN source TEXT DEFAULT 'created'`,
+	}
+	for _, stmt := range alterStatements {
+		db.conn.Exec(stmt) // ignore "duplicate column" errors
 	}
 
 	for _, m := range migrations {
