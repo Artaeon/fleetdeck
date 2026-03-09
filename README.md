@@ -193,6 +193,38 @@ git push origin main
 | `fleetdeck templates` | List available project templates |
 | `fleetdeck template add <name>` | Import a custom template from directory |
 
+### Rollback
+
+| Command | Description |
+|---------|-------------|
+| `fleetdeck rollback <name>` | Interactive rollback to a previous backup |
+| `fleetdeck rollback <name> --latest` | Rollback to the most recent snapshot |
+| `fleetdeck rollback <name> --backup-id <id>` | Rollback to a specific backup |
+
+### Scheduled Backups
+
+| Command | Description |
+|---------|-------------|
+| `fleetdeck schedule enable <name>` | Install systemd timer for automatic backups |
+| `fleetdeck schedule disable <name>` | Remove backup timer |
+| `fleetdeck schedule list` | List all active backup timers |
+| `fleetdeck schedule status <name>` | Show timer details for a project |
+
+### Audit Log
+
+| Command | Description |
+|---------|-------------|
+| `fleetdeck audit show` | Show recent audit entries |
+| `fleetdeck audit show --project <name>` | Filter audit log by project |
+| `fleetdeck audit show --limit 100` | Show more entries |
+
+### Dashboard & API
+
+| Command | Description |
+|---------|-------------|
+| `fleetdeck dashboard` | Start the web dashboard (default: `:8420`) |
+| `fleetdeck dashboard --addr :9090` | Start on a custom port |
+
 ### Server
 
 | Command | Description |
@@ -322,6 +354,131 @@ auto_snapshot = true
 
 The retention system never deletes the most recent backup of each type.
 
+### Scheduled Backups (systemd)
+
+```bash
+# Enable daily backups
+sudo fleetdeck schedule enable myapp
+
+# Custom schedule
+sudo fleetdeck schedule enable myapp --schedule "weekly"
+sudo fleetdeck schedule enable myapp --schedule "*-*-* 02:00:00"
+
+# List all backup timers
+sudo fleetdeck schedule list
+
+# Disable
+sudo fleetdeck schedule disable myapp
+```
+
+### Rollback
+
+Quick rollback to any previous state:
+
+```bash
+# Interactive — pick from recent backups
+sudo fleetdeck rollback myapp
+
+# Auto-pick latest snapshot
+sudo fleetdeck rollback myapp --latest
+
+# Specific backup
+sudo fleetdeck rollback myapp --backup-id a1b2c3d4
+```
+
+Before every rollback, FleetDeck creates a pre-rollback snapshot so you can undo the undo.
+
+---
+
+## Web Dashboard
+
+FleetDeck includes a built-in web dashboard for visual project management.
+
+```bash
+sudo fleetdeck dashboard
+# ✓ FleetDeck Dashboard started
+# → Listening on http://:8420
+```
+
+**Features:**
+
+- Real-time server stats: CPU, memory, disk, container counts
+- Project grid with status badges, domains, and quick actions
+- Start/stop/restart projects from the browser
+- Live log viewer per project
+- Backup history browser
+- Deployment tracking with webhook integration
+- Dark-themed responsive UI
+- Search and filter projects
+
+### GitHub Webhook Integration
+
+FleetDeck can receive GitHub webhooks for automatic deployments:
+
+1. Point your webhook to `http://your-server:8420/api/webhook/github`
+2. Set Content type to `application/json`
+3. Select "Just the push event"
+4. Optionally set a webhook secret for HMAC verification
+
+On push to `main`/`master`, FleetDeck will:
+- Pull the latest code
+- Run `docker compose build`
+- Run `docker compose up -d`
+- Track the deployment with status and logs
+
+### REST API
+
+All dashboard data is available via the API:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/projects` | GET | List all projects |
+| `/api/projects/{name}` | GET | Get project details |
+| `/api/projects/{name}/logs` | GET | Get project logs |
+| `/api/projects/{name}/backups` | GET | List project backups |
+| `/api/projects/{name}/deployments` | GET | List deployments |
+| `/api/projects/{name}/start` | POST | Start project |
+| `/api/projects/{name}/stop` | POST | Stop project |
+| `/api/projects/{name}/restart` | POST | Restart project |
+| `/api/webhook/github` | POST | GitHub webhook receiver |
+| `/api/webhook/deploy/{name}` | POST | Manual deploy trigger |
+| `/api/status` | GET | Server status |
+
+---
+
+## Secret Encryption
+
+Secrets can be encrypted at rest using AES-256-GCM:
+
+```toml
+[server]
+encryption_key = "your-strong-passphrase"
+```
+
+When configured, all secrets stored via `fleetdeck create` are encrypted with AES-256-GCM using a key derived from the passphrase via PBKDF2. Existing plaintext secrets are read transparently (backwards compatible).
+
+---
+
+## Audit Logging
+
+FleetDeck logs all operations to a structured JSON audit log:
+
+```toml
+[audit]
+enabled = true
+log_path = "/var/log/fleetdeck/audit.log"
+```
+
+```bash
+# View recent audit entries
+sudo fleetdeck audit show
+
+# Filter by project
+sudo fleetdeck audit show --project myapp
+```
+
+Every create, start, stop, restart, destroy, backup, and restore operation is logged with timestamps, project names, and success/failure status. Log files auto-rotate at 10MB.
+
 ---
 
 ## Templates
@@ -391,6 +548,10 @@ sudo fleetdeck template add mystack --from ./my-template/
 - **Ed25519 SSH keys**: Generated per-project, used exclusively for CI/CD deployment
 - **Isolated project directories**: `/opt/fleetdeck/<name>/` with proper ownership
 - **Traefik TLS termination**: Let's Encrypt certificates handled by Traefik — no cert management per project
+- **AES-256-GCM secret encryption**: Secrets encrypted at rest with PBKDF2-derived keys
+- **HMAC webhook verification**: GitHub webhooks verified with SHA-256 signatures
+- **Audit logging**: All operations logged with structured JSON for forensics
+- **Error recovery**: Failed project creation rolls back all completed steps
 - **FleetDeck runs as root**: Required for user creation and cross-project management
 
 ### Database
@@ -450,6 +611,10 @@ auto_snapshot = true
 [discovery]
 search_paths = ["/opt/fleetdeck", "/home", "/srv"]
 exclude_paths = [".cache", ".local", "node_modules", ".git", "vendor"]
+
+[audit]
+enabled = true
+log_path = "/var/log/fleetdeck/audit.log"
 ```
 
 ---
@@ -510,37 +675,35 @@ fleetdeck/
 ├── Makefile
 ├── cmd/                        # CLI commands (cobra)
 │   ├── root.go                 # Root command, config/DB wiring
-│   ├── create.go               # Project creation workflow
+│   ├── create.go               # Project creation with error recovery
+│   ├── dashboard.go            # Web dashboard server
+│   ├── rollback.go             # Quick rollback command
+│   ├── schedule.go             # Scheduled backup management
+│   ├── audit.go                # Audit log viewer
 │   ├── discover.go             # Server discovery
 │   ├── sync.go                 # DB ↔ system reconciliation
 │   ├── backup.go               # Backup CRUD commands
-│   ├── snapshot.go             # Quick snapshot command
 │   ├── lifecycle.go            # start/stop/restart + auto-snapshot
 │   ├── destroy.go              # Project destruction
 │   └── ...
 ├── internal/
+│   ├── audit/                  # Structured JSON audit logging
 │   ├── backup/                 # Backup engine
 │   │   ├── backup.go           # Orchestrator, manifest
-│   │   ├── files.go            # Config file backup
 │   │   ├── database.go         # DB dump (Postgres, MySQL)
-│   │   ├── volumes.go          # Volume archival
 │   │   ├── restore.go          # Full restore pipeline
 │   │   └── retention.go        # Rotation policy
 │   ├── config/                 # TOML configuration
+│   ├── crypto/                 # AES-256-GCM encryption
 │   ├── db/                     # SQLite + CRUD
 │   ├── discover/               # System discovery
-│   │   ├── discover.go         # Orchestrator
 │   │   ├── compose.go          # Compose file scanner
 │   │   ├── containers.go       # Docker container scanner
 │   │   ├── traefik.go          # Traefik label parser
 │   │   └── users.go            # Linux user detection
 │   ├── project/                # Project operations
-│   │   ├── docker.go           # Docker Compose wrapper
-│   │   ├── linux.go            # Linux user management
-│   │   ├── ssh.go              # SSH key generation
-│   │   ├── github.go           # GitHub repo/secrets
-│   │   ├── secrets.go          # Secret generation
-│   │   └── scaffold.go         # Project scaffolding
+│   ├── schedule/               # systemd timer integration
+│   ├── server/                 # Web dashboard + REST API + webhooks
 │   ├── templates/              # Template registry + built-ins
 │   └── ui/                     # Terminal output helpers
 ```
@@ -549,13 +712,18 @@ fleetdeck/
 
 ## Roadmap
 
-- [ ] Web dashboard (project overview, logs, deployments)
-- [ ] Deployment history tracking from GitHub webhooks
-- [ ] Resource monitoring (CPU, RAM per project)
-- [ ] Scheduled backups via cron
+- [x] Web dashboard with real-time project management
+- [x] GitHub webhook receiver for automatic deployments
+- [x] Scheduled backups via systemd timers
+- [x] Secret encryption at rest (AES-256-GCM)
+- [x] Audit logging with rotation
+- [x] Rollback command for quick restoration
+- [x] Error recovery for partial creation failures
+- [ ] Resource monitoring (CPU, RAM per project via cgroups)
 - [ ] Multi-domain support per project
-- [ ] Rollback deployments to previous Docker images
 - [ ] Plugin system for custom hooks
+- [ ] Prometheus metrics endpoint
+- [ ] Email/Slack notifications on deployment failures
 
 ---
 
