@@ -35,6 +35,15 @@ var dashboardCmd = &cobra.Command{
 		fmt.Println()
 		ui.Success("FleetDeck Dashboard started")
 		ui.Info("Listening on http://%s", addr)
+		if cfg.Server.APIToken == "" {
+			ui.Warn("No api_token configured in [server] — dashboard is UNAUTHENTICATED!")
+			ui.Warn("Set api_token in /etc/fleetdeck/config.toml for production use")
+		} else {
+			ui.Info("Authentication enabled (Bearer token / cookie)")
+		}
+		if cfg.Server.WebhookSecret == "" {
+			ui.Warn("No webhook_secret configured — GitHub webhooks are unverified")
+		}
 		ui.Info("Press Ctrl+C to stop")
 		fmt.Println()
 

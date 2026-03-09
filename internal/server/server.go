@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,32 +24,46 @@ type Server struct {
 	db            *db.DB
 	server        *http.Server
 	webhookSecret string
+	apiToken      string
+}
+
+// GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
+func GenerateAPIToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	s := &Server{
-		cfg: cfg,
-		db:  database,
+		cfg:           cfg,
+		db:            database,
+		webhookSecret: cfg.Server.WebhookSecret,
+		apiToken:      cfg.Server.APIToken,
 	}
 
 	mux := http.NewServeMux()
 
-	// API routes
-	mux.HandleFunc("GET /api/projects", s.handleListProjects)
-	mux.HandleFunc("GET /api/projects/{name}", s.handleGetProject)
-	mux.HandleFunc("POST /api/projects/{name}/start", s.handleStartProject)
-	mux.HandleFunc("POST /api/projects/{name}/stop", s.handleStopProject)
-	mux.HandleFunc("POST /api/projects/{name}/restart", s.handleRestartProject)
-	mux.HandleFunc("GET /api/projects/{name}/logs", s.handleProjectLogs)
-	mux.HandleFunc("GET /api/projects/{name}/backups", s.handleListBackups)
-	mux.HandleFunc("GET /api/status", s.handleServerStatus)
+	// API routes (require auth)
+	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
+	mux.HandleFunc("GET /api/projects/{name}", s.requireAuth(s.handleGetProject))
+	mux.HandleFunc("POST /api/projects/{name}/start", s.requireAuth(s.handleStartProject))
+	mux.HandleFunc("POST /api/projects/{name}/stop", s.requireAuth(s.handleStopProject))
+	mux.HandleFunc("POST /api/projects/{name}/restart", s.requireAuth(s.handleRestartProject))
+	mux.HandleFunc("GET /api/projects/{name}/logs", s.requireAuth(s.handleProjectLogs))
+	mux.HandleFunc("GET /api/projects/{name}/backups", s.requireAuth(s.handleListBackups))
+	mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
 
-	// Webhook routes
+	// Webhook routes (use HMAC auth, not bearer token)
 	s.AddWebhookRoutes(mux)
 
-	// Dashboard UI
-	mux.HandleFunc("GET /", s.handleDashboard)
-	mux.HandleFunc("GET /project/{name}", s.handleProjectPage)
+	// Dashboard UI (require auth via cookie or query param)
+	mux.HandleFunc("GET /login", s.handleLogin)
+	mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	mux.HandleFunc("GET /", s.requirePageAuth(s.handleDashboard))
+	mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
 	mux.HandleFunc("GET /static/app.js", s.handleJS)
 	mux.HandleFunc("GET /static/style.css", s.handleCSS)
 
@@ -58,6 +76,83 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	}
 
 	return s
+}
+
+// requireAuth validates API requests via Bearer token or cookie.
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.apiToken == "" {
+			// No token configured — allow (development mode)
+			next(w, r)
+			return
+		}
+
+		// Check Authorization header
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, "Bearer ") {
+			token := strings.TrimPrefix(auth, "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
+				next(w, r)
+				return
+			}
+		}
+
+		// Check session cookie
+		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.apiToken)) == 1 {
+				next(w, r)
+				return
+			}
+		}
+
+		writeError(w, http.StatusUnauthorized, "unauthorized: provide Bearer token or login via dashboard")
+	}
+}
+
+// requirePageAuth redirects to login for unauthenticated page requests.
+func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.apiToken == "" {
+			next(w, r)
+			return
+		}
+
+		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.apiToken)) == 1 {
+				next(w, r)
+				return
+			}
+		}
+
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(loginHTML))
+}
+
+func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	token := r.FormValue("token")
+
+	if s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "fleetdeck_session",
+			Value:    s.apiToken,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400 * 7, // 7 days
+		})
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte(loginErrorHTML))
 }
 
 func (s *Server) Start() error {
@@ -231,6 +326,11 @@ func (s *Server) handleProjectLogs(w http.ResponseWriter, r *http.Request) {
 	lines := r.URL.Query().Get("lines")
 	if lines == "" {
 		lines = "100"
+	}
+	// Validate lines is a positive integer to prevent injection
+	if n, err := strconv.Atoi(lines); err != nil || n < 1 || n > 10000 {
+		writeError(w, http.StatusBadRequest, "lines must be a number between 1 and 10000")
+		return
 	}
 
 	cmd := exec.Command("docker", "compose", "logs", "--tail", lines, "--no-color")

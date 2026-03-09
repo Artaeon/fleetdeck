@@ -26,6 +26,8 @@ type ServerConfig struct {
 	BasePath      string `toml:"base_path"`
 	Domain        string `toml:"domain"`
 	EncryptionKey string `toml:"encryption_key"`
+	APIToken      string `toml:"api_token"`
+	WebhookSecret string `toml:"webhook_secret"`
 }
 
 type TraefikConfig struct {

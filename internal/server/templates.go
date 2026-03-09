@@ -96,6 +96,56 @@ const dashboardHTML = `<!DOCTYPE html>
 </body>
 </html>`
 
+const loginHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FleetDeck - Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+        <div class="card" style="width:100%;max-width:400px">
+            <h2 style="margin-bottom:1rem;text-align:center">FleetDeck</h2>
+            <form method="POST" action="/login">
+                <label class="stat-label" style="display:block;margin-bottom:0.5rem">API Token</label>
+                <input type="password" name="token" class="input-search" style="width:100%;margin-bottom:1rem" placeholder="Enter your API token" autofocus>
+                <button type="submit" class="btn" style="width:100%;justify-content:center;padding:0.6rem">Login</button>
+            </form>
+            <p style="color:var(--text-dim);font-size:0.8rem;margin-top:1rem;text-align:center">
+                Token is configured in /etc/fleetdeck/config.toml under [server] api_token
+            </p>
+        </div>
+    </div>
+</body>
+</html>`
+
+const loginErrorHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FleetDeck - Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+        <div class="card" style="width:100%;max-width:400px">
+            <h2 style="margin-bottom:1rem;text-align:center">FleetDeck</h2>
+            <div style="background:rgba(239,68,68,0.15);border:1px solid var(--red);border-radius:var(--radius);padding:0.75rem;margin-bottom:1rem;color:var(--red);font-size:0.875rem;text-align:center">
+                Invalid token. Please try again.
+            </div>
+            <form method="POST" action="/login">
+                <label class="stat-label" style="display:block;margin-bottom:0.5rem">API Token</label>
+                <input type="password" name="token" class="input-search" style="width:100%;margin-bottom:1rem" placeholder="Enter your API token" autofocus>
+                <button type="submit" class="btn" style="width:100%;justify-content:center;padding:0.6rem">Login</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>`
+
 const projectHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
