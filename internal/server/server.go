@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -17,8 +19,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetdeck/fleetdeck/internal/audit"
+	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/health"
+	"github.com/fleetdeck/fleetdeck/internal/project"
+	"github.com/fleetdeck/fleetdeck/internal/templates"
 )
 
 type Server struct {
@@ -73,13 +80,22 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 
 	// API routes (require auth)
 	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
+	mux.HandleFunc("POST /api/projects", s.requireAuth(s.handleCreateProject))
 	mux.HandleFunc("GET /api/projects/{name}", s.requireAuth(s.handleGetProject))
+	mux.HandleFunc("DELETE /api/projects/{name}", s.requireAuth(s.handleDeleteProject))
 	mux.HandleFunc("POST /api/projects/{name}/start", s.requireAuth(s.handleStartProject))
 	mux.HandleFunc("POST /api/projects/{name}/stop", s.requireAuth(s.handleStopProject))
 	mux.HandleFunc("POST /api/projects/{name}/restart", s.requireAuth(s.handleRestartProject))
 	mux.HandleFunc("GET /api/projects/{name}/logs", s.requireAuth(s.handleProjectLogs))
+	mux.HandleFunc("GET /api/projects/{name}/health", s.requireAuth(s.handleProjectHealth))
 	mux.HandleFunc("GET /api/projects/{name}/backups", s.requireAuth(s.handleListBackups))
+	mux.HandleFunc("POST /api/projects/{name}/backup", s.requireAuth(s.handleCreateBackup))
+	mux.HandleFunc("POST /api/projects/{name}/backup/{id}/restore", s.requireAuth(s.handleRestoreBackup))
+	mux.HandleFunc("DELETE /api/projects/{name}/backup/{id}", s.requireAuth(s.handleDeleteBackup))
+	mux.HandleFunc("GET /api/projects/{name}/deployments", s.requireAuth(s.handleListDeployments))
 	mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
+	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
+	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
 	// Webhook routes (use HMAC auth, not bearer token)
 	s.AddWebhookRoutes(mux)
@@ -221,6 +237,15 @@ type apiBackup struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type apiDeployment struct {
+	ID         string     `json:"id"`
+	CommitSHA  string     `json:"commit_sha"`
+	Status     string     `json:"status"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Log        string     `json:"log,omitempty"`
+}
+
 type apiStatus struct {
 	CPUs       int    `json:"cpus"`
 	MemUsed    string `json:"mem_used"`
@@ -262,6 +287,129 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, result)
+}
+
+func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string `json:"name"`
+		Domain   string `json:"domain"`
+		Template string `json:"template"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if req.Name == "" || req.Domain == "" {
+		writeError(w, http.StatusBadRequest, "name and domain are required")
+		return
+	}
+
+	if err := project.ValidateName(req.Name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.Template == "" {
+		req.Template = "custom"
+	}
+
+	tmpl, err := templates.Get(req.Template)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown template: %s", req.Template))
+		return
+	}
+
+	// Check for duplicate
+	if _, err := s.db.GetProject(req.Name); err == nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("project %q already exists", req.Name))
+		return
+	}
+
+	projectPath := s.cfg.ProjectPath(req.Name)
+	linuxUser := project.LinuxUserName(req.Name)
+
+	data := templates.TemplateData{
+		Name:            req.Name,
+		Domain:          req.Domain,
+		PostgresVersion: s.cfg.Defaults.PostgresVersion,
+	}
+
+	// Scaffold the project directory
+	if err := project.ScaffoldProject(projectPath, tmpl, data); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("scaffolding project: %v", err))
+		return
+	}
+
+	// Store in database
+	p := &db.Project{
+		Name:        req.Name,
+		Domain:      req.Domain,
+		LinuxUser:   linuxUser,
+		ProjectPath: projectPath,
+		Template:    req.Template,
+		Status:      "created",
+		Source:      "created",
+	}
+	if err := s.db.CreateProject(p); err != nil {
+		// Clean up scaffolded directory on DB failure
+		os.RemoveAll(projectPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("saving to database: %v", err))
+		return
+	}
+
+	audit.Log("project.create", req.Name, fmt.Sprintf("template=%s domain=%s via=api", req.Template, req.Domain), true)
+
+	_, total := countContainers(projectPath)
+	writeJSON(w, apiProject{
+		ID:          p.ID,
+		Name:        p.Name,
+		Domain:      p.Domain,
+		LinuxUser:   p.LinuxUser,
+		ProjectPath: p.ProjectPath,
+		Template:    p.Template,
+		Status:      p.Status,
+		Source:      p.Source,
+		Containers:  total,
+		CreatedAt:   p.CreatedAt,
+	})
+}
+
+func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	keepData := r.URL.Query().Get("keep-data") == "true"
+
+	mu := s.projectMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Stop containers
+	_ = project.ComposeDown(p.ProjectPath)
+
+	// Remove data unless asked to keep it
+	if !keepData {
+		os.RemoveAll(p.ProjectPath)
+	}
+
+	// Remove from database
+	if err := s.db.DeleteProject(name); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deleting from database: %v", err))
+		return
+	}
+
+	audit.Log("project.destroy", name, fmt.Sprintf("keep_data=%v via=api", keepData), true)
+	writeJSON(w, map[string]string{"status": "deleted"})
 }
 
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +533,28 @@ func (s *Server) handleProjectLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"logs": string(out)})
 }
 
+func (s *Server) handleProjectHealth(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	report, err := health.CheckProject(p.ProjectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("health check failed: %v", err))
+		return
+	}
+
+	writeJSON(w, report)
+}
+
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	p, err := s.db.GetProject(name)
@@ -409,6 +579,164 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 			SizeBytes: b.SizeBytes,
 			Size:      formatSize(b.SizeBytes),
 			CreatedAt: b.CreatedAt,
+		})
+	}
+
+	writeJSON(w, result)
+}
+
+func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	record, err := backup.CreateBackup(s.cfg, s.db, p, "manual", "api", backup.Options{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("backup failed: %v", err))
+		return
+	}
+
+	audit.Log("backup.create", name, fmt.Sprintf("backup_id=%s via=api", record.ID), true)
+
+	writeJSON(w, apiBackup{
+		ID:        record.ID,
+		Type:      record.Type,
+		Trigger:   record.Trigger,
+		Path:      record.Path,
+		SizeBytes: record.SizeBytes,
+		Size:      formatSize(record.SizeBytes),
+		CreatedAt: record.CreatedAt,
+	})
+}
+
+func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	backupID := r.PathValue("id")
+
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	record, err := s.db.GetBackupRecord(backupID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "backup not found")
+		return
+	}
+
+	// Verify the backup belongs to this project
+	if record.ProjectID != p.ID {
+		writeError(w, http.StatusNotFound, "backup not found for this project")
+		return
+	}
+
+	mu := s.projectMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if err := backup.RestoreBackup(record.Path, p.ProjectPath, backup.RestoreOptions{}); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("restore failed: %v", err))
+		return
+	}
+
+	s.db.UpdateProjectStatus(name, "running")
+	audit.Log("backup.restore", name, fmt.Sprintf("backup_id=%s via=api", backupID), true)
+
+	writeJSON(w, map[string]string{"status": "restored"})
+}
+
+func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	backupID := r.PathValue("id")
+
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	record, err := s.db.GetBackupRecord(backupID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "backup not found")
+		return
+	}
+
+	// Verify the backup belongs to this project
+	if record.ProjectID != p.ID {
+		writeError(w, http.StatusNotFound, "backup not found for this project")
+		return
+	}
+
+	// Remove backup files from disk
+	if record.Path != "" {
+		os.RemoveAll(record.Path)
+	}
+
+	// Remove from database
+	if err := s.db.DeleteBackupRecord(backupID); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deleting backup record: %v", err))
+		return
+	}
+
+	audit.Log("backup.delete", name, fmt.Sprintf("backup_id=%s via=api", backupID), true)
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	p, err := s.db.GetProject(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	deployments, err := s.db.ListDeployments(p.ID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("listing deployments: %v", err))
+		return
+	}
+
+	result := make([]apiDeployment, 0, len(deployments))
+	for _, d := range deployments {
+		result = append(result, apiDeployment{
+			ID:         d.ID,
+			CommitSHA:  d.CommitSHA,
+			Status:     d.Status,
+			StartedAt:  d.StartedAt,
+			FinishedAt: d.FinishedAt,
+			Log:        d.Log,
 		})
 	}
 
@@ -468,6 +796,100 @@ func (s *Server) handleServerStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, status)
+}
+
+func (s *Server) handleSystemHealth(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.db.ListProjects()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list projects")
+		return
+	}
+
+	type projectHealthSummary struct {
+		Name    string   `json:"name"`
+		Healthy bool     `json:"healthy"`
+		Errors  []string `json:"errors,omitempty"`
+	}
+
+	allHealthy := true
+	results := make([]projectHealthSummary, 0, len(projects))
+	for _, p := range projects {
+		summary := projectHealthSummary{Name: p.Name}
+		report, err := health.CheckProject(p.ProjectPath)
+		if err != nil {
+			summary.Healthy = false
+			summary.Errors = []string{err.Error()}
+			allHealthy = false
+		} else {
+			summary.Healthy = report.Healthy
+			summary.Errors = report.Errors
+			if !report.Healthy {
+				allHealthy = false
+			}
+		}
+		results = append(results, summary)
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"healthy":  allHealthy,
+		"projects": results,
+	})
+}
+
+func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+
+	logPath := s.cfg.Audit.LogPath
+	if logPath == "" {
+		logPath = audit.DefaultLogPath
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, []audit.AuditEntry{})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("opening audit log: %v", err))
+		return
+	}
+	defer f.Close()
+
+	// Read all lines, then return the last N entries
+	var allEntries []audit.AuditEntry
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var entry audit.AuditEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		allEntries = append(allEntries, entry)
+	}
+
+	// Return the last `limit` entries in reverse chronological order
+	start := 0
+	if len(allEntries) > limit {
+		start = len(allEntries) - limit
+	}
+	recent := allEntries[start:]
+
+	// Reverse so most recent is first
+	for i, j := 0, len(recent)-1; i < j; i, j = i+1, j-1 {
+		recent[i], recent[j] = recent[j], recent[i]
+	}
+
+	writeJSON(w, recent)
 }
 
 // --- Helpers ---

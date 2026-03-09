@@ -26,7 +26,6 @@ type WebhookConfig struct {
 func (s *Server) AddWebhookRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/webhook/github", s.handleGitHubWebhook)
 	mux.HandleFunc("POST /api/webhook/deploy/{name}", s.handleManualDeploy)
-	mux.HandleFunc("GET /api/projects/{name}/deployments", s.handleListDeployments)
 }
 
 type githubPushPayload struct {
@@ -110,44 +109,6 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	go s.runDeployment(p, "", "manual")
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
-}
-
-func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	p, err := s.db.GetProject(name)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
-		return
-	}
-
-	deployments, err := s.db.ListDeployments(p.ID, 20)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	type apiDeployment struct {
-		ID         string     `json:"id"`
-		CommitSHA  string     `json:"commit_sha"`
-		Status     string     `json:"status"`
-		StartedAt  time.Time  `json:"started_at"`
-		FinishedAt *time.Time `json:"finished_at,omitempty"`
-		Log        string     `json:"log,omitempty"`
-	}
-
-	result := make([]apiDeployment, 0, len(deployments))
-	for _, d := range deployments {
-		result = append(result, apiDeployment{
-			ID:         d.ID,
-			CommitSHA:  d.CommitSHA,
-			Status:     d.Status,
-			StartedAt:  d.StartedAt,
-			FinishedAt: d.FinishedAt,
-			Log:        d.Log,
-		})
-	}
-
-	writeJSON(w, result)
 }
 
 func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
