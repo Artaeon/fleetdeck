@@ -104,6 +104,7 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			applyEnvOverrides(cfg)
 			return cfg, nil
 		}
 		return nil, err
@@ -113,7 +114,35 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Environment variables take precedence over config file values.
+	// This allows keeping secrets out of config.toml entirely.
+	applyEnvOverrides(cfg)
+
 	return cfg, nil
+}
+
+// applyEnvOverrides reads sensitive values from environment variables,
+// overriding any values set in the config file. This is the recommended
+// way to configure secrets in production.
+func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("FLEETDECK_API_TOKEN"); v != "" {
+		cfg.Server.APIToken = v
+	}
+	if v := os.Getenv("FLEETDECK_WEBHOOK_SECRET"); v != "" {
+		cfg.Server.WebhookSecret = v
+	}
+	if v := os.Getenv("FLEETDECK_ENCRYPTION_KEY"); v != "" {
+		cfg.Server.EncryptionKey = v
+	}
+	if v := os.Getenv("FLEETDECK_BASE_PATH"); v != "" {
+		cfg.Server.BasePath = v
+	}
+	if v := os.Getenv("FLEETDECK_DOMAIN"); v != "" {
+		cfg.Server.Domain = v
+	}
+	if v := os.Getenv("FLEETDECK_BACKUP_PATH"); v != "" {
+		cfg.Backup.BasePath = v
+	}
 }
 
 func (c *Config) Save(path string) error {
