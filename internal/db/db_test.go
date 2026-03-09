@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fleetdeck/fleetdeck/internal/crypto"
 )
 
 func newTestDB(t *testing.T) *DB {
@@ -455,5 +457,233 @@ func TestGetOldestBackups(t *testing.T) {
 	}
 	if len(oldest) != 2 {
 		t.Errorf("expected 2 oldest backups, got %d", len(oldest))
+	}
+}
+
+// --- Secret tests ---
+
+func createTestProject(t *testing.T, db *DB, name string) *Project {
+	t.Helper()
+	p := &Project{
+		Name:        name,
+		Domain:      name + ".com",
+		LinuxUser:   "fleetdeck-" + name,
+		ProjectPath: "/opt/fleetdeck/" + name,
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("create project %s: %v", name, err)
+	}
+	return p
+}
+
+func TestSetAndGetSecretPlaintext(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-plain")
+
+	if err := db.SetSecret(p.ID, "API_KEY", "my-secret-value"); err != nil {
+		t.Fatalf("SetSecret: %v", err)
+	}
+
+	s, err := db.GetSecret(p.ID, "API_KEY")
+	if err != nil {
+		t.Fatalf("GetSecret: %v", err)
+	}
+	if s.Key != "API_KEY" {
+		t.Errorf("expected key API_KEY, got %s", s.Key)
+	}
+	if s.Value != "my-secret-value" {
+		t.Errorf("expected value my-secret-value, got %s", s.Value)
+	}
+}
+
+func TestSetSecretUpsert(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-upsert")
+
+	if err := db.SetSecret(p.ID, "DB_PASS", "old-password"); err != nil {
+		t.Fatalf("SetSecret (first): %v", err)
+	}
+
+	if err := db.SetSecret(p.ID, "DB_PASS", "new-password"); err != nil {
+		t.Fatalf("SetSecret (upsert): %v", err)
+	}
+
+	s, err := db.GetSecret(p.ID, "DB_PASS")
+	if err != nil {
+		t.Fatalf("GetSecret: %v", err)
+	}
+	if s.Value != "new-password" {
+		t.Errorf("expected updated value new-password, got %s", s.Value)
+	}
+}
+
+func TestGetSecretNotFound(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-notfound")
+
+	_, err := db.GetSecret(p.ID, "NONEXISTENT")
+	if err == nil {
+		t.Error("expected error for nonexistent secret")
+	}
+}
+
+func TestListSecrets(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-list")
+
+	db.SetSecret(p.ID, "KEY_A", "val-a")
+	db.SetSecret(p.ID, "KEY_B", "val-b")
+	db.SetSecret(p.ID, "KEY_C", "val-c")
+
+	secrets, err := db.ListSecrets(p.ID)
+	if err != nil {
+		t.Fatalf("ListSecrets: %v", err)
+	}
+	if len(secrets) != 3 {
+		t.Errorf("expected 3 secrets, got %d", len(secrets))
+	}
+	// Should be ordered by key
+	if secrets[0].Key != "KEY_A" {
+		t.Errorf("expected first secret to be KEY_A, got %s", secrets[0].Key)
+	}
+}
+
+func TestDeleteSecret(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-delete")
+
+	db.SetSecret(p.ID, "TO_DELETE", "value")
+
+	if err := db.DeleteSecret(p.ID, "TO_DELETE"); err != nil {
+		t.Fatalf("DeleteSecret: %v", err)
+	}
+
+	_, err := db.GetSecret(p.ID, "TO_DELETE")
+	if err == nil {
+		t.Error("expected secret to be deleted")
+	}
+}
+
+func TestDeleteSecretNotFound(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-del-notfound")
+
+	err := db.DeleteSecret(p.ID, "NONEXISTENT")
+	if err == nil {
+		t.Error("expected error for deleting nonexistent secret")
+	}
+}
+
+func TestSetAndGetSecretEncrypted(t *testing.T) {
+	db := newTestDB(t)
+	key := crypto.DeriveKeyFromPassphrase("test-encryption-key")
+	db.SetEncryptionKey(key)
+
+	p := createTestProject(t, db, "secret-enc")
+
+	if err := db.SetSecret(p.ID, "DB_PASSWORD", "super-secret-123"); err != nil {
+		t.Fatalf("SetSecret (encrypted): %v", err)
+	}
+
+	s, err := db.GetSecret(p.ID, "DB_PASSWORD")
+	if err != nil {
+		t.Fatalf("GetSecret (encrypted): %v", err)
+	}
+	if s.Value != "super-secret-123" {
+		t.Errorf("expected decrypted value super-secret-123, got %s", s.Value)
+	}
+}
+
+func TestEncryptedSecretStoredAsCiphertext(t *testing.T) {
+	db := newTestDB(t)
+	key := crypto.DeriveKeyFromPassphrase("test-key")
+	db.SetEncryptionKey(key)
+
+	p := createTestProject(t, db, "secret-cipher")
+
+	db.SetSecret(p.ID, "TOKEN", "plaintext-token")
+
+	// Read raw value from DB to verify it's not stored in plaintext
+	var rawValue string
+	err := db.conn.QueryRow(
+		`SELECT value FROM secrets WHERE project_id = ? AND key = ?`,
+		p.ID, "TOKEN",
+	).Scan(&rawValue)
+	if err != nil {
+		t.Fatalf("raw query: %v", err)
+	}
+	if rawValue == "plaintext-token" {
+		t.Error("expected value to be encrypted in DB, but it was plaintext")
+	}
+	if len(rawValue) < 4 || rawValue[:4] != "enc:" {
+		t.Errorf("expected enc: prefix, got: %s", rawValue[:10])
+	}
+}
+
+func TestBackwardsCompatPlaintextRead(t *testing.T) {
+	db := newTestDB(t)
+	p := createTestProject(t, db, "secret-compat")
+
+	// Store a plaintext secret directly (simulating pre-encryption data)
+	_, err := db.conn.Exec(
+		`INSERT INTO secrets (id, project_id, key, value) VALUES (?, ?, ?, ?)`,
+		"compat-id", p.ID, "OLD_SECRET", "legacy-plaintext-value",
+	)
+	if err != nil {
+		t.Fatalf("inserting legacy secret: %v", err)
+	}
+
+	// Now enable encryption and read the old plaintext value
+	key := crypto.DeriveKeyFromPassphrase("new-key")
+	db.SetEncryptionKey(key)
+
+	s, err := db.GetSecret(p.ID, "OLD_SECRET")
+	if err != nil {
+		t.Fatalf("GetSecret for legacy plaintext: %v", err)
+	}
+	if s.Value != "legacy-plaintext-value" {
+		t.Errorf("expected legacy-plaintext-value, got %s", s.Value)
+	}
+}
+
+func TestListSecretsEncrypted(t *testing.T) {
+	db := newTestDB(t)
+	key := crypto.DeriveKeyFromPassphrase("list-enc-key")
+	db.SetEncryptionKey(key)
+
+	p := createTestProject(t, db, "secret-list-enc")
+
+	db.SetSecret(p.ID, "SEC_A", "val-a")
+	db.SetSecret(p.ID, "SEC_B", "val-b")
+
+	secrets, err := db.ListSecrets(p.ID)
+	if err != nil {
+		t.Fatalf("ListSecrets (encrypted): %v", err)
+	}
+	if len(secrets) != 2 {
+		t.Fatalf("expected 2 secrets, got %d", len(secrets))
+	}
+	if secrets[0].Value != "val-a" {
+		t.Errorf("expected val-a, got %s", secrets[0].Value)
+	}
+	if secrets[1].Value != "val-b" {
+		t.Errorf("expected val-b, got %s", secrets[1].Value)
+	}
+}
+
+func TestEncryptedReadWithNoKeyFails(t *testing.T) {
+	db := newTestDB(t)
+	key := crypto.DeriveKeyFromPassphrase("temp-key")
+	db.SetEncryptionKey(key)
+
+	p := createTestProject(t, db, "secret-nokey")
+	db.SetSecret(p.ID, "ENCRYPTED_VAL", "secret-data")
+
+	// Remove the encryption key
+	db.SetEncryptionKey(nil)
+
+	_, err := db.GetSecret(p.ID, "ENCRYPTED_VAL")
+	if err == nil {
+		t.Error("expected error when reading encrypted value without key")
 	}
 }
