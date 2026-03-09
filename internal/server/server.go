@@ -16,9 +16,10 @@ import (
 )
 
 type Server struct {
-	cfg    *config.Config
-	db     *db.DB
-	server *http.Server
+	cfg           *config.Config
+	db            *db.DB
+	server        *http.Server
+	webhookSecret string
 }
 
 func New(cfg *config.Config, database *db.DB, addr string) *Server {
@@ -38,6 +39,9 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/projects/{name}/logs", s.handleProjectLogs)
 	mux.HandleFunc("GET /api/projects/{name}/backups", s.handleListBackups)
 	mux.HandleFunc("GET /api/status", s.handleServerStatus)
+
+	// Webhook routes
+	s.AddWebhookRoutes(mux)
 
 	// Dashboard UI
 	mux.HandleFunc("GET /", s.handleDashboard)

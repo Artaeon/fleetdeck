@@ -21,7 +21,10 @@ var createCmd = &cobra.Command{
 - SSH keypair for CI/CD
 - GitHub repository with deploy secrets
 - Docker Compose configuration with Traefik labels
-- Generated .env file with secrets`,
+- Generated .env file with secrets
+
+If any step fails, all previously completed steps are rolled back
+automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -56,11 +59,36 @@ var createCmd = &cobra.Command{
 			totalSteps = 5
 		}
 
+		// Cleanup-on-failure: track completed steps and roll back in reverse
+		// if any subsequent step fails.
+		success := false
+		var cleanups []func()
+		defer func() {
+			if success {
+				return
+			}
+			if len(cleanups) == 0 {
+				return
+			}
+			fmt.Println()
+			ui.Warn("Creation failed, rolling back completed steps...")
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
+			audit.Log("project.create", name, "rolled back after failure", false)
+		}()
+
 		// Step 1: Create Linux user
 		ui.Step(1, totalSteps, "Creating Linux user %s...", linuxUser)
 		if err := project.CreateLinuxUser(name, projectPath); err != nil {
 			return fmt.Errorf("creating Linux user: %w", err)
 		}
+		cleanups = append(cleanups, func() {
+			ui.Info("Removing Linux user %s...", linuxUser)
+			if err := project.DeleteLinuxUser(name); err != nil {
+				ui.Warn("Cleanup: could not delete user %s: %v", linuxUser, err)
+			}
+		})
 		ui.Success("User %s created", linuxUser)
 
 		// Step 2: Create project directory structure
@@ -68,6 +96,12 @@ var createCmd = &cobra.Command{
 		if err := project.ScaffoldProject(projectPath, tmpl, data); err != nil {
 			return fmt.Errorf("scaffolding project: %w", err)
 		}
+		cleanups = append(cleanups, func() {
+			ui.Info("Removing project directory %s...", projectPath)
+			if err := os.RemoveAll(projectPath); err != nil {
+				ui.Warn("Cleanup: could not remove directory %s: %v", projectPath, err)
+			}
+		})
 		ui.Success("Project files created")
 
 		// Step 3: Generate .env
@@ -75,6 +109,7 @@ var createCmd = &cobra.Command{
 		if err := project.GenerateEnvFile(projectPath, tmpl, data); err != nil {
 			return fmt.Errorf("generating .env: %w", err)
 		}
+		// .env is inside projectPath — covered by directory cleanup
 		ui.Success("Environment file generated")
 
 		// Step 4: Generate SSH keypair
@@ -83,6 +118,7 @@ var createCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("generating SSH keys: %w", err)
 		}
+		// SSH keys are inside projectPath — covered by directory cleanup
 		ui.Success("SSH keypair generated")
 
 		// Step 5: Set up authorized_keys and fix ownership
@@ -93,6 +129,7 @@ var createCmd = &cobra.Command{
 		if err := project.ChownProjectDir(name, projectPath); err != nil {
 			return fmt.Errorf("setting ownership: %w", err)
 		}
+		// authorized_keys are inside projectPath — covered by directory cleanup
 		ui.Success("SSH access configured")
 
 		repoFullName := ""
@@ -108,6 +145,12 @@ var createCmd = &cobra.Command{
 			} else {
 				repoFullName = name
 			}
+			cleanups = append(cleanups, func() {
+				ui.Info("Deleting GitHub repository %s...", repoFullName)
+				if err := project.DeleteGitHubRepo(repoFullName); err != nil {
+					ui.Warn("Cleanup: could not delete GitHub repo %s: %v", repoFullName, err)
+				}
+			})
 			ui.Success("Repository created: %s", repoURL)
 
 			// Step 7: Set GitHub secrets
@@ -122,8 +165,8 @@ var createCmd = &cobra.Command{
 			}
 
 			secrets := map[string]string{
-				"DEPLOY_HOST":    serverIP,
-				"DEPLOY_USER":    linuxUser,
+				"DEPLOY_HOST":     serverIP,
+				"DEPLOY_USER":     linuxUser,
 				"SSH_PRIVATE_KEY": string(privKeyData),
 			}
 			for key, value := range secrets {
@@ -131,6 +174,7 @@ var createCmd = &cobra.Command{
 					return fmt.Errorf("setting secret %s: %w", key, err)
 				}
 			}
+			// GitHub secrets are part of the repo — covered by repo deletion cleanup
 			ui.Success("GitHub secrets configured")
 
 			// Step 8: Push initial code
@@ -156,8 +200,17 @@ var createCmd = &cobra.Command{
 			Status:      "created",
 		}
 		if err := d.CreateProject(proj); err != nil {
-			ui.Warn("Could not save to database: %v", err)
+			return fmt.Errorf("saving to database: %w", err)
 		}
+		cleanups = append(cleanups, func() {
+			ui.Info("Removing database entry for %s...", name)
+			if err := d.DeleteProject(name); err != nil {
+				ui.Warn("Cleanup: could not remove database entry: %v", err)
+			}
+		})
+
+		// All steps completed successfully — prevent cleanup
+		success = true
 
 		fmt.Println()
 		ui.Success("Project %s created!", ui.Bold(name))
@@ -192,4 +245,3 @@ func init() {
 
 	rootCmd.AddCommand(createCmd)
 }
-
