@@ -31,6 +31,25 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 		return fmt.Errorf("parsing manifest: %w", err)
 	}
 
+	// Verify backup integrity before restoring
+	ui.Info("Verifying backup integrity before restore...")
+	results, err := VerifyBackup(backupPath)
+	if err != nil {
+		return fmt.Errorf("pre-restore verification failed: %w", err)
+	}
+	if HasFailures(results) {
+		total, ok, failed, missing := CountResults(results)
+		for _, r := range results {
+			if r.Status != VerifyOK {
+				ui.Error("  %s: %v", r.Component.Name, r.Error)
+			}
+		}
+		return fmt.Errorf("backup verification failed: %d/%d OK, %d failed, %d missing — aborting restore",
+			ok, total, failed, missing)
+	}
+	ui.Success("Backup integrity verified (%d components OK)", len(results))
+	fmt.Println()
+
 	restoreAll := !opts.FilesOnly && !opts.VolumesOnly && !opts.DBOnly
 
 	totalSteps := 0
