@@ -14,11 +14,18 @@ type Config struct {
 	Defaults  DefaultsConfig  `toml:"defaults"`
 	Backup    BackupConfig    `toml:"backup"`
 	Discovery DiscoveryConfig `toml:"discovery"`
+	Audit     AuditConfig     `toml:"audit"`
+}
+
+type AuditConfig struct {
+	Enabled bool   `toml:"enabled"`
+	LogPath string `toml:"log_path"`
 }
 
 type ServerConfig struct {
-	BasePath string `toml:"base_path"`
-	Domain   string `toml:"domain"`
+	BasePath      string `toml:"base_path"`
+	Domain        string `toml:"domain"`
+	EncryptionKey string `toml:"encryption_key"`
 }
 
 type TraefikConfig struct {
@@ -77,6 +84,10 @@ func DefaultConfig() *Config {
 		Discovery: DiscoveryConfig{
 			SearchPaths:  []string{"/opt/fleetdeck", "/home", "/srv"},
 			ExcludePaths: []string{".cache", ".local", "node_modules", ".git", "vendor"},
+		},
+		Audit: AuditConfig{
+			Enabled: true,
+			LogPath: "/var/log/fleetdeck/audit.log",
 		},
 	}
 }
