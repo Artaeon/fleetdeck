@@ -2,8 +2,10 @@ package project
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strings"
 )
 
@@ -20,7 +22,7 @@ func CreateLinuxUser(projectName, projectPath string) error {
 
 	cmd := exec.Command("useradd",
 		"--system",
-		"--shell", "/bin/bash",
+		"--shell", "/usr/sbin/nologin",
 		"--home-dir", projectPath,
 		"--create-home",
 		username,
@@ -53,13 +55,18 @@ func DeleteLinuxUser(projectName string) error {
 }
 
 func SetupAuthorizedKeys(projectPath, publicKey string) error {
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(
-		`mkdir -p %s/.ssh && echo %q > %s/.ssh/authorized_keys && chmod 700 %s/.ssh && chmod 600 %s/.ssh/authorized_keys`,
-		projectPath, publicKey, projectPath, projectPath, projectPath,
-	))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("setting up authorized_keys: %s: %w", strings.TrimSpace(string(out)), err)
+	sshDir := filepath.Join(projectPath, ".ssh")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return fmt.Errorf("creating .ssh directory: %w", err)
 	}
+
+	authKeysPath := filepath.Join(sshDir, "authorized_keys")
+	// Restrict the key to only allow non-interactive commands (no shell access)
+	restrictedKey := fmt.Sprintf("restrict,command=\"/usr/bin/docker compose\" %s", publicKey)
+	if err := os.WriteFile(authKeysPath, []byte(restrictedKey+"\n"), 0600); err != nil {
+		return fmt.Errorf("writing authorized_keys: %w", err)
+	}
+
 	return nil
 }
 
