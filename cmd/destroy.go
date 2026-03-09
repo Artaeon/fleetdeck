@@ -43,16 +43,22 @@ var destroyCmd = &cobra.Command{
 		autoSnapshot(name, "destroy")
 
 		totalSteps := 4
+		var warnings []string
 
 		// Step 1: Stop containers
 		ui.Step(1, totalSteps, "Stopping containers...")
-		_ = project.ComposeDown(p.ProjectPath)
-		ui.Success("Containers stopped")
+		if err := project.ComposeDown(p.ProjectPath); err != nil {
+			warnings = append(warnings, fmt.Sprintf("stopping containers: %v", err))
+			ui.Warn("Could not stop containers: %v (continuing...)", err)
+		} else {
+			ui.Success("Containers stopped")
+		}
 
 		// Step 2: Delete GitHub repo if needed
 		if p.GitHubRepo != "" && !keepRepo {
 			ui.Step(2, totalSteps, "Deleting GitHub repository...")
 			if err := project.DeleteGitHubRepo(p.GitHubRepo); err != nil {
+				warnings = append(warnings, fmt.Sprintf("deleting GitHub repo: %v", err))
 				ui.Warn("Could not delete GitHub repo: %v", err)
 			} else {
 				ui.Success("GitHub repository deleted")
@@ -65,9 +71,11 @@ var destroyCmd = &cobra.Command{
 		if !keepData {
 			ui.Step(3, totalSteps, "Removing project data and user...")
 			if err := os.RemoveAll(p.ProjectPath); err != nil {
+				warnings = append(warnings, fmt.Sprintf("removing directory: %v", err))
 				ui.Warn("Could not remove project directory: %v", err)
 			}
 			if err := project.DeleteLinuxUser(name); err != nil {
+				warnings = append(warnings, fmt.Sprintf("deleting user: %v", err))
 				ui.Warn("Could not delete Linux user: %v", err)
 			}
 			ui.Success("Project data and user removed")
@@ -78,13 +86,23 @@ var destroyCmd = &cobra.Command{
 		// Step 4: Remove from database
 		ui.Step(4, totalSteps, "Removing from database...")
 		if err := d.DeleteProject(name); err != nil {
+			warnings = append(warnings, fmt.Sprintf("database deletion: %v", err))
 			ui.Warn("Could not remove from database: %v", err)
+		} else {
+			ui.Success("Removed from database")
 		}
-		ui.Success("Removed from database")
 
 		fmt.Println()
-		audit.Log("project.destroy", name, "destroyed", true)
-		ui.Success("Project %s destroyed", ui.Bold(name))
+		if len(warnings) > 0 {
+			audit.Log("project.destroy", name, fmt.Sprintf("destroyed with %d warnings", len(warnings)), true)
+			ui.Warn("Project %s destroyed with %d warnings:", ui.Bold(name), len(warnings))
+			for _, w := range warnings {
+				ui.Warn("  - %s", w)
+			}
+		} else {
+			audit.Log("project.destroy", name, "destroyed cleanly", true)
+			ui.Success("Project %s destroyed", ui.Bold(name))
+		}
 		return nil
 	},
 }
