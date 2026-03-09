@@ -164,6 +164,96 @@ func TestRotation(t *testing.T) {
 	}
 }
 
+func TestReadRecent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+
+	if err := Init(path); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	Log("action.one", "proj1", "first", true)
+	Log("action.two", "proj2", "second", true)
+	Log("action.three", "proj3", "third", false)
+	Close()
+
+	entries, err := ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// Should be reverse chronological (newest first)
+	if entries[0].Action != "action.three" {
+		t.Errorf("expected newest entry first, got %s", entries[0].Action)
+	}
+	if entries[2].Action != "action.one" {
+		t.Errorf("expected oldest entry last, got %s", entries[2].Action)
+	}
+}
+
+func TestReadRecentWithLimit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+
+	if err := Init(path); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	for i := 0; i < 20; i++ {
+		Log("action", "proj", "details", true)
+	}
+	Close()
+
+	entries, err := ReadRecent(5)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+
+	if len(entries) != 5 {
+		t.Errorf("expected 5 entries (limit), got %d", len(entries))
+	}
+}
+
+func TestReadRecentEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+
+	// Create empty file
+	os.WriteFile(path, []byte(""), 0644)
+
+	// Point logPath at it
+	mu.Lock()
+	logPath = path
+	mu.Unlock()
+
+	entries, err := ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty file, got %d", len(entries))
+	}
+}
+
+func TestReadRecentNonexistentFile(t *testing.T) {
+	mu.Lock()
+	logPath = "/nonexistent/audit.log"
+	mu.Unlock()
+
+	entries, err := ReadRecent(10)
+	if err != nil {
+		t.Fatalf("expected nil error for nonexistent file, got %v", err)
+	}
+	if entries != nil {
+		t.Errorf("expected nil entries, got %v", entries)
+	}
+}
+
 func TestLogFailureEntry(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.log")

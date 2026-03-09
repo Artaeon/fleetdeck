@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -123,6 +124,44 @@ func rotate() {
 		return
 	}
 	logFile = f
+}
+
+// ReadRecent reads the most recent audit log entries (up to limit).
+// Returns entries in reverse chronological order (newest first).
+func ReadRecent(limit int) ([]AuditEntry, error) {
+	mu.Lock()
+	path := logPath
+	mu.Unlock()
+
+	if path == "" {
+		path = DefaultLogPath
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	var entries []AuditEntry
+
+	// Read from end for reverse chronological order
+	for i := len(lines) - 1; i >= 0 && len(entries) < limit; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 {
+			continue
+		}
+		var entry AuditEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue // skip malformed entries
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
 }
 
 func currentUser() string {
