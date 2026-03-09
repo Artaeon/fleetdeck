@@ -5,6 +5,7 @@ import (
 
 	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/templates"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,11 @@ Docker Compose configuration, and CI/CD workflow generation.`,
 		if err != nil {
 			ui.Error("Failed to load config: %v", err)
 			os.Exit(1)
+		}
+
+		// Load custom templates from disk
+		if err := templates.LoadCustomTemplates(cfg.Server.BasePath); err != nil {
+			ui.Warn("Could not load custom templates: %v", err)
 		}
 	},
 }
