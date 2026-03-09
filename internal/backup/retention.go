@@ -69,10 +69,14 @@ func enforceMaxCount(database *db.DB, projectID, backupType string, maxCount int
 }
 
 func deleteBackup(database *db.DB, b *db.BackupRecord) {
-	if err := os.RemoveAll(b.Path); err != nil {
-		ui.Warn("Could not remove backup at %s: %v", b.Path, err)
-	}
+	// Delete the database record first, then remove files. If file removal
+	// fails, the orphaned files on disk can be cleaned up later without a
+	// phantom database record pointing to missing data.
 	if err := database.DeleteBackupRecord(b.ID); err != nil {
 		ui.Warn("Could not remove backup record %s: %v", b.ID, err)
+		return // keep files if record deletion fails to avoid inconsistency
+	}
+	if err := os.RemoveAll(b.Path); err != nil {
+		ui.Warn("Could not remove backup files at %s: %v", b.Path, err)
 	}
 }
