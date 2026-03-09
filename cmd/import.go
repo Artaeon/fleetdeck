@@ -48,6 +48,7 @@ var importCmd = &cobra.Command{
 			ProjectPath: path,
 			Template:    template,
 			Status:      "stopped",
+			Source:      "imported",
 		}
 
 		if err := d.CreateProject(proj); err != nil {
