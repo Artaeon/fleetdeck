@@ -1,10 +1,29 @@
 package cmd
 
 import (
+	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+func autoSnapshot(projectName, trigger string) {
+	if cfg == nil || !cfg.Backup.AutoSnapshot {
+		return
+	}
+	d := openDB()
+	p, err := d.GetProject(projectName)
+	if err != nil {
+		return
+	}
+	ui.Info("Creating auto-snapshot before %s...", trigger)
+	if _, err := backup.CreateBackup(cfg, d, p, "snapshot", "pre-"+trigger, backup.Options{}); err != nil {
+		ui.Warn("Auto-snapshot failed: %v", err)
+	} else {
+		ui.Success("Auto-snapshot created")
+	}
+	backup.EnforceRetention(cfg, d, p.ID)
+}
 
 var startCmd = &cobra.Command{
 	Use:   "start <name>",
@@ -42,6 +61,8 @@ var stopCmd = &cobra.Command{
 			return err
 		}
 
+		autoSnapshot(p.Name, "stop")
+
 		ui.Info("Stopping %s...", p.Name)
 		if err := project.ComposeDown(p.ProjectPath); err != nil {
 			return err
@@ -66,6 +87,8 @@ var restartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		autoSnapshot(p.Name, "restart")
 
 		ui.Info("Restarting %s...", p.Name)
 		if err := project.ComposeRestart(p.ProjectPath); err != nil {

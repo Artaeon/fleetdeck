@@ -38,6 +38,9 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
+		// Auto-snapshot before destruction
+		autoSnapshot(name, "destroy")
+
 		totalSteps := 4
 
 		// Step 1: Stop containers
