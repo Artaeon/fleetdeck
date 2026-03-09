@@ -44,6 +44,11 @@ func init() {
 }
 
 func Execute() error {
+	defer func() {
+		if database != nil {
+			database.Close()
+		}
+	}()
 	return rootCmd.Execute()
 }
 

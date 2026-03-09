@@ -47,8 +47,7 @@ var initCmd = &cobra.Command{
 		// Step 3: Initialize database
 		ui.Step(3, totalSteps, "Initializing database...")
 		database = nil // force re-open
-		db := openDB()
-		_ = db
+		openDB()
 		ui.Success("Database initialized at %s", cfg.DBPath())
 
 		// Step 4: Check/setup Traefik network

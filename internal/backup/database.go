@@ -81,8 +81,8 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
 
 	cmd := exec.Command("bash", "-c",
-		fmt.Sprintf(`docker exec %s pg_dump -U %s %s | gzip > %s`,
-			containerName, user, dbName, dumpFile))
+		shellQuote("docker", "exec", containerName, "pg_dump", "-U", user, dbName)+
+			" | gzip > "+shellQuote(dumpFile))
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("pg_dump failed for %s: %s: %w", containerName, strings.TrimSpace(string(out)), err)
@@ -113,14 +113,14 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
 
-	passArg := ""
+	dumpArgs := []string{"docker", "exec", containerName, "mysqldump", "-u", "root"}
 	if password != "" {
-		passArg = fmt.Sprintf("-p%s", password)
+		dumpArgs = append(dumpArgs, "-p"+password)
 	}
+	dumpArgs = append(dumpArgs, dbName)
 
 	cmd := exec.Command("bash", "-c",
-		fmt.Sprintf(`docker exec %s mysqldump -u root %s %s | gzip > %s`,
-			containerName, passArg, dbName, dumpFile))
+		shellQuote(dumpArgs...)+" | gzip > "+shellQuote(dumpFile))
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("mysqldump failed for %s: %s: %w", containerName, strings.TrimSpace(string(out)), err)
@@ -137,6 +137,15 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 		Path:      filepath.Join("databases", serviceName+".sql.gz"),
 		SizeBytes: info.Size(),
 	}, nil
+}
+
+// shellQuote safely quotes arguments for shell execution.
+func shellQuote(args ...string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+	}
+	return strings.Join(quoted, " ")
 }
 
 func parseComposeFile(projectPath string) (*composeFile, error) {

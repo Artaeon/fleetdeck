@@ -139,7 +139,7 @@ so you can always go back.`,
 
 		force, _ := cmd.Flags().GetBool("force")
 		if !force {
-			fmt.Printf("Restore %s from backup %s (%s)? [y/N] ", ui.Bold(p.Name), backupID[:minLen(12, len(backupID))], found.CreatedAt)
+			fmt.Printf("Restore %s from backup %s (%s)? [y/N] ", ui.Bold(p.Name), backupID[:minInt(12, len(backupID))], found.CreatedAt)
 			reader := bufio.NewReader(os.Stdin)
 			answer, _ := reader.ReadString('\n')
 			if strings.TrimSpace(strings.ToLower(answer)) != "y" {
@@ -175,7 +175,7 @@ so you can always go back.`,
 		}
 
 		fmt.Println()
-		ui.Success("Project %s restored from backup %s", ui.Bold(p.Name), backupID[:minLen(12, len(backupID))])
+		ui.Success("Project %s restored from backup %s", ui.Bold(p.Name), backupID[:minInt(12, len(backupID))])
 		return nil
 	},
 }
@@ -207,7 +207,7 @@ var backupDeleteCmd = &cobra.Command{
 
 			if !force {
 				fmt.Printf("Delete backup %s (%s, %s)? [y/N] ",
-					b.ID[:minLen(12, len(b.ID))], b.Type, b.CreatedAt.Format("2006-01-02 15:04"))
+					b.ID[:minInt(12, len(b.ID))], b.Type, b.CreatedAt.Format("2006-01-02 15:04"))
 				reader := bufio.NewReader(os.Stdin)
 				answer, _ := reader.ReadString('\n')
 				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
@@ -223,7 +223,7 @@ var backupDeleteCmd = &cobra.Command{
 				return err
 			}
 
-			ui.Success("Backup %s deleted", b.ID[:minLen(12, len(b.ID))])
+			ui.Success("Backup %s deleted", b.ID[:minInt(12, len(b.ID))])
 			return nil
 		}
 
@@ -231,11 +231,11 @@ var backupDeleteCmd = &cobra.Command{
 	},
 }
 
-func minLen(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
-		return b
+		return a
 	}
-	return a
+	return b
 }
 
 func init() {
