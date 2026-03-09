@@ -8,10 +8,12 @@ import (
 )
 
 type Config struct {
-	Server  ServerConfig  `toml:"server"`
-	Traefik TraefikConfig `toml:"traefik"`
-	GitHub  GitHubConfig  `toml:"github"`
-	Defaults DefaultsConfig `toml:"defaults"`
+	Server    ServerConfig    `toml:"server"`
+	Traefik   TraefikConfig   `toml:"traefik"`
+	GitHub    GitHubConfig    `toml:"github"`
+	Defaults  DefaultsConfig  `toml:"defaults"`
+	Backup    BackupConfig    `toml:"backup"`
+	Discovery DiscoveryConfig `toml:"discovery"`
 }
 
 type ServerConfig struct {
@@ -34,6 +36,20 @@ type DefaultsConfig struct {
 	PostgresVersion string `toml:"postgres_version"`
 }
 
+type BackupConfig struct {
+	BasePath         string `toml:"base_path"`
+	MaxManualBackups int    `toml:"max_manual_backups"`
+	MaxSnapshots     int    `toml:"max_snapshots"`
+	MaxAgeDays       int    `toml:"max_age_days"`
+	MaxTotalSizeGB   int    `toml:"max_total_size_gb"`
+	AutoSnapshot     bool   `toml:"auto_snapshot"`
+}
+
+type DiscoveryConfig struct {
+	SearchPaths  []string `toml:"search_paths"`
+	ExcludePaths []string `toml:"exclude_paths"`
+}
+
 const DefaultConfigPath = "/etc/fleetdeck/config.toml"
 
 func DefaultConfig() *Config {
@@ -49,6 +65,18 @@ func DefaultConfig() *Config {
 		Defaults: DefaultsConfig{
 			Template:        "node",
 			PostgresVersion: "15-alpine",
+		},
+		Backup: BackupConfig{
+			BasePath:         "/opt/fleetdeck/backups",
+			MaxManualBackups: 10,
+			MaxSnapshots:     20,
+			MaxAgeDays:       30,
+			MaxTotalSizeGB:   5,
+			AutoSnapshot:     true,
+		},
+		Discovery: DiscoveryConfig{
+			SearchPaths:  []string{"/opt/fleetdeck", "/home", "/srv"},
+			ExcludePaths: []string{".cache", ".local", "node_modules", ".git", "vendor"},
 		},
 	}
 }
@@ -98,4 +126,8 @@ func (c *Config) ProjectPath(name string) string {
 
 func (c *Config) DBPath() string {
 	return filepath.Join(c.Server.BasePath, "fleetdeck.db")
+}
+
+func (c *Config) BackupPath(projectName string) string {
+	return filepath.Join(c.Backup.BasePath, projectName)
 }
