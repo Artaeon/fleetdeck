@@ -5,10 +5,28 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/templates"
 )
+
+var validNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
+
+// ValidateName checks that a project name is safe for use as a Linux user,
+// Docker Compose project, GitHub repo, and filesystem path.
+func ValidateName(name string) error {
+	if len(name) < 1 || len(name) > 63 {
+		return fmt.Errorf("project name must be 1-63 characters, got %d", len(name))
+	}
+	if !validNameRe.MatchString(name) {
+		return fmt.Errorf("project name must contain only lowercase letters, numbers, and hyphens (cannot start/end with hyphen)")
+	}
+	if strings.Contains(name, "--") {
+		return fmt.Errorf("project name cannot contain consecutive hyphens")
+	}
+	return nil
+}
 
 func GenerateSecret(length int) string {
 	b := make([]byte, length)

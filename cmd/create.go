@@ -28,6 +28,10 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		if err := project.ValidateName(name); err != nil {
+			return err
+		}
+
 		domain, _ := cmd.Flags().GetString("domain")
 		githubOrg, _ := cmd.Flags().GetString("github-org")
 		templateName, _ := cmd.Flags().GetString("template")

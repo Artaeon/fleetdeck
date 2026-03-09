@@ -34,6 +34,32 @@ func TestGenerateSecretLengths(t *testing.T) {
 	}
 }
 
+func TestValidateName(t *testing.T) {
+	valid := []string{"myapp", "a", "test-app", "app123", "a1b2c3"}
+	for _, name := range valid {
+		if err := ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) should be valid, got error: %v", name, err)
+		}
+	}
+
+	invalid := []string{
+		"",                                                                  // empty
+		"-myapp",                                                            // starts with hyphen
+		"myapp-",                                                            // ends with hyphen
+		"my--app",                                                           // consecutive hyphens
+		"My App",                                                            // spaces and uppercase
+		"my_app",                                                            // underscore
+		"my.app",                                                            // dot
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",    // 64 chars — too long
+		"../etc/passwd",                                                     // path traversal
+	}
+	for _, name := range invalid {
+		if err := ValidateName(name); err == nil {
+			t.Errorf("ValidateName(%q) should be invalid, got nil error", name)
+		}
+	}
+}
+
 func TestLinuxUserName(t *testing.T) {
 	tests := []struct {
 		project  string
