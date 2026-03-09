@@ -129,7 +129,11 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		SizeBytes: totalSize,
 	}
 	if err := database.CreateBackupRecord(record); err != nil {
+		// Database record failed — clean up orphaned backup directory
 		ui.Warn("Could not save backup record to database: %v", err)
+		ui.Warn("Cleaning up orphaned backup directory...")
+		os.RemoveAll(backupDir)
+		return nil, fmt.Errorf("saving backup record: %w", err)
 	}
 
 	return record, nil

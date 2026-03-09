@@ -37,8 +37,12 @@ var startCmd = &cobra.Command{
 			return err
 		}
 
+		// Auto-snapshot before start (protects against bad deployments)
+		autoSnapshot(p.Name, "start")
+
 		ui.Info("Starting %s...", p.Name)
 		if err := project.ComposeUp(p.ProjectPath); err != nil {
+			d.UpdateProjectStatus(p.Name, "error")
 			audit.Log("project.start", p.Name, err.Error(), false)
 			return err
 		}
