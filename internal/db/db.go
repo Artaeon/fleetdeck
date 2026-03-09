@@ -3,7 +3,12 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -91,6 +96,12 @@ func Open(path string) (*DB, error) {
 
 	if err := db.migrate(); err != nil {
 		return nil, err
+	}
+
+	// Create a .bak copy of the database after successful migration,
+	// keeping the last 3 backups with rotation.
+	if err := backupAndRotate(path, 3); err != nil {
+		log.Printf("WARNING: database backup on startup failed: %v", err)
 	}
 
 	return db, nil
@@ -187,4 +198,69 @@ func (db *DB) migrate() error {
 	}
 
 	return nil
+}
+
+// backupAndRotate copies the database file to <path>.bak.<timestamp> and
+// removes old backups beyond the keep limit. This ensures we always have a
+// recent backup even if FleetDeck crashes unexpectedly.
+func backupAndRotate(dbPath string, keep int) error {
+	// Only back up if the database file actually exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	bakPath := dbPath + ".bak." + timestamp
+
+	if err := copyDBFile(dbPath, bakPath); err != nil {
+		return fmt.Errorf("creating backup: %w", err)
+	}
+
+	// Rotate: find all .bak.* files and remove the oldest ones
+	dir := filepath.Dir(dbPath)
+	base := filepath.Base(dbPath)
+	prefix := base + ".bak."
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil // non-fatal: backup was created, rotation just failed
+	}
+
+	var bakFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			bakFiles = append(bakFiles, entry.Name())
+		}
+	}
+
+	// Sort lexicographically (timestamps sort correctly this way)
+	sort.Strings(bakFiles)
+
+	// Remove oldest files beyond the keep limit
+	if len(bakFiles) > keep {
+		toRemove := bakFiles[:len(bakFiles)-keep]
+		for _, name := range toRemove {
+			os.Remove(filepath.Join(dir, name))
+		}
+	}
+
+	return nil
+}
+
+// copyDBFile copies a file from src to dst. Used for database backups.
+func copyDBFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
