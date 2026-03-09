@@ -8,7 +8,14 @@ import (
 )
 
 type DB struct {
-	conn *sql.DB
+	conn          *sql.DB
+	encryptionKey []byte // optional 32-byte AES-256 key for secret encryption
+}
+
+// SetEncryptionKey configures an AES-256 key for encrypting secret values
+// at rest. Pass nil to disable encryption (plaintext storage).
+func (db *DB) SetEncryptionKey(key []byte) {
+	db.encryptionKey = key
 }
 
 type Project struct {

@@ -103,6 +103,45 @@ func TestDeriveKeyDifferentPassphrases(t *testing.T) {
 	}
 }
 
+func TestDeriveKeyFromPassphrase(t *testing.T) {
+	key1 := DeriveKeyFromPassphrase("my-passphrase")
+	key2 := DeriveKeyFromPassphrase("my-passphrase")
+
+	if !bytes.Equal(key1, key2) {
+		t.Error("DeriveKeyFromPassphrase should be deterministic")
+	}
+
+	if len(key1) != 32 {
+		t.Errorf("expected 32-byte key, got %d", len(key1))
+	}
+
+	key3 := DeriveKeyFromPassphrase("different-passphrase")
+	if bytes.Equal(key1, key3) {
+		t.Error("different passphrases should produce different keys")
+	}
+}
+
+func TestDeriveKeyFromPassphraseEncryptRoundtrip(t *testing.T) {
+	key := DeriveKeyFromPassphrase("stable-key-test")
+	plaintext := []byte("encrypt with deterministic key")
+
+	ciphertext, err := Encrypt(plaintext, key)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	// Derive the same key again (simulating app restart)
+	key2 := DeriveKeyFromPassphrase("stable-key-test")
+	decrypted, err := Decrypt(ciphertext, key2)
+	if err != nil {
+		t.Fatalf("Decrypt with re-derived key failed: %v", err)
+	}
+
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Errorf("roundtrip mismatch: got %q, want %q", decrypted, plaintext)
+	}
+}
+
 func TestEncryptProducesDifferentCiphertexts(t *testing.T) {
 	key, _ := DeriveKey("nonce-test")
 	plaintext := []byte("same input")

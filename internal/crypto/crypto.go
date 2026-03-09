@@ -39,6 +39,18 @@ func DeriveKeyWithSalt(passphrase string, salt []byte) []byte {
 	return pbkdf2.Key([]byte(passphrase), salt, pbkdf2Iterations, keyLen, sha256.New)
 }
 
+// fleetdeckSalt is a fixed application-specific salt used for deterministic
+// key derivation from a passphrase. This allows the same key to be derived
+// on every application start without storing additional state.
+var fleetdeckSalt = []byte("fleetdeck-secret-encryption-v1")
+
+// DeriveKeyFromPassphrase derives a deterministic 32-byte AES-256 key from a
+// passphrase using PBKDF2 with a fixed application-specific salt. Use this
+// when the same key must be derived consistently across application restarts.
+func DeriveKeyFromPassphrase(passphrase string) []byte {
+	return pbkdf2.Key([]byte(passphrase), fleetdeckSalt, pbkdf2Iterations, keyLen, sha256.New)
+}
+
 // Encrypt encrypts plaintext using AES-256-GCM with the provided 32-byte key.
 // The returned ciphertext has the nonce prepended: [nonce | encrypted data + tag].
 func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
