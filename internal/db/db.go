@@ -115,18 +115,18 @@ func (db *DB) migrate() error {
 		)`,
 	}
 
+	for _, m := range migrations {
+		if _, err := db.conn.Exec(m); err != nil {
+			return err
+		}
+	}
+
 	// Column additions for existing databases (safe to re-run)
 	alterStatements := []string{
 		`ALTER TABLE projects ADD COLUMN source TEXT DEFAULT 'created'`,
 	}
 	for _, stmt := range alterStatements {
 		db.conn.Exec(stmt) // ignore "duplicate column" errors
-	}
-
-	for _, m := range migrations {
-		if _, err := db.conn.Exec(m); err != nil {
-			return err
-		}
 	}
 
 	return nil
