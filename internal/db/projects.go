@@ -111,6 +111,9 @@ func (db *DB) DeleteProject(name string) error {
 	if _, err := tx.Exec(`DELETE FROM deployments WHERE project_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM backups WHERE project_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, id); err != nil {
 		return err
 	}
