@@ -192,7 +192,7 @@ func restoreNamedVolume(archivePath, volumeName string) error {
 		"-v", volumeName+":/data",
 		"-v", archiveDir+":/backup:ro",
 		"alpine",
-		"sh", "-c", fmt.Sprintf("rm -rf /data/* && tar xzf /backup/%s -C /data", archiveFile))
+		"sh", "-c", "rm -rf /data/* && tar xzf /backup/"+shellQuote(archiveFile)+" -C /data")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("restore: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -234,6 +234,8 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 	serviceName := strings.Fields(componentName)[0]
 	envVars := loadEnvFile(projectPath)
 
+	composePath := filepath.Join(projectPath, "docker-compose.yml")
+
 	if strings.Contains(componentName, "PostgreSQL") {
 		user := envVars["POSTGRES_USER"]
 		dbName := envVars["POSTGRES_DB"]
@@ -244,9 +246,9 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 			dbName = user
 		}
 
+		// Use shellQuote to prevent injection from env file values
 		cmd := exec.Command("bash", "-c",
-			fmt.Sprintf(`gunzip -c %s | docker compose -f %s/docker-compose.yml exec -T %s psql -U %s %s`,
-				dumpPath, projectPath, serviceName, user, dbName))
+			"gunzip -c "+shellQuote(dumpPath)+" | docker compose -f "+shellQuote(composePath)+" exec -T "+shellQuote(serviceName)+" psql -U "+shellQuote(user)+" "+shellQuote(dbName))
 		cmd.Dir = projectPath
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("psql restore: %s: %w", strings.TrimSpace(string(out)), err)
@@ -260,12 +262,16 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 
 		passArg := ""
 		if password != "" {
-			passArg = fmt.Sprintf("-p%s", password)
+			passArg = "-p" + password
 		}
 
+		mysqlArgs := []string{"docker", "compose", "-f", composePath, "exec", "-T", serviceName, "mysql", "-u", "root"}
+		if passArg != "" {
+			mysqlArgs = append(mysqlArgs, passArg)
+		}
+		mysqlArgs = append(mysqlArgs, dbName)
 		cmd := exec.Command("bash", "-c",
-			fmt.Sprintf(`gunzip -c %s | docker compose -f %s/docker-compose.yml exec -T %s mysql -u root %s %s`,
-				dumpPath, projectPath, serviceName, passArg, dbName))
+			"gunzip -c "+shellQuote(dumpPath)+" | "+shellQuote(mysqlArgs...))
 		cmd.Dir = projectPath
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("mysql restore: %s: %w", strings.TrimSpace(string(out)), err)
