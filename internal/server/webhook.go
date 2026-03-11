@@ -115,6 +115,8 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }
 
+
+
 func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 	mu := s.projectMutex(p.Name)
 	mu.Lock()

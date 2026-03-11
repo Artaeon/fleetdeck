@@ -28,8 +28,8 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/templates"
 )
 
-// validProjectName matches safe project names: lowercase alphanumeric with hyphens, 1-63 chars.
-var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$|^[a-z0-9]$`)
+// validProjectName matches valid project name path parameters.
+var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
 type Server struct {
 	cfg           *config.Config
@@ -56,8 +56,6 @@ func (s *Server) projectMutex(name string) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
-// validProjectName matches valid project name path parameters.
-var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
 // securityHeaders wraps a handler to set standard security response headers.
 func securityHeaders(next http.Handler) http.Handler {
@@ -266,8 +264,8 @@ type apiStatus struct {
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.db.ListProjects()
 	if err != nil {
-		log.Printf("handleListProjects: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal server error")
+		log.Printf("failed to list projects: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to list projects")
 		return
 	}
 
@@ -462,7 +460,8 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("compose up failed: %s\n%s", err, out))
+		log.Printf("compose up failed for project %s: %v\n%s", name, err, out)
+		writeError(w, http.StatusInternalServerError, "failed to start project")
 		return
 	}
 
@@ -489,7 +488,8 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("docker", "compose", "down")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("compose down failed: %s\n%s", err, out))
+		log.Printf("compose down failed for project %s: %v\n%s", name, err, out)
+		writeError(w, http.StatusInternalServerError, "failed to stop project")
 		return
 	}
 
@@ -516,7 +516,8 @@ func (s *Server) handleRestartProject(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("docker", "compose", "restart")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("compose restart failed: %s\n%s", err, out))
+		log.Printf("compose restart failed for project %s: %v\n%s", name, err, out)
+		writeError(w, http.StatusInternalServerError, "failed to restart project")
 		return
 	}
 
@@ -584,7 +585,8 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 
 	records, err := s.db.ListBackupRecords(p.ID, 20)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		log.Printf("failed to list backups for project %s: %v", name, err)
+		writeError(w, http.StatusInternalServerError, "failed to list backups")
 		return
 	}
 
@@ -743,7 +745,8 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 
 	deployments, err := s.db.ListDeployments(p.ID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("listing deployments: %v", err))
+		log.Printf("failed to list deployments for project %s: %v", name, err)
+		writeError(w, http.StatusInternalServerError, "failed to list deployments")
 		return
 	}
 
