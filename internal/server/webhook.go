@@ -100,6 +100,10 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())

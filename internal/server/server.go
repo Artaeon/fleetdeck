@@ -28,6 +28,9 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/templates"
 )
 
+// validProjectName matches safe project names: lowercase alphanumeric with hyphens, 1-63 chars.
+var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$|^[a-z0-9]$`)
+
 type Server struct {
 	cfg           *config.Config
 	db            *db.DB
@@ -442,6 +445,10 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -465,6 +472,10 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -488,6 +499,10 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRestartProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -510,6 +525,10 @@ func (s *Server) handleRestartProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleProjectLogs(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !validProjectName.MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
 	p, err := s.db.GetProject(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
