@@ -26,6 +26,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/health"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/templates"
+	"golang.org/x/time/rate"
 )
 
 // validProjectName matches valid project name path parameters.
@@ -38,6 +39,7 @@ type Server struct {
 	webhookSecret string
 	apiToken      string
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
+	rateLimiter   *ipLimiter
 }
 
 // GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
@@ -75,6 +77,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		db:            database,
 		webhookSecret: cfg.Server.WebhookSecret,
 		apiToken:      cfg.Server.APIToken,
+		rateLimiter:   newIPLimiter(rate.Limit(10), 20),
 	}
 
 	mux := http.NewServeMux()
@@ -109,9 +112,12 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /static/app.js", s.handleJS)
 	mux.HandleFunc("GET /static/style.css", s.handleCSS)
 
+	// Wrap the mux with rate limiting for API routes only.
+	handler := rateLimitMiddleware(s.rateLimiter, mux)
+
 	s.server = &http.Server{
 		Addr:           addr,
-		Handler:        securityHeaders(mux),
+		Handler:        securityHeaders(handler),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    60 * time.Second,
