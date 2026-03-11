@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetdeck/fleetdeck/internal/compose"
 	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/google/uuid"
 )
@@ -158,7 +159,16 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString(string(out))
 	}
 
-	// Step 2: docker compose build
+	// Step 2: validate compose configuration
+	logBuf.WriteString("\n=== Compose Config Validation ===\n")
+	if err := compose.Validate(p.ProjectPath); err != nil {
+		logBuf.WriteString(fmt.Sprintf("validation failed: %v\n", err))
+		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
+		return
+	}
+	logBuf.WriteString("Compose configuration is valid.\n")
+
+	// Step 3: docker compose build
 	logBuf.WriteString("\n=== Docker Compose Build ===\n")
 	cmd = exec.Command("docker", "compose", "build")
 	cmd.Dir = p.ProjectPath
@@ -171,7 +181,7 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString(string(out))
 	}
 
-	// Step 3: docker compose up -d
+	// Step 4: docker compose up -d
 	logBuf.WriteString("\n=== Docker Compose Up ===\n")
 	cmd = exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = p.ProjectPath
@@ -184,7 +194,7 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString(string(out))
 	}
 
-	// Step 4: Health check with rollback
+	// Step 5: Health check with rollback
 	logBuf.WriteString("\n=== Health Check ===\n")
 	report := waitForHealthy(p.ProjectPath, 30*time.Second)
 	if report != nil && report.Healthy {
