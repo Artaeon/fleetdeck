@@ -58,7 +58,6 @@ func (s *Server) projectMutex(name string) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
-
 // securityHeaders wraps a handler to set standard security response headers.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +67,34 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
 		next.ServeHTTP(w, r)
+	})
+}
+
+// statusResponseWriter wraps http.ResponseWriter to capture the status code.
+type statusResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// requestLogger logs method, path, status, duration, and client IP for every request.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		duration := time.Since(start)
+
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = strings.TrimSpace(strings.Split(fwd, ",")[0])
+		}
+
+		log.Printf("HTTP %s %s %d %s %s", r.Method, r.URL.Path, sw.statusCode, duration, ip)
 	})
 }
 
@@ -117,7 +144,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 
 	s.server = &http.Server{
 		Addr:           addr,
-		Handler:        securityHeaders(handler),
+		Handler:        requestLogger(securityHeaders(handler)),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    60 * time.Second,
