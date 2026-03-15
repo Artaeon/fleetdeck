@@ -110,6 +110,13 @@ Examples:
 func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration) error {
 	projectPath := cfg.ProjectPath(name)
 
+	// Acquire per-project lock to prevent concurrent deployments.
+	lock, err := deploy.AcquireLock(projectPath)
+	if err != nil {
+		return fmt.Errorf("acquiring deploy lock: %w", err)
+	}
+	defer lock.Release()
+
 	// Step 3: Deploy
 	ui.Step(3, 5, "Deploying with %s strategy...", strategyName)
 
@@ -158,6 +165,13 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 }
 
 func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration) error {
+	// Acquire per-project lock to prevent concurrent deployments.
+	lock, err := deploy.AcquireLock(dir)
+	if err != nil {
+		return fmt.Errorf("acquiring deploy lock: %w", err)
+	}
+	defer lock.Release()
+
 	host, user := parseTarget(server)
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
@@ -194,8 +208,8 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		connErr  error
 	)
 	if insecure {
-		ui.Warn("Skipping SSH host key verification (--insecure)")
-		client, connErr = remote.NewClientInsecure(host, port, user, keyData)
+		ui.Warn("Using Trust On First Use SSH host key verification (--insecure)")
+		client, connErr = remote.NewClientTOFU(host, port, user, keyData)
 	} else {
 		client, connErr = remote.NewClient(host, port, user, keyData)
 	}

@@ -80,8 +80,8 @@ The server must be accessible via SSH with key-based auth.`,
 			connErr error
 		)
 		if insecure {
-			ui.Warn("Skipping SSH host key verification (--insecure)")
-			client, connErr = remote.NewClientInsecure(host, port, user, keyData)
+			ui.Warn("Using Trust On First Use SSH host key verification (--insecure)")
+			client, connErr = remote.NewClientTOFU(host, port, user, keyData)
 		} else {
 			client, connErr = remote.NewClient(host, port, user, keyData)
 		}
