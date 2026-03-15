@@ -67,21 +67,28 @@ func (m *Monitor) Start(ctx context.Context) {
 			m.record(r)
 		}
 
-		// Per-target tickers.
+		// Per-target tickers tracked with a WaitGroup so Stop() waits for
+		// all goroutines to finish.
+		var wg sync.WaitGroup
 		for _, t := range m.targets {
 			t := t
 			interval := t.Interval
 			if interval == 0 {
 				interval = 30 * time.Second
 			}
-			go m.loop(ctx, t, interval)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				m.loop(ctx, t, interval)
+			}()
 		}
 
 		<-ctx.Done()
+		wg.Wait()
 	}()
 }
 
-// Stop cancels the monitoring loop and waits for it to finish.
+// Stop cancels the monitoring loop and waits for all goroutines to finish.
 func (m *Monitor) Stop() {
 	if m.cancel != nil {
 		m.cancel()
