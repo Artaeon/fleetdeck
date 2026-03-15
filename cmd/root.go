@@ -7,6 +7,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/crypto"
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	_ "github.com/fleetdeck/fleetdeck/internal/profiles" // Register deployment profiles
 	"github.com/fleetdeck/fleetdeck/internal/templates"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -20,12 +21,20 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "fleetdeck",
-	Short: "Lightweight self-hosted deployment platform",
-	Long: `FleetDeck is a CLI-first deployment platform for developers who run
-multiple Docker projects on a single server with Traefik.
+	Short: "One-click deployment platform for self-hosted applications",
+	Long: `FleetDeck is a smart, CLI-first deployment platform that takes your
+application from code to production with a single command.
 
-It automates Linux user creation, SSH key generation, GitHub repo setup,
-Docker Compose configuration, and CI/CD workflow generation.`,
+Features:
+  - Auto-detect app type and recommend deployment profile
+  - One-command deploy: local or remote via SSH
+  - Server provisioning: Docker, Traefik, firewall, SSL
+  - Deployment profiles: bare, server, saas, static, worker, fullstack
+  - Zero-downtime deploys: basic, blue/green, rolling strategies
+  - Health monitoring with webhook, Slack, and email alerts
+  - DNS management (Cloudflare) with auto-configuration
+  - Environment management: staging, production, preview
+  - Backups, rollback, audit logging, and web dashboard`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		var err error
 		cfg, err = config.Load(cfgFile)
