@@ -2,15 +2,39 @@ package bootstrap
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
 const traefikDir = "/opt/traefik"
 
+// safeNameRe validates that a string is safe to use in shell commands without
+// quoting — only alphanumerics, hyphens, underscores, and dots.
+var safeNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// validateBootstrapInputs checks that user-provided inputs are safe to use
+// in shell commands and configuration files.
+func validateBootstrapInputs(domain, email, network string) error {
+	if !safeNameRe.MatchString(network) {
+		return fmt.Errorf("invalid network name %q: must contain only alphanumerics, hyphens, underscores, dots", network)
+	}
+	if !safeNameRe.MatchString(domain) {
+		return fmt.Errorf("invalid domain %q: must contain only alphanumerics, hyphens, underscores, dots", domain)
+	}
+	if email != "" && (strings.ContainsAny(email, "\"'`;$\\{}()") || !strings.Contains(email, "@")) {
+		return fmt.Errorf("invalid email %q: must be a valid email address without special shell characters", email)
+	}
+	return nil
+}
+
 // setupTraefik creates a Traefik reverse proxy configuration with Let's
 // Encrypt TLS and starts it via Docker Compose. Idempotent: recreates the
 // config and restarts the stack each time.
 func setupTraefik(runner CommandRunner, domain, email, network string) error {
+	if err := validateBootstrapInputs(domain, email, network); err != nil {
+		return err
+	}
+
 	if _, err := runner.Run(fmt.Sprintf("mkdir -p %s", traefikDir)); err != nil {
 		return fmt.Errorf("creating traefik dir: %w", err)
 	}
