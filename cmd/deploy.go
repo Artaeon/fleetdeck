@@ -11,6 +11,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/detect"
 	"github.com/fleetdeck/fleetdeck/internal/profiles"
+	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -90,6 +91,11 @@ Examples:
 		// Derive project name from directory if not specified
 		if name == "" {
 			name = filepath.Base(absDir)
+		}
+
+		// Validate project name to prevent shell injection and invalid paths
+		if err := project.ValidateName(name); err != nil {
+			return fmt.Errorf("invalid project name %q: %w", name, err)
 		}
 
 		// Step 2: Remote or local?
@@ -198,8 +204,9 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 
 	// Step 3: Upload project
 	ui.Step(3, 5, "Uploading project to server...")
-	remotePath := fmt.Sprintf("/opt/fleetdeck/%s", name)
-	if _, err := client.Run(fmt.Sprintf("mkdir -p %s", remotePath)); err != nil {
+	remotePath := "/opt/fleetdeck/" + name
+	quotedPath := "'/opt/fleetdeck/" + name + "'"
+	if _, err := client.Run("mkdir -p " + quotedPath); err != nil {
 		return fmt.Errorf("creating remote directory: %w", err)
 	}
 
@@ -210,7 +217,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 
 	// Step 4: Build and deploy
 	ui.Step(4, 5, "Building and deploying on server...")
-	deployCmd := fmt.Sprintf("cd %s && docker compose build && docker compose up -d", remotePath)
+	deployCmd := "cd " + quotedPath + " && docker compose build && docker compose up -d"
 	output, err := client.Run(deployCmd)
 	if err != nil {
 		ui.Error("Remote deployment failed: %s", output)
