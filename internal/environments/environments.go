@@ -268,7 +268,9 @@ func adjustEnvFile(envContent, domain string) string {
 	for i, line := range lines {
 		if strings.Contains(strings.ToUpper(line), "DOMAIN") && strings.Contains(line, "=") {
 			parts := strings.SplitN(line, "=", 2)
-			lines[i] = parts[0] + "=" + domain
+			if len(parts) == 2 {
+				lines[i] = parts[0] + "=" + domain
+			}
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -303,6 +305,8 @@ func copyImages(projectName, fromEnv, toEnv string) {
 			continue
 		}
 		newTag := strings.Replace(img, srcProject, dstProject, 1)
-		exec.Command("docker", "tag", img, newTag).Run()
+		if tagErr := exec.Command("docker", "tag", img, newTag).Run(); tagErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not tag image %s as %s: %v\n", img, newTag, tagErr)
+		}
 	}
 }
