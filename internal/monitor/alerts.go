@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -103,6 +104,8 @@ func (am *AlertManager) Process(result CheckResult) {
 func (am *AlertManager) send(alert Alert) {
 	for _, p := range am.providers {
 		// Best-effort delivery; don't let one failing provider block others.
-		p.Send(alert)
+		if err := p.Send(alert); err != nil {
+			fmt.Fprintf(os.Stderr, "alert provider %s failed to send alert %q: %v\n", p.Name(), alert.Title, err)
+		}
 	}
 }
