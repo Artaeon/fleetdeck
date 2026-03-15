@@ -44,7 +44,7 @@ func AutoConfigure(domain, serverIP string, provider Provider) error {
 func GetProvider(name string, apiToken string) (Provider, error) {
 	switch name {
 	case "cloudflare":
-		return NewCloudflareProvider(apiToken), nil
+		return NewCloudflareProvider(apiToken)
 	default:
 		return nil, fmt.Errorf("unknown DNS provider: %s", name)
 	}

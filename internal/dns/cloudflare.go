@@ -19,14 +19,18 @@ type CloudflareProvider struct {
 }
 
 // NewCloudflareProvider returns a CloudflareProvider configured with the
-// given API token for Bearer authentication.
-func NewCloudflareProvider(apiToken string) *CloudflareProvider {
+// given API token for Bearer authentication. Returns an error if apiToken
+// is empty.
+func NewCloudflareProvider(apiToken string) (*CloudflareProvider, error) {
+	if strings.TrimSpace(apiToken) == "" {
+		return nil, fmt.Errorf("cloudflare API token must not be empty")
+	}
 	return &CloudflareProvider{
 		apiToken: apiToken,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-	}
+	}, nil
 }
 
 func (c *CloudflareProvider) Name() string { return "cloudflare" }
@@ -189,6 +193,10 @@ func (c *CloudflareProvider) listZoneRecords(zoneID string) ([]Record, error) {
 // doRequest builds and executes an authenticated HTTP request against the
 // Cloudflare API.
 func (c *CloudflareProvider) doRequest(method, url string, body io.Reader) (*http.Response, error) {
+	if strings.TrimSpace(c.apiToken) == "" {
+		return nil, fmt.Errorf("cloudflare API token is not configured")
+	}
+
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("building request: %w", err)
@@ -222,11 +230,15 @@ func (c *CloudflareProvider) checkResponse(resp *http.Response, action string) e
 
 // rootDomain extracts the registrable domain from a full domain name.
 // For example, "app.staging.example.com" becomes "example.com".
+// NOTE: This is a simplified approach that takes the last 2 labels. It does
+// not handle multi-level TLDs like ".co.uk" — for those, a public suffix
+// list library would be needed.
 func rootDomain(domain string) string {
 	parts := strings.Split(domain, ".")
 	if len(parts) <= 2 {
 		return domain
 	}
+	// Take the last 2 parts as a simplified approximation of the registrable domain.
 	return strings.Join(parts[len(parts)-2:], ".")
 }
 
