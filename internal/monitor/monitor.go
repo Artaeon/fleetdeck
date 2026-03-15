@@ -39,11 +39,15 @@ type Monitor struct {
 }
 
 // New creates a Monitor that will check the given targets and send alerts
-// through the provided providers.
-func New(targets []Target, providers []AlertProvider) *Monitor {
+// through the provided providers. failureThreshold is the number of consecutive
+// failures before an alert is sent.
+func New(targets []Target, providers []AlertProvider, failureThreshold int) *Monitor {
+	if failureThreshold <= 0 {
+		failureThreshold = 3
+	}
 	return &Monitor{
 		targets: targets,
-		alerts:  NewAlertManager(providers, 3),
+		alerts:  NewAlertManager(providers, failureThreshold),
 		results: make(map[string]CheckResult),
 		done:    make(chan struct{}),
 	}

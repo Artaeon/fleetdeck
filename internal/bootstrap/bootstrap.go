@@ -11,7 +11,7 @@ type CommandRunner interface {
 // Config holds the parameters needed to bootstrap a fresh server.
 type Config struct {
 	Host           string
-	Port           int
+	Port           string
 	User           string
 	PrivateKey     string
 	Domain         string

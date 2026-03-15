@@ -15,6 +15,10 @@ type WebhookProvider struct {
 	URL string
 }
 
+func NewWebhookProvider(url string) *WebhookProvider {
+	return &WebhookProvider{URL: url}
+}
+
 func (p *WebhookProvider) Name() string { return "webhook" }
 
 func (p *WebhookProvider) Send(alert Alert) error {
@@ -40,6 +44,10 @@ func (p *WebhookProvider) Send(alert Alert) error {
 type SlackProvider struct {
 	WebhookURL string
 	Channel    string
+}
+
+func NewSlackProvider(webhookURL string) *SlackProvider {
+	return &SlackProvider{WebhookURL: webhookURL}
 }
 
 func (p *SlackProvider) Name() string { return "slack" }
