@@ -21,22 +21,20 @@ var monitorCmd = &cobra.Command{
 }
 
 var monitorStartCmd = &cobra.Command{
-	Use:   "start <name>",
-	Short: "Start monitoring a project's health",
-	Long: `Starts continuous health monitoring for a project.
+	Use:   "start <name> [name...]",
+	Short: "Start monitoring one or more projects",
+	Long: `Starts continuous health monitoring for one or more projects.
 
-Checks the project's URL at regular intervals and sends
+Checks each project's URL at regular intervals and sends
 alerts via configured providers (webhook, Slack, email)
-when health status changes.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+when health status changes.
 
+Examples:
+  fleetdeck monitor start myapp
+  fleetdeck monitor start myapp api blog --slack https://hooks.slack.com/xxx`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		d := openDB()
-		proj, err := d.GetProject(name)
-		if err != nil {
-			return fmt.Errorf("project %q not found: %w", name, err)
-		}
 
 		interval, _ := cmd.Flags().GetDuration("interval")
 		timeout, _ := cmd.Flags().GetDuration("timeout")
@@ -44,13 +42,20 @@ when health status changes.`,
 		slackURL, _ := cmd.Flags().GetString("slack")
 		threshold, _ := cmd.Flags().GetInt("threshold")
 
-		target := monitor.Target{
-			Name:           proj.Name,
-			URL:            fmt.Sprintf("https://%s", proj.Domain),
-			Method:         "GET",
-			ExpectedStatus: 200,
-			Timeout:        timeout,
-			Interval:       interval,
+		var targets []monitor.Target
+		for _, name := range args {
+			proj, err := d.GetProject(name)
+			if err != nil {
+				return fmt.Errorf("project %q not found: %w", name, err)
+			}
+			targets = append(targets, monitor.Target{
+				Name:           proj.Name,
+				URL:            fmt.Sprintf("https://%s", proj.Domain),
+				Method:         "GET",
+				ExpectedStatus: 200,
+				Timeout:        timeout,
+				Interval:       interval,
+			})
 		}
 
 		var providers []monitor.AlertProvider
@@ -61,12 +66,15 @@ when health status changes.`,
 			providers = append(providers, monitor.NewSlackProvider(slackURL))
 		}
 
-		statePath := filepath.Join("/opt/fleetdeck/monitor", name+".json")
-		mon := monitor.NewWithState([]monitor.Target{target}, providers, threshold, statePath)
+		statePath := filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")
+		if len(args) == 1 {
+			statePath = filepath.Join("/opt/fleetdeck/monitor", args[0]+".json")
+		}
+		mon := monitor.NewWithState(targets, providers, threshold, statePath)
 
 		// Try to restore previous state from disk.
 		if prev, err := monitor.LoadState(statePath); err == nil {
-			ui.Info("Restored previous monitor state from %s (saved %s)", statePath, prev.UpdatedAt.Format(time.RFC3339))
+			ui.Info("Restored previous monitor state (saved %s)", prev.UpdatedAt.Format(time.RFC3339))
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -75,7 +83,9 @@ when health status changes.`,
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-		ui.Success("Monitoring %s at https://%s (every %s)", name, proj.Domain, interval)
+		for _, t := range targets {
+			ui.Success("Monitoring %s at %s (every %s)", t.Name, t.URL, interval)
+		}
 		ui.Info("Press Ctrl+C to stop")
 		fmt.Println()
 
