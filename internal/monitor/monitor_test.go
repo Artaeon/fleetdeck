@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -230,9 +231,9 @@ func TestMonitorStartStop(t *testing.T) {
 }
 
 func TestMonitorStatus(t *testing.T) {
-	requestCount := 0
+	var requestCount atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		requestCount.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -286,8 +287,8 @@ func TestMonitorStatus(t *testing.T) {
 		}
 	}
 
-	if requestCount < 2 {
-		t.Errorf("expected at least 2 HTTP requests (initial checks), got %d", requestCount)
+	if rc := requestCount.Load(); rc < 2 {
+		t.Errorf("expected at least 2 HTTP requests (initial checks), got %d", rc)
 	}
 }
 

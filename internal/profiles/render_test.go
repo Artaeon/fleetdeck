@@ -601,8 +601,8 @@ func TestRenderEnvContainsPortForNonStatic(t *testing.T) {
 				t.Fatalf("RenderEnv() error: %v", err)
 			}
 
-			if p.Name == "static" {
-				// Static profile has a comment-only env template.
+			if p.Name == "static" || p.Name == "worker" {
+				// Static has comment-only env; worker has no PORT (background process).
 				return
 			}
 
