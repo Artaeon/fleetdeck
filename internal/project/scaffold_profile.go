@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/profiles"
 	"github.com/fleetdeck/fleetdeck/internal/templates"
@@ -127,10 +128,5 @@ func replacePasswordPlaceholders(content, name string) string {
 }
 
 func indexOf(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return strings.Index(s, substr)
 }
