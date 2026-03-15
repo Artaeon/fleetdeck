@@ -9,9 +9,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var envNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
+
+// validateEnvName checks that an environment name is safe for filesystem and
+// Docker use — prevents path traversal and shell injection.
+func validateEnvName(name string) error {
+	if name == "" {
+		return fmt.Errorf("environment name must not be empty")
+	}
+	if len(name) > 63 {
+		return fmt.Errorf("environment name must be 1-63 characters, got %d", len(name))
+	}
+	if !envNameRe.MatchString(name) {
+		return fmt.Errorf("environment name %q must contain only lowercase letters, numbers, and hyphens", name)
+	}
+	return nil
+}
 
 // Environment describes a single deployment environment for a project.
 type Environment struct {
@@ -37,6 +55,13 @@ func NewManager(basePath string) *Manager {
 // project's docker-compose.yml into a dedicated directory, adjusting the
 // domain and environment variables for the target environment.
 func (m *Manager) Create(projectName, envName, domain, branch string) (*Environment, error) {
+	if projectName == "" {
+		return nil, fmt.Errorf("project name must not be empty")
+	}
+	if err := validateEnvName(envName); err != nil {
+		return nil, err
+	}
+
 	projectPath := filepath.Join(m.basePath, projectName)
 	envPath := m.GetEnvPath(projectName, envName)
 
@@ -117,6 +142,13 @@ func (m *Manager) List(projectName string) ([]Environment, error) {
 // Promote copies configuration and images from one environment to another.
 // Typically used for staging → production promotion.
 func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
+	if err := validateEnvName(fromEnv); err != nil {
+		return fmt.Errorf("source environment: %w", err)
+	}
+	if err := validateEnvName(toEnv); err != nil {
+		return fmt.Errorf("target environment: %w", err)
+	}
+
 	fromPath := m.GetEnvPath(projectName, fromEnv)
 	toPath := m.GetEnvPath(projectName, toEnv)
 
@@ -177,6 +209,10 @@ func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
 
 // Delete removes an environment and stops its containers.
 func (m *Manager) Delete(projectName, envName string) error {
+	if err := validateEnvName(envName); err != nil {
+		return fmt.Errorf("invalid environment name: %w", err)
+	}
+
 	envPath := m.GetEnvPath(projectName, envName)
 
 	// Stop containers if compose file exists.
