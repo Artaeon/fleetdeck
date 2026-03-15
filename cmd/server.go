@@ -75,15 +75,18 @@ The server must be accessible via SSH with key-based auth.`,
 		// Connect to server
 		insecure, _ := cmd.Flags().GetBool("insecure")
 		ui.Step(1, 6, "Connecting to %s@%s...", user, host)
-		var client *remote.Client
+		var (
+			client  *remote.Client
+			connErr error
+		)
 		if insecure {
 			ui.Warn("Skipping SSH host key verification (--insecure)")
-			client, err = remote.NewClientInsecure(host, port, user, keyData)
+			client, connErr = remote.NewClientInsecure(host, port, user, keyData)
 		} else {
-			client, err = remote.NewClient(host, port, user, keyData)
+			client, connErr = remote.NewClient(host, port, user, keyData)
 		}
-		if err != nil {
-			return fmt.Errorf("SSH connection failed: %w", err)
+		if connErr != nil {
+			return fmt.Errorf("SSH connection failed: %w", connErr)
 		}
 		defer client.Close()
 		ui.Success("Connected to %s", host)
