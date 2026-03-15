@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="50%" style="stop-color:#1e293b"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:0.3"/>
+      <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="300" fill="url(#bg)" rx="12"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.05" stroke="#94a3b8" stroke-width="0.5">
+    <line x1="0" y1="50" x2="900" y2="50"/>
+    <line x1="0" y1="100" x2="900" y2="100"/>
+    <line x1="0" y1="150" x2="900" y2="150"/>
+    <line x1="0" y1="200" x2="900" y2="200"/>
+    <line x1="0" y1="250" x2="900" y2="250"/>
+    <line x1="150" y1="0" x2="150" y2="300"/>
+    <line x1="300" y1="0" x2="300" y2="300"/>
+    <line x1="450" y1="0" x2="450" y2="300"/>
+    <line x1="600" y1="0" x2="600" y2="300"/>
+    <line x1="750" y1="0" x2="750" y2="300"/>
+  </g>
+
+  <!-- Glow effect -->
+  <ellipse cx="450" cy="150" rx="350" ry="120" fill="url(#glow)"/>
+
+  <!-- Ship/Fleet icon -->
+  <g transform="translate(120, 95)">
+    <!-- Container/ship hull -->
+    <rect x="0" y="40" width="60" height="35" rx="4" fill="url(#accent)" opacity="0.9"/>
+    <rect x="8" y="48" width="12" height="10" rx="2" fill="#0f172a" opacity="0.4"/>
+    <rect x="24" y="48" width="12" height="10" rx="2" fill="#0f172a" opacity="0.4"/>
+    <rect x="40" y="48" width="12" height="10" rx="2" fill="#0f172a" opacity="0.4"/>
+    <!-- Stack indicator -->
+    <rect x="5" y="20" width="50" height="18" rx="3" fill="#06b6d4" opacity="0.5"/>
+    <rect x="10" y="5" width="40" height="13" rx="3" fill="#06b6d4" opacity="0.3"/>
+    <!-- Deploy arrow -->
+    <polygon points="70,57 85,47 85,52 100,52 100,62 85,62 85,67" fill="#22d3ee" opacity="0.8"/>
+  </g>
+
+  <!-- FleetDeck text -->
+  <text x="270" y="148" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="700" fill="#f8fafc" letter-spacing="-2">Fleet</text>
+  <text x="463" y="148" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="700" fill="url(#accent)" letter-spacing="-2">Deck</text>
+
+  <!-- Tagline -->
+  <text x="270" y="185" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="20" fill="#94a3b8" font-weight="400">One command. Code to production.</text>
+
+  <!-- Accent line -->
+  <rect x="270" y="200" width="80" height="3" rx="1.5" fill="url(#accent)"/>
+
+  <!-- Terminal snippet -->
+  <g transform="translate(270, 220)">
+    <text font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="13" fill="#64748b">$</text>
+    <text x="16" font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="13" fill="#e2e8f0">fleetdeck deploy ./app --domain myapp.com --profile saas</text>
+  </g>
+
+  <!-- Badge-like elements -->
+  <g transform="translate(620, 100)">
+    <rect width="85" height="24" rx="12" fill="#06b6d4" opacity="0.15" stroke="#06b6d4" stroke-width="0.5" stroke-opacity="0.3"/>
+    <text x="42" y="16" font-family="system-ui, sans-serif" font-size="11" fill="#22d3ee" text-anchor="middle" font-weight="500">Go + Docker</text>
+  </g>
+  <g transform="translate(715, 100)">
+    <rect width="95" height="24" rx="12" fill="#3b82f6" opacity="0.15" stroke="#3b82f6" stroke-width="0.5" stroke-opacity="0.3"/>
+    <text x="47" y="16" font-family="system-ui, sans-serif" font-size="11" fill="#60a5fa" text-anchor="middle" font-weight="500">Single Binary</text>
+  </g>
+  <g transform="translate(620, 132)">
+    <rect width="95" height="24" rx="12" fill="#06b6d4" opacity="0.15" stroke="#06b6d4" stroke-width="0.5" stroke-opacity="0.3"/>
+    <text x="47" y="16" font-family="system-ui, sans-serif" font-size="11" fill="#22d3ee" text-anchor="middle" font-weight="500">Zero-Downtime</text>
+  </g>
+  <g transform="translate(725, 132)">
+    <rect width="80" height="24" rx="12" fill="#3b82f6" opacity="0.15" stroke="#3b82f6" stroke-width="0.5" stroke-opacity="0.3"/>
+    <text x="40" y="16" font-family="system-ui, sans-serif" font-size="11" fill="#60a5fa" text-anchor="middle" font-weight="500">Auto HTTPS</text>
+  </g>
+</svg>
