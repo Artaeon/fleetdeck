@@ -70,7 +70,7 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		profileData := profiles.ProfileData{
 			Name:            name,
 			Domain:          domain,
-			Port:            3000,
+			Port:            defaultPortForTemplate(templateName),
 			PostgresVersion: cfg.Defaults.PostgresVersion,
 			RedisVersion:    "7-alpine",
 			AppType:         templateName,
@@ -269,6 +269,23 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		audit.Log("project.create", name, fmt.Sprintf("%s domain=%s", profileInfo, domain), true)
 		return nil
 	},
+}
+
+// defaultPortForTemplate returns a conventional default port based on the
+// project template language/framework.
+func defaultPortForTemplate(templateName string) int {
+	switch templateName {
+	case "go":
+		return 8080
+	case "python":
+		return 8000
+	case "static":
+		return 80
+	case "node", "nextjs", "nestjs":
+		return 3000
+	default:
+		return 3000
+	}
 }
 
 func init() {
