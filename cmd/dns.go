@@ -2,11 +2,35 @@ package cmd
 
 import (
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/dns"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// validateDomain checks that a domain looks reasonable.
+func validateDomain(domain string) error {
+	if domain == "" {
+		return fmt.Errorf("domain must not be empty")
+	}
+	if !strings.Contains(domain, ".") {
+		return fmt.Errorf("domain %q must contain at least one dot", domain)
+	}
+	if strings.ContainsAny(domain, " \t\n\"'`;$\\{}()") {
+		return fmt.Errorf("domain %q contains invalid characters", domain)
+	}
+	return nil
+}
+
+// validateIP checks that an IP address is valid.
+func validateIP(ip string) error {
+	if net.ParseIP(ip) == nil {
+		return fmt.Errorf("%q is not a valid IP address", ip)
+	}
+	return nil
+}
 
 var dnsCmd = &cobra.Command{
 	Use:   "dns",
@@ -29,6 +53,13 @@ Example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		domain := args[0]
 		serverIP := args[1]
+
+		if err := validateDomain(domain); err != nil {
+			return err
+		}
+		if err := validateIP(serverIP); err != nil {
+			return err
+		}
 
 		providerName, _ := cmd.Flags().GetString("provider")
 		token, _ := cmd.Flags().GetString("token")
