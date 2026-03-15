@@ -228,20 +228,6 @@ func (c *CloudflareProvider) checkResponse(resp *http.Response, action string) e
 	return fmt.Errorf("%s: HTTP %d: %s", action, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
-// rootDomain extracts the registrable domain from a full domain name.
-// For example, "app.staging.example.com" becomes "example.com".
-// NOTE: This is a simplified approach that takes the last 2 labels. It does
-// not handle multi-level TLDs like ".co.uk" — for those, a public suffix
-// list library would be needed.
-func rootDomain(domain string) string {
-	parts := strings.Split(domain, ".")
-	if len(parts) <= 2 {
-		return domain
-	}
-	// Take the last 2 parts as a simplified approximation of the registrable domain.
-	return strings.Join(parts[len(parts)-2:], ".")
-}
-
 // formatCFErrors joins multiple Cloudflare API errors into a single string.
 func formatCFErrors(errors []cfAPIError) string {
 	msgs := make([]string, len(errors))

@@ -130,7 +130,7 @@ func TestRootDomain(t *testing.T) {
 		{"localhost", "localhost"},
 		{"my-app.io", "my-app.io"},
 		{"sub.my-app.io", "my-app.io"},
-		{"deep.nested.sub.domain.co.uk", "co.uk"},
+		{"deep.nested.sub.domain.co.uk", "domain.co.uk"},
 	}
 
 	for _, tt := range tests {
