@@ -41,7 +41,11 @@ func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
 		return nil, err
 	}
 
-	knownHostsPath := filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
+	home := os.Getenv("HOME")
+	if home == "" {
+		return nil, fmt.Errorf("HOME environment variable not set; cannot locate known_hosts (use NewClientInsecure to skip host key verification)")
+	}
+	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
 	hostKeyCallback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading known_hosts file %s: %w (use NewClientInsecure to skip host key verification)", knownHostsPath, err)
