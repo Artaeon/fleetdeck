@@ -8,13 +8,16 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig    `toml:"server"`
-	Traefik   TraefikConfig   `toml:"traefik"`
-	GitHub    GitHubConfig    `toml:"github"`
-	Defaults  DefaultsConfig  `toml:"defaults"`
-	Backup    BackupConfig    `toml:"backup"`
-	Discovery DiscoveryConfig `toml:"discovery"`
-	Audit     AuditConfig     `toml:"audit"`
+	Server     ServerConfig     `toml:"server"`
+	Traefik    TraefikConfig    `toml:"traefik"`
+	GitHub     GitHubConfig     `toml:"github"`
+	Defaults   DefaultsConfig   `toml:"defaults"`
+	Backup     BackupConfig     `toml:"backup"`
+	Discovery  DiscoveryConfig  `toml:"discovery"`
+	Audit      AuditConfig      `toml:"audit"`
+	Monitoring MonitoringConfig `toml:"monitoring"`
+	DNS        DNSConfig        `toml:"dns"`
+	Deploy     DeployConfig     `toml:"deploy"`
 }
 
 type AuditConfig struct {
@@ -59,6 +62,26 @@ type DiscoveryConfig struct {
 	ExcludePaths []string `toml:"exclude_paths"`
 }
 
+type MonitoringConfig struct {
+	Enabled    bool   `toml:"enabled"`
+	Interval   string `toml:"interval"`
+	Timeout    string `toml:"timeout"`
+	WebhookURL string `toml:"webhook_url"`
+	SlackURL   string `toml:"slack_url"`
+	Threshold  int    `toml:"failure_threshold"`
+}
+
+type DNSConfig struct {
+	Provider string `toml:"provider"`
+	APIToken string `toml:"api_token"`
+}
+
+type DeployConfig struct {
+	Strategy       string `toml:"strategy"`
+	DefaultProfile string `toml:"default_profile"`
+	Timeout        string `toml:"timeout"`
+}
+
 const DefaultConfigPath = "/etc/fleetdeck/config.toml"
 
 func DefaultConfig() *Config {
@@ -90,6 +113,20 @@ func DefaultConfig() *Config {
 		Audit: AuditConfig{
 			Enabled: true,
 			LogPath: "/var/log/fleetdeck/audit.log",
+		},
+		Monitoring: MonitoringConfig{
+			Enabled:   false,
+			Interval:  "30s",
+			Timeout:   "10s",
+			Threshold: 3,
+		},
+		DNS: DNSConfig{
+			Provider: "cloudflare",
+		},
+		Deploy: DeployConfig{
+			Strategy:       "basic",
+			DefaultProfile: "server",
+			Timeout:        "5m",
 		},
 	}
 }
@@ -142,6 +179,15 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("FLEETDECK_BACKUP_PATH"); v != "" {
 		cfg.Backup.BasePath = v
+	}
+	if v := os.Getenv("FLEETDECK_DNS_TOKEN"); v != "" {
+		cfg.DNS.APIToken = v
+	}
+	if v := os.Getenv("FLEETDECK_MONITORING_WEBHOOK"); v != "" {
+		cfg.Monitoring.WebhookURL = v
+	}
+	if v := os.Getenv("FLEETDECK_MONITORING_SLACK"); v != "" {
+		cfg.Monitoring.SlackURL = v
 	}
 }
 
