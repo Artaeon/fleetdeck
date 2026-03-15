@@ -60,6 +60,11 @@ Examples:
 			return fmt.Errorf("--domain is required")
 		}
 
+		// Ensure strategy defaults to "basic" even if explicitly set to empty.
+		if strategyName == "" {
+			strategyName = "basic"
+		}
+
 		// Step 1: Detect app type
 		ui.Step(1, 5, "Analyzing application...")
 		result, err := detect.Detect(absDir)
@@ -67,6 +72,9 @@ Examples:
 			return fmt.Errorf("detection failed: %w", err)
 		}
 		ui.Success("Detected: %s %s", result.Language, result.Framework)
+		if result.Port > 0 {
+			ui.Info("Detected application port: %d", result.Port)
+		}
 
 		// Use detected profile if none specified
 		if profileName == "" {
