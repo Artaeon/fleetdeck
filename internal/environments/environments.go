@@ -155,7 +155,9 @@ func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
 	// Copy .env if present.
 	if data, err := os.ReadFile(filepath.Join(fromPath, ".env")); err == nil {
 		envData := strings.ReplaceAll(string(data), srcMeta.Domain, toDomain)
-		os.WriteFile(filepath.Join(toPath, ".env"), []byte(envData), 0644)
+		if err := os.WriteFile(filepath.Join(toPath, ".env"), []byte(envData), 0644); err != nil {
+			return fmt.Errorf("writing destination .env file: %w", err)
+		}
 	}
 
 	// Copy docker images by tagging from source to destination project.
