@@ -97,6 +97,14 @@ func (c *Client) UploadDir(localDir, remoteDir string) error {
 	})
 }
 
+// shellQuote wraps s in single quotes for safe use in a shell command.
+// Single quotes prevent all interpretation except for the quote character
+// itself, which is handled by ending the quoted string, adding an escaped
+// quote, and re-opening the quoted string. Null bytes are stripped because
+// they cannot be represented in shell arguments and could truncate the string.
 func shellQuote(s string) string {
+	// Remove null bytes — they cannot appear in shell arguments and could
+	// cause the argument to be silently truncated.
+	s = strings.ReplaceAll(s, "\x00", "")
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
