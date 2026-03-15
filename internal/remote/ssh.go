@@ -43,12 +43,12 @@ func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
 
 	home := os.Getenv("HOME")
 	if home == "" {
-		return nil, fmt.Errorf("HOME environment variable not set; cannot locate known_hosts (use NewClientInsecure to skip host key verification)")
+		return nil, fmt.Errorf("HOME environment variable not set; cannot locate known_hosts (use NewClientTOFU for trust-on-first-use verification)")
 	}
 	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
 	hostKeyCallback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading known_hosts file %s: %w (use NewClientInsecure to skip host key verification)", knownHostsPath, err)
+		return nil, fmt.Errorf("reading known_hosts file %s: %w (use NewClientTOFU for trust-on-first-use verification)", knownHostsPath, err)
 	}
 
 	config := &ssh.ClientConfig{
@@ -62,13 +62,69 @@ func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
 	return dialSSH(host, port, user, config)
 }
 
-// NewClientInsecure creates an SSH client that skips host key verification.
-// This should only be used when the caller explicitly opts into insecure mode,
-// such as in trusted or ephemeral environments.
-func NewClientInsecure(host, port, user string, privateKey []byte) (*Client, error) {
+// NewClientTOFU creates an SSH client using Trust On First Use host key
+// verification. If the host is already in ~/.ssh/known_hosts, its key is
+// verified normally. If the host is not yet known, the key is accepted and
+// appended to known_hosts for future verification. This mirrors the behavior
+// of ssh -o StrictHostKeyChecking=accept-new.
+func NewClientTOFU(host, port, user string, privateKey []byte) (*Client, error) {
 	signer, err := ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, err
+	}
+
+	home := os.Getenv("HOME")
+	if home == "" {
+		return nil, fmt.Errorf("HOME environment variable not set; cannot locate known_hosts")
+	}
+
+	sshDir := filepath.Join(home, ".ssh")
+	knownHostsPath := filepath.Join(sshDir, "known_hosts")
+
+	// Ensure ~/.ssh directory exists.
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return nil, fmt.Errorf("creating ssh directory %s: %w", sshDir, err)
+	}
+
+	// Try to load existing known_hosts; ignore errors if the file doesn't exist yet.
+	var existingCallback ssh.HostKeyCallback
+	if _, err := os.Stat(knownHostsPath); err == nil {
+		cb, err := knownhosts.New(knownHostsPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading known_hosts file %s: %w", knownHostsPath, err)
+		}
+		existingCallback = cb
+	}
+
+	callback := func(hostname string, addr net.Addr, key ssh.PublicKey) error {
+		// If we have an existing known_hosts, check it first.
+		if existingCallback != nil {
+			err := existingCallback(hostname, addr, key)
+			if err == nil {
+				return nil // Host key matched.
+			}
+			// If the error is a key mismatch, reject it.
+			if _, ok := err.(*knownhosts.KeyError); ok {
+				ke := err.(*knownhosts.KeyError)
+				if len(ke.Want) > 0 {
+					return fmt.Errorf("host key mismatch for %s: %w", hostname, err)
+				}
+			}
+			// Host not found in known_hosts; fall through to accept and save.
+		}
+
+		// Accept the key and append it to known_hosts.
+		line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
+		f, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("opening known_hosts for writing: %w", err)
+		}
+		defer f.Close()
+
+		if _, err := fmt.Fprintln(f, line); err != nil {
+			return fmt.Errorf("writing to known_hosts: %w", err)
+		}
+		return nil
 	}
 
 	config := &ssh.ClientConfig{
@@ -76,10 +132,16 @@ func NewClientInsecure(host, port, user string, privateKey []byte) (*Client, err
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: callback,
 	}
 
 	return dialSSH(host, port, user, config)
+}
+
+// NewClientInsecure creates an SSH client using Trust On First Use host key
+// verification. Deprecated: use NewClientTOFU directly.
+func NewClientInsecure(host, port, user string, privateKey []byte) (*Client, error) {
+	return NewClientTOFU(host, port, user, privateKey)
 }
 
 func dialSSH(host, port, user string, config *ssh.ClientConfig) (*Client, error) {
