@@ -7,6 +7,7 @@ import (
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/profiles"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/templates"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
@@ -35,6 +36,7 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		domain, _ := cmd.Flags().GetString("domain")
 		githubOrg, _ := cmd.Flags().GetString("github-org")
 		templateName, _ := cmd.Flags().GetString("template")
+		profileName, _ := cmd.Flags().GetString("profile")
 		skipGithub, _ := cmd.Flags().GetBool("skip-github")
 
 		if domain == "" {
@@ -50,10 +52,28 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 			return err
 		}
 
+		// Resolve profile if specified
+		var prof *profiles.Profile
+		if profileName != "" {
+			prof, err = profiles.Get(profileName)
+			if err != nil {
+				return err
+			}
+		}
+
 		data := templates.TemplateData{
 			Name:            name,
 			Domain:          domain,
 			PostgresVersion: cfg.Defaults.PostgresVersion,
+		}
+
+		profileData := profiles.ProfileData{
+			Name:            name,
+			Domain:          domain,
+			Port:            3000,
+			PostgresVersion: cfg.Defaults.PostgresVersion,
+			RedisVersion:    "7-alpine",
+			AppType:         templateName,
 		}
 
 		projectPath := cfg.ProjectPath(name)
@@ -97,7 +117,11 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 
 		// Step 2: Create project directory structure
 		ui.Step(2, totalSteps, "Setting up project at %s...", projectPath)
-		if err := project.ScaffoldProject(projectPath, tmpl, data); err != nil {
+		if prof != nil {
+			if err := project.ScaffoldFromProfile(projectPath, prof, tmpl, profileData, data); err != nil {
+				return fmt.Errorf("scaffolding project with profile: %w", err)
+			}
+		} else if err := project.ScaffoldProject(projectPath, tmpl, data); err != nil {
 			return fmt.Errorf("scaffolding project: %w", err)
 		}
 		cleanups = append(cleanups, func() {
@@ -110,7 +134,11 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 
 		// Step 3: Generate .env
 		ui.Step(3, totalSteps, "Generating environment file...")
-		if err := project.GenerateEnvFile(projectPath, tmpl, data); err != nil {
+		if prof != nil {
+			if err := project.GenerateEnvFromProfile(projectPath, prof, profileData); err != nil {
+				return fmt.Errorf("generating .env from profile: %w", err)
+			}
+		} else if err := project.GenerateEnvFile(projectPath, tmpl, data); err != nil {
 			return fmt.Errorf("generating .env: %w", err)
 		}
 		// .env is inside projectPath — covered by directory cleanup
@@ -234,7 +262,11 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		ui.Info("To start: fleetdeck start %s", name)
 		ui.Info("To view logs: fleetdeck logs %s", name)
 
-		audit.Log("project.create", name, fmt.Sprintf("template=%s domain=%s", templateName, domain), true)
+		profileInfo := templateName
+		if profileName != "" {
+			profileInfo = fmt.Sprintf("template=%s profile=%s", templateName, profileName)
+		}
+		audit.Log("project.create", name, fmt.Sprintf("%s domain=%s", profileInfo, domain), true)
 		return nil
 	},
 }
@@ -243,6 +275,7 @@ func init() {
 	createCmd.Flags().String("domain", "", "Domain for the project (required)")
 	createCmd.Flags().String("github-org", "", "GitHub organization")
 	createCmd.Flags().String("template", "node", "Project template (node, python, go, static, nextjs, nestjs, custom)")
+	createCmd.Flags().String("profile", "", "Deployment profile (bare, server, saas, static, worker, fullstack)")
 	createCmd.Flags().Bool("skip-github", false, "Skip GitHub repo creation")
 
 	_ = createCmd.MarkFlagRequired("domain")
