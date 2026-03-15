@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -30,12 +32,13 @@ type CheckResult struct {
 // Monitor runs periodic health checks against a set of targets and dispatches
 // alerts when state changes are detected.
 type Monitor struct {
-	targets  []Target
-	alerts   *AlertManager
-	results  map[string]CheckResult
-	mu       sync.RWMutex
-	cancel   context.CancelFunc
-	done     chan struct{}
+	targets   []Target
+	alerts    *AlertManager
+	results   map[string]CheckResult
+	mu        sync.RWMutex
+	cancel    context.CancelFunc
+	done      chan struct{}
+	StatePath string
 }
 
 // New creates a Monitor that will check the given targets and send alerts
@@ -51,6 +54,14 @@ func New(targets []Target, providers []AlertProvider, failureThreshold int) *Mon
 		results: make(map[string]CheckResult),
 		done:    make(chan struct{}),
 	}
+}
+
+// NewWithState creates a Monitor like New but also configures on-disk state
+// persistence at the given statePath.
+func NewWithState(targets []Target, providers []AlertProvider, failureThreshold int, statePath string) *Monitor {
+	m := New(targets, providers, failureThreshold)
+	m.StatePath = statePath
+	return m
 }
 
 // Start begins the monitoring loop. It runs until Stop is called or the
@@ -168,11 +179,18 @@ func (m *Monitor) loop(ctx context.Context, target Target, interval time.Duratio
 	}
 }
 
-// record stores the check result and notifies the alert manager.
+// record stores the check result and notifies the alert manager. If a
+// StatePath is configured, it also persists state to disk.
 func (m *Monitor) record(r CheckResult) {
 	m.mu.Lock()
 	m.results[r.Target.Name] = r
 	m.mu.Unlock()
 
 	m.alerts.Process(r)
+
+	if m.StatePath != "" {
+		if err := m.SaveStateToDisk(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to save monitor state: %v\n", err)
+		}
+	}
 }

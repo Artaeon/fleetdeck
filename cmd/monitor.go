@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -60,7 +61,13 @@ when health status changes.`,
 			providers = append(providers, monitor.NewSlackProvider(slackURL))
 		}
 
-		mon := monitor.New([]monitor.Target{target}, providers, threshold)
+		statePath := filepath.Join("/opt/fleetdeck/monitor", name+".json")
+		mon := monitor.NewWithState([]monitor.Target{target}, providers, threshold, statePath)
+
+		// Try to restore previous state from disk.
+		if prev, err := monitor.LoadState(statePath); err == nil {
+			ui.Info("Restored previous monitor state from %s (saved %s)", statePath, prev.UpdatedAt.Format(time.RFC3339))
+		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
