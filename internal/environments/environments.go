@@ -71,6 +71,11 @@ func (m *Manager) Create(projectName, envName, domain, branch string) (*Environm
 		return nil, fmt.Errorf("source project not found: %w", err)
 	}
 
+	// Prevent overwriting an existing environment.
+	if _, err := os.Stat(filepath.Join(envPath, "environment.json")); err == nil {
+		return nil, fmt.Errorf("environment %q already exists for project %q", envName, projectName)
+	}
+
 	// Create the environment directory.
 	if err := os.MkdirAll(envPath, 0755); err != nil {
 		return nil, fmt.Errorf("creating environment directory: %w", err)
