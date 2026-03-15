@@ -42,6 +42,9 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		if domain == "" {
 			return fmt.Errorf("--domain is required")
 		}
+		if err := validateDomain(domain); err != nil {
+			return err
+		}
 
 		if githubOrg == "" && !skipGithub {
 			githubOrg = cfg.GitHub.DefaultOrg

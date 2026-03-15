@@ -60,6 +60,9 @@ Examples:
 		if domain == "" {
 			return fmt.Errorf("--domain is required")
 		}
+		if err := validateDomain(domain); err != nil {
+			return err
+		}
 
 		// Ensure strategy defaults to "basic" even if explicitly set to empty.
 		if strategyName == "" {
