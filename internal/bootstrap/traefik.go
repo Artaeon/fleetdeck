@@ -1,6 +1,9 @@
 package bootstrap
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const traefikDir = "/opt/traefik"
 
@@ -13,7 +16,13 @@ func setupTraefik(runner CommandRunner, domain, email, network string) error {
 	}
 
 	// Create Docker network if it doesn't exist.
-	runner.Run(fmt.Sprintf("docker network create %s 2>/dev/null || true", network))
+	// "docker network create" returns an error if the network already exists,
+	// so we check for that specific case and only fail on unexpected errors.
+	if output, err := runner.Run(fmt.Sprintf("docker network create %s", network)); err != nil {
+		if !strings.Contains(output, "already exists") && !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("creating docker network %s: %w", network, err)
+		}
+	}
 
 	// Create acme.json with correct permissions.
 	if _, err := runner.Run(fmt.Sprintf("touch %s/acme.json && chmod 600 %s/acme.json", traefikDir, traefikDir)); err != nil {
