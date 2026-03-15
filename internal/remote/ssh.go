@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type Client struct {
@@ -19,12 +23,45 @@ type Client struct {
 func ParsePrivateKey(data []byte) (ssh.Signer, error) {
 	signer, err := ssh.ParsePrivateKey(data)
 	if err != nil {
+		// Detect encrypted keys and provide a helpful error message.
+		if strings.Contains(err.Error(), "encrypted") || strings.Contains(err.Error(), "passphrase") {
+			return nil, fmt.Errorf("private key is encrypted with a passphrase, which is not supported; use an unencrypted key or an SSH agent: %w", err)
+		}
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
 	return signer, nil
 }
 
+// NewClient creates an SSH client using known_hosts-based host key verification.
+// The known_hosts file is read from ~/.ssh/known_hosts. If the file does not
+// exist, an error is returned; use NewClientInsecure to skip host key checking.
 func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
+	signer, err := ParsePrivateKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	knownHostsPath := filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
+	hostKeyCallback, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading known_hosts file %s: %w (use NewClientInsecure to skip host key verification)", knownHostsPath, err)
+	}
+
+	config := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: hostKeyCallback,
+	}
+
+	return dialSSH(host, port, user, config)
+}
+
+// NewClientInsecure creates an SSH client that skips host key verification.
+// This should only be used when the caller explicitly opts into insecure mode,
+// such as in trusted or ephemeral environments.
+func NewClientInsecure(host, port, user string, privateKey []byte) (*Client, error) {
 	signer, err := ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, err
@@ -38,6 +75,10 @@ func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
+	return dialSSH(host, port, user, config)
+}
+
+func dialSSH(host, port, user string, config *ssh.ClientConfig) (*Client, error) {
 	addr := net.JoinHostPort(host, port)
 	conn, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
