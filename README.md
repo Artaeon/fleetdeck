@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="INSTALL.md">Install Guide</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#the-one-command-workflow">One Command</a> &bull;
   <a href="#deployment-profiles">Profiles</a> &bull;
