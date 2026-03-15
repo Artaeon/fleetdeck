@@ -73,8 +73,15 @@ The server must be accessible via SSH with key-based auth.`,
 		}
 
 		// Connect to server
+		insecure, _ := cmd.Flags().GetBool("insecure")
 		ui.Step(1, 6, "Connecting to %s@%s...", user, host)
-		client, err := remote.NewClient(host, port, user, keyData)
+		var client *remote.Client
+		if insecure {
+			ui.Warn("Skipping SSH host key verification (--insecure)")
+			client, err = remote.NewClientInsecure(host, port, user, keyData)
+		} else {
+			client, err = remote.NewClient(host, port, user, keyData)
+		}
 		if err != nil {
 			return fmt.Errorf("SSH connection failed: %w", err)
 		}
@@ -155,6 +162,7 @@ func init() {
 	serverSetupCmd.Flags().String("email", "", "Email for Let's Encrypt certificates (required)")
 	serverSetupCmd.Flags().Int("swap", 2, "Swap file size in GB")
 	serverSetupCmd.Flags().String("traefik-network", "traefik_default", "Docker network for Traefik")
+	serverSetupCmd.Flags().Bool("insecure", false, "Skip SSH host key verification")
 
 	serverCmd.AddCommand(serverSetupCmd)
 	rootCmd.AddCommand(serverCmd)

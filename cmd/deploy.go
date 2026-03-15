@@ -181,8 +181,15 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	}
 
 	// Step 2: Connect
+	insecure, _ := cmd.Flags().GetBool("insecure")
 	ui.Step(2, 5, "Connecting to %s@%s...", user, host)
-	client, err := remote.NewClient(host, port, user, keyData)
+	var client *remote.Client
+	if insecure {
+		ui.Warn("Skipping SSH host key verification (--insecure)")
+		client, err = remote.NewClientInsecure(host, port, user, keyData)
+	} else {
+		client, err = remote.NewClient(host, port, user, keyData)
+	}
 	if err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)
 	}
@@ -233,6 +240,7 @@ func init() {
 	deployCmd.Flags().String("strategy", "basic", "Deployment strategy (basic, bluegreen, rolling)")
 	deployCmd.Flags().String("name", "", "Project name (defaults to directory name)")
 	deployCmd.Flags().Duration("timeout", 5*time.Minute, "Deployment timeout")
+	deployCmd.Flags().Bool("insecure", false, "Skip SSH host key verification for remote deploys")
 
 	rootCmd.AddCommand(deployCmd)
 }
