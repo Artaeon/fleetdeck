@@ -35,6 +35,7 @@ type Project struct {
 	Template    string
 	Status      string
 	Source      string // "created", "imported", "discovered"
+	ServerID    string // optional: links to a registered server
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -240,6 +241,17 @@ func (db *DB) migrate() error {
 			size_bytes INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS servers (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			host TEXT NOT NULL,
+			port TEXT DEFAULT '22',
+			user TEXT DEFAULT 'root',
+			key_path TEXT,
+			status TEXT DEFAULT 'active',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, m := range migrations {
@@ -251,6 +263,7 @@ func (db *DB) migrate() error {
 	// Column additions for existing databases (safe to re-run)
 	alterStatements := []string{
 		`ALTER TABLE projects ADD COLUMN source TEXT DEFAULT 'created'`,
+		`ALTER TABLE projects ADD COLUMN server_id TEXT DEFAULT ''`,
 	}
 	for _, stmt := range alterStatements {
 		db.conn.Exec(stmt) // ignore "duplicate column" errors
