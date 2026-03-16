@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -12,11 +13,20 @@ import (
 // DiscordProvider sends alerts as rich embeds to a Discord webhook.
 type DiscordProvider struct {
 	WebhookURL string
+	client     *http.Client
 }
 
 // NewDiscordProvider creates a DiscordProvider for the given webhook URL.
-func NewDiscordProvider(webhookURL string) *DiscordProvider {
-	return &DiscordProvider{WebhookURL: webhookURL}
+// Returns an error if the URL is not valid.
+func NewDiscordProvider(webhookURL string) (*DiscordProvider, error) {
+	u, err := url.Parse(webhookURL)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return nil, fmt.Errorf("invalid discord webhook URL: must be a valid HTTP(S) URL")
+	}
+	return &DiscordProvider{
+		WebhookURL: webhookURL,
+		client:     &http.Client{Timeout: 10 * time.Second},
+	}, nil
 }
 
 func (p *DiscordProvider) Name() string { return "discord" }
@@ -77,8 +87,7 @@ func (p *DiscordProvider) Send(alert Alert) error {
 		return fmt.Errorf("marshaling discord payload: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(p.WebhookURL, "application/json", bytes.NewReader(body))
+	resp, err := p.client.Post(p.WebhookURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("sending discord message: %w", err)
 	}

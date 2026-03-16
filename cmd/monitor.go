@@ -67,7 +67,11 @@ Examples:
 			providers = append(providers, monitor.NewSlackProvider(slackURL))
 		}
 		if discordURL != "" {
-			providers = append(providers, monitor.NewDiscordProvider(discordURL))
+			dp, err := monitor.NewDiscordProvider(discordURL)
+			if err != nil {
+				return err
+			}
+			providers = append(providers, dp)
 		}
 
 		statePath := filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")

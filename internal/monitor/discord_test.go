@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+func mustDiscordProvider(t *testing.T, url string) *DiscordProvider {
+	t.Helper()
+	p, err := NewDiscordProvider(url)
+	if err != nil {
+		t.Fatalf("NewDiscordProvider(%q): %v", url, err)
+	}
+	return p
+}
+
 func TestDiscordProviderSend(t *testing.T) {
 	var receivedBody []byte
 	var receivedContentType string
@@ -24,7 +33,7 @@ func TestDiscordProviderSend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewDiscordProvider(server.URL)
+	provider := mustDiscordProvider(t, server.URL)
 	ts := time.Date(2026, 3, 15, 10, 30, 0, 0, time.UTC)
 	alert := Alert{
 		Level:     "critical",
@@ -150,7 +159,7 @@ func TestDiscordProviderColors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			provider := NewDiscordProvider(server.URL)
+			provider := mustDiscordProvider(t, server.URL)
 			alert := Alert{
 				Level:     tt.level,
 				Title:     "color test",
@@ -184,7 +193,7 @@ func TestDiscordProviderServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewDiscordProvider(server.URL)
+	provider := mustDiscordProvider(t, server.URL)
 	alert := Alert{
 		Level:     "critical",
 		Title:     "test alert",
@@ -208,9 +217,10 @@ func TestDiscordProviderUnreachable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
+	serverURL := server.URL
 	server.Close() // Close immediately to make it unreachable.
 
-	provider := NewDiscordProvider(server.URL)
+	provider := mustDiscordProvider(t, serverURL)
 	alert := Alert{
 		Level:     "critical",
 		Title:     "test alert",
@@ -227,13 +237,27 @@ func TestDiscordProviderUnreachable(t *testing.T) {
 
 func TestNewDiscordProvider(t *testing.T) {
 	url := "https://discord.com/api/webhooks/123/abc"
-	provider := NewDiscordProvider(url)
-
-	if provider == nil {
-		t.Fatal("expected non-nil provider")
+	provider, err := NewDiscordProvider(url)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if provider.WebhookURL != url {
 		t.Errorf("expected WebhookURL %q, got %q", url, provider.WebhookURL)
+	}
+}
+
+func TestNewDiscordProviderInvalidURL(t *testing.T) {
+	tests := []string{
+		"",
+		"not-a-url",
+		"ftp://example.com",
+	}
+	for _, url := range tests {
+		_, err := NewDiscordProvider(url)
+		if err == nil {
+			t.Errorf("expected error for URL %q, got nil", url)
+		}
 	}
 }
 
