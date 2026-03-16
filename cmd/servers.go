@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/db"
@@ -195,7 +196,7 @@ var serverStatusCmd = &cobra.Command{
 			}
 
 			d.UpdateServerStatus(s.Name, "active")
-			ui.Success("  %s is reachable (hostname: %s)", s.Name, fmt.Sprintf("%s", hostname[:len(hostname)-1]))
+			ui.Success("  %s is reachable (hostname: %s)", s.Name, strings.TrimSpace(hostname))
 		}
 
 		return nil
