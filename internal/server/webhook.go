@@ -184,7 +184,27 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString(string(out))
 	}
 
-	// Step 4: docker compose up -d
+	// Load .fleetdeck.yml hooks
+	fdCfg := loadFleetdeckConfig(p.ProjectPath)
+
+	// Step 4a: Run pre-deploy hook from .fleetdeck.yml
+	if fdCfg != nil && fdCfg.Hooks.PreDeploy != "" {
+		logBuf.WriteString("\n=== Pre-Deploy Hook ===\n")
+		logBuf.WriteString(fmt.Sprintf("Running: %s\n", fdCfg.Hooks.PreDeploy))
+		hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PreDeploy)
+		hookCmd.Dir = p.ProjectPath
+		if out, err := hookCmd.CombinedOutput(); err != nil {
+			logBuf.WriteString(string(out))
+			logBuf.WriteString(fmt.Sprintf("\npre-deploy hook failed: %v\n", err))
+			s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
+			return
+		} else {
+			logBuf.WriteString(string(out))
+		}
+		logBuf.WriteString("Pre-deploy hook completed.\n")
+	}
+
+	// Step 4b: docker compose up -d
 	logBuf.WriteString("\n=== Docker Compose Up ===\n")
 	cmd = exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = p.ProjectPath
@@ -204,10 +224,10 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		logBuf.WriteString("All services healthy.\n")
 
 		// Step 6: Run post-deploy hook from .fleetdeck.yml
-		if hook := loadPostDeployHook(p.ProjectPath); hook != "" {
+		if fdCfg != nil && fdCfg.Hooks.PostDeploy != "" {
 			logBuf.WriteString("\n=== Post-Deploy Hook ===\n")
-			logBuf.WriteString(fmt.Sprintf("Running: %s\n", hook))
-			hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", hook)
+			logBuf.WriteString(fmt.Sprintf("Running: %s\n", fdCfg.Hooks.PostDeploy))
+			hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PostDeploy)
 			hookCmd.Dir = p.ProjectPath
 			if out, err := hookCmd.CombinedOutput(); err != nil {
 				logBuf.WriteString(string(out))
@@ -422,9 +442,9 @@ type fleetdeckConfig struct {
 	} `yaml:"hooks"`
 }
 
-// loadPostDeployHook reads a .fleetdeck.yml file from the project directory
-// and returns the post_deploy hook command, if any.
-func loadPostDeployHook(projectPath string) string {
+// loadFleetdeckConfig reads a .fleetdeck.yml file from the project directory
+// and returns the parsed configuration.
+func loadFleetdeckConfig(projectPath string) *fleetdeckConfig {
 	for _, name := range []string{".fleetdeck.yml", "fleetdeck.yml"} {
 		data, err := os.ReadFile(filepath.Join(projectPath, name))
 		if err != nil {
@@ -433,9 +453,9 @@ func loadPostDeployHook(projectPath string) string {
 		var cfg fleetdeckConfig
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			log.Printf("warning: failed to parse %s: %v", name, err)
-			return ""
+			return nil
 		}
-		return cfg.Hooks.PostDeploy
+		return &cfg
 	}
-	return ""
+	return nil
 }
