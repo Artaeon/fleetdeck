@@ -23,6 +23,9 @@ type Metrics struct {
 	backupsTotal        atomic.Int64
 	startedAt           time.Time
 
+	// stopCh signals the cache refresh goroutine to exit.
+	stopCh chan struct{}
+
 	// Cached system metrics (refreshed periodically)
 	cacheMu          sync.RWMutex
 	cachedProjects   int
@@ -40,6 +43,7 @@ type Metrics struct {
 func newMetrics() *Metrics {
 	return &Metrics{
 		startedAt: time.Now(),
+		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -57,8 +61,14 @@ func (m *Metrics) startCacheRefresh(s *Server) {
 
 	ticker := time.NewTicker(30 * time.Second)
 	go func() {
-		for range ticker.C {
-			m.refreshCache(s)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.refreshCache(s)
+			case <-m.stopCh:
+				return
+			}
 		}
 	}()
 }

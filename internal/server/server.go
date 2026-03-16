@@ -47,12 +47,12 @@ type Server struct {
 }
 
 // GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
-func GenerateAPIToken() string {
+func GenerateAPIToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic(err)
+		return "", fmt.Errorf("generating API token: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // projectMutex returns a per-project mutex, creating one lazily if needed.
@@ -233,7 +233,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64KB limit
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid form data")
+		return
+	}
 	token := r.FormValue("token")
 
 	if s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
@@ -264,6 +267,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	close(s.metrics.stopCh)
 	return s.server.Shutdown(ctx)
 }
 
@@ -273,7 +277,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		writeJSON(w, map[string]string{"status": "unhealthy", "error": "database unreachable"})
+		writeJSON(w, map[string]string{"status": "unhealthy"})
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
