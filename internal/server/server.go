@@ -32,6 +32,9 @@ import (
 // validProjectName matches valid project name path parameters.
 var validProjectName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
+// validUUID matches UUID v4 format strings.
+var validUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
 type Server struct {
 	cfg           *config.Config
 	db            *db.DB
@@ -714,6 +717,10 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid project name")
 		return
 	}
+	if !validUUID.MatchString(backupID) {
+		writeError(w, http.StatusBadRequest, "invalid backup ID")
+		return
+	}
 
 	p, err := s.db.GetProject(name)
 	if err != nil {
@@ -754,6 +761,10 @@ func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
 
 	if !validProjectName.MatchString(name) {
 		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+	if !validUUID.MatchString(backupID) {
+		writeError(w, http.StatusBadRequest, "invalid backup ID")
 		return
 	}
 

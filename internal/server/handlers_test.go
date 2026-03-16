@@ -1088,7 +1088,7 @@ func TestHandleRestoreBackupInvalidProjectName(t *testing.T) {
 func TestHandleRestoreBackupProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/backup/some-id/restore", nil)
+	req := httptest.NewRequest("POST", "/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1116,7 +1116,7 @@ func TestHandleDeleteBackupInvalidProjectName(t *testing.T) {
 func TestHandleDeleteBackupProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/nonexistent/backup/some-id", nil)
+	req := httptest.NewRequest("DELETE", "/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
