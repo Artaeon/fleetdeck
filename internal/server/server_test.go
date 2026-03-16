@@ -452,8 +452,14 @@ func TestLogsEndpointRejectsInvalidLines(t *testing.T) {
 }
 
 func TestGenerateAPIToken(t *testing.T) {
-	t1 := GenerateAPIToken()
-	t2 := GenerateAPIToken()
+	t1, err := GenerateAPIToken()
+	if err != nil {
+		t.Fatalf("GenerateAPIToken: %v", err)
+	}
+	t2, err := GenerateAPIToken()
+	if err != nil {
+		t.Fatalf("GenerateAPIToken: %v", err)
+	}
 
 	if len(t1) != 64 { // 32 bytes = 64 hex chars
 		t.Errorf("expected 64 char hex token, got %d chars", len(t1))
