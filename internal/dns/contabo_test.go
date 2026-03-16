@@ -154,7 +154,7 @@ func TestContaboDeleteRecord(t *testing.T) {
 	defer srv.Close()
 
 	p := cbProvider(srv.URL)
-	err := p.DeleteRecord("example.com", "A", "@")
+	err := p.DeleteRecord("example.com", "A", "example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

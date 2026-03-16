@@ -42,9 +42,10 @@ func (c *ContaboProvider) CreateRecord(domain, recordType, name, value string, t
 		return err
 	}
 
+	zoneName := rootDomain(domain)
 	body := map[string]any{
 		"type":  recordType,
-		"name":  name,
+		"name":  contaboName(name, zoneName),
 		"value": value,
 		"ttl":   ttl,
 	}
@@ -69,8 +70,10 @@ func (c *ContaboProvider) DeleteRecord(domain, recordType, name string) error {
 		return err
 	}
 
+	zoneName := rootDomain(domain)
+
 	// Find the record ID by listing and matching type+name.
-	records, err := c.listZoneRecords(zoneID)
+	records, err := c.listZoneRecords(zoneID, zoneName)
 	if err != nil {
 		return err
 	}
@@ -95,7 +98,8 @@ func (c *ContaboProvider) ListRecords(domain string) ([]Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c.listZoneRecords(zoneID)
+	zoneName := rootDomain(domain)
+	return c.listZoneRecords(zoneID, zoneName)
 }
 
 // contaboAPIResponse is the common envelope for Contabo API responses.
@@ -152,7 +156,7 @@ func (c *ContaboProvider) findZoneID(domain string) (string, error) {
 }
 
 // listZoneRecords fetches all DNS records for the given zone ID.
-func (c *ContaboProvider) listZoneRecords(zoneID string) ([]Record, error) {
+func (c *ContaboProvider) listZoneRecords(zoneID, zoneName string) ([]Record, error) {
 	url := fmt.Sprintf("%s/dns/zones/%s/records", contaboAPIBase, zoneID)
 	resp, err := c.doRequest("GET", url, nil)
 	if err != nil {
@@ -179,7 +183,7 @@ func (c *ContaboProvider) listZoneRecords(zoneID string) ([]Record, error) {
 		records[i] = Record{
 			ID:    r.ID,
 			Type:  r.Type,
-			Name:  r.Name,
+			Name:  contaboFullName(r.Name, zoneName),
 			Value: r.Value,
 			TTL:   r.TTL,
 		}
@@ -217,4 +221,29 @@ func (c *ContaboProvider) checkResponse(resp *http.Response, action string) erro
 
 	body, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("%s: HTTP %d: %s", action, resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
+// contaboName converts a fully qualified domain name to a Contabo relative
+// record name. For example:
+//   - "example.com" with zone "example.com" → "@"
+//   - "www.example.com" with zone "example.com" → "www"
+//   - "*.example.com" with zone "example.com" → "*"
+func contaboName(fqdn, zoneName string) string {
+	if fqdn == zoneName {
+		return "@"
+	}
+	suffix := "." + zoneName
+	if strings.HasSuffix(fqdn, suffix) {
+		return strings.TrimSuffix(fqdn, suffix)
+	}
+	return fqdn
+}
+
+// contaboFullName converts a Contabo relative record name back to a fully
+// qualified domain name.
+func contaboFullName(name, zoneName string) string {
+	if name == "@" {
+		return zoneName
+	}
+	return name + "." + zoneName
 }
