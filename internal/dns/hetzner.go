@@ -82,7 +82,7 @@ func (h *HetznerProvider) DeleteRecord(domain, recordType, name string) error {
 			if err != nil {
 				return err
 			}
-			resp.Body.Close()
+			defer resp.Body.Close()
 			return h.checkResponse(resp, "delete DNS record")
 		}
 	}

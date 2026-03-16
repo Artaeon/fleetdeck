@@ -81,7 +81,7 @@ func (c *CloudflareProvider) DeleteRecord(domain, recordType, name string) error
 			if err != nil {
 				return err
 			}
-			resp.Body.Close()
+			defer resp.Body.Close()
 			return c.checkResponse(resp, "delete DNS record")
 		}
 	}
