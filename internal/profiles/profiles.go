@@ -8,12 +8,14 @@ import (
 
 // Profile defines a deployment profile with composable services.
 type Profile struct {
-	Name        string
-	Description string
-	Services    []Service
-	Compose     string
-	EnvTemplate string
-	Nginx       string // Optional nginx config for static/fullstack
+	Name            string
+	Description     string
+	Services        []Service
+	Compose         string
+	EnvTemplate     string
+	Nginx           string // Optional nginx config for static/fullstack
+	DefaultCPU      string // Default CPU limit (e.g. "1.0")
+	DefaultMemory   string // Default memory limit (e.g. "512M")
 }
 
 // Service represents a single service within a profile.
@@ -76,6 +78,17 @@ func List() []*Profile {
 		}
 	}
 	return result
+}
+
+// ApplyDefaults fills in CPULimit and MemoryLimit from the profile if not
+// already set on the data.
+func (p *Profile) ApplyDefaults(data *ProfileData) {
+	if data.CPULimit == "" && p.DefaultCPU != "" {
+		data.CPULimit = p.DefaultCPU
+	}
+	if data.MemoryLimit == "" && p.DefaultMemory != "" {
+		data.MemoryLimit = p.DefaultMemory
+	}
 }
 
 // Render renders a profile's compose template with the given data.

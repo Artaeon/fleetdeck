@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "saas",
-		Description: "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + email relay + cron.",
+		Name:          "saas",
+		Description:   "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + email relay + cron.",
+		DefaultCPU:    "2.0",
+		DefaultMemory: "2G",
 		Services: []Service{
 			{Name: "app", Image: "custom", Description: "Your application", Required: true},
 			{Name: "postgres", Image: "postgres:{{.PostgresVersion}}", Description: "PostgreSQL database", Required: true},

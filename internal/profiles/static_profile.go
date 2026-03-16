@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "static",
-		Description: "Nginx serving static files with CDN headers. For landing pages and docs.",
+		Name:          "static",
+		Description:   "Nginx serving static files with CDN headers. For landing pages and docs.",
+		DefaultCPU:    "0.5",
+		DefaultMemory: "256M",
 		Services: []Service{
 			{Name: "nginx", Image: "nginx:alpine", Description: "Nginx web server", Required: true},
 		},

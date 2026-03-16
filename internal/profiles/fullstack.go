@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "fullstack",
-		Description: "Frontend + Backend + DB + Redis + S3. For monorepo SaaS applications.",
+		Name:          "fullstack",
+		Description:   "Frontend + Backend + DB + Redis + S3. For monorepo SaaS applications.",
+		DefaultCPU:    "1.0",
+		DefaultMemory: "1G",
 		Services: []Service{
 			{Name: "frontend", Image: "custom", Description: "Frontend application (Next.js, React, etc.)", Required: true},
 			{Name: "backend", Image: "custom", Description: "Backend API server", Required: true},

@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "server",
-		Description: "App + PostgreSQL + Redis + automated backups. For APIs and backends.",
+		Name:          "server",
+		Description:   "App + PostgreSQL + Redis + automated backups. For APIs and backends.",
+		DefaultCPU:    "1.0",
+		DefaultMemory: "1G",
 		Services: []Service{
 			{Name: "app", Image: "custom", Description: "Your application", Required: true},
 			{Name: "postgres", Image: "postgres:{{.PostgresVersion}}", Description: "PostgreSQL database", Required: true},

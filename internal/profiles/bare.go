@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "bare",
-		Description: "App container only with Traefik routing. No database, no extras.",
+		Name:          "bare",
+		Description:   "App container only with Traefik routing. No database, no extras.",
+		DefaultCPU:    "1.0",
+		DefaultMemory: "512M",
 		Services: []Service{
 			{Name: "app", Image: "custom", Description: "Your application", Required: true},
 		},

@@ -2,8 +2,10 @@ package profiles
 
 func init() {
 	Register(&Profile{
-		Name:        "worker",
-		Description: "Background job runner with Redis queue. No HTTP exposure.",
+		Name:          "worker",
+		Description:   "Background job runner with Redis queue. No HTTP exposure.",
+		DefaultCPU:    "1.0",
+		DefaultMemory: "1G",
 		Services: []Service{
 			{Name: "worker", Image: "custom", Description: "Background worker process", Required: true},
 			{Name: "redis", Image: "redis:7-alpine", Description: "Redis job queue", Required: true},
