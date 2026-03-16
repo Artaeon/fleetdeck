@@ -189,20 +189,18 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 
 	// Resolve server: either a registered name or user@host
 	var host, user string
-	if !strings.Contains(server, "@") && !strings.Contains(server, ".") {
-		// Looks like a registered server name (no @ or dots)
+	if !strings.Contains(server, "@") && !strings.Contains(server, ".") && !strings.Contains(server, ":") {
+		// No @ or dots — must be a registered server name
 		d := openDB()
 		s, err := d.GetServer(server)
-		if err == nil {
-			host = s.Host
-			user = s.User
-			port = s.Port
-			keyFile = s.KeyPath
-			ui.Info("Using registered server %s (%s@%s)", s.Name, user, host)
-		} else {
-			// Fall back to treating it as a hostname
-			host, user = parseTarget(server)
+		if err != nil {
+			return fmt.Errorf("server %q not found; use 'fleetdeck server add' to register it or specify user@host", server)
 		}
+		host = s.Host
+		user = s.User
+		port = s.Port
+		keyFile = s.KeyPath
+		ui.Info("Using registered server %s (%s@%s)", s.Name, user, host)
 	} else {
 		host, user = parseTarget(server)
 	}
