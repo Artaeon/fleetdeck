@@ -47,6 +47,19 @@ func GetStrategy(name string) (Strategy, error) {
 	}
 }
 
+// runHook executes a deploy hook inside the app container and appends
+// the output to the result logs.
+func runHook(ctx context.Context, label, command, projectPath string, result *DeployResult) error {
+	hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", command)
+	hookCmd.Dir = projectPath
+	out, err := hookCmd.CombinedOutput()
+	result.Logs = append(result.Logs, fmt.Sprintf("[%s] %s", label, strings.TrimSpace(string(out))))
+	if err != nil {
+		return fmt.Errorf("%s hook failed: %s: %w", label, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // BasicStrategy performs a simple docker compose up -d deployment.
 type BasicStrategy struct{}
 
@@ -58,15 +71,10 @@ func (s *BasicStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Deploy
 	old, _ := listContainers(opts.ProjectPath)
 	result.OldContainers = old
 
-	// Run pre-deploy hook
 	if opts.PreDeployHook != "" {
-		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PreDeployHook)
-		hookCmd.Dir = opts.ProjectPath
-		out, err := hookCmd.CombinedOutput()
-		result.Logs = append(result.Logs, fmt.Sprintf("[pre-deploy] %s", strings.TrimSpace(string(out))))
-		if err != nil {
+		if err := runHook(ctx, "pre-deploy", opts.PreDeployHook, opts.ProjectPath, result); err != nil {
 			result.Duration = time.Since(start)
-			return result, fmt.Errorf("pre-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+			return result, err
 		}
 	}
 
@@ -85,15 +93,10 @@ func (s *BasicStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Deploy
 		return result, fmt.Errorf("docker compose up: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	// Run post-deploy hook
 	if opts.PostDeployHook != "" {
-		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PostDeployHook)
-		hookCmd.Dir = opts.ProjectPath
-		out, err := hookCmd.CombinedOutput()
-		result.Logs = append(result.Logs, fmt.Sprintf("[post-deploy] %s", strings.TrimSpace(string(out))))
-		if err != nil {
+		if err := runHook(ctx, "post-deploy", opts.PostDeployHook, opts.ProjectPath, result); err != nil {
 			result.Duration = time.Since(start)
-			return result, fmt.Errorf("post-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+			return result, err
 		}
 	}
 
@@ -113,15 +116,10 @@ func (s *RollingStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Depl
 
 	result.OldContainers, _ = listContainers(opts.ProjectPath)
 
-	// Run pre-deploy hook
 	if opts.PreDeployHook != "" {
-		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PreDeployHook)
-		hookCmd.Dir = opts.ProjectPath
-		out, err := hookCmd.CombinedOutput()
-		result.Logs = append(result.Logs, fmt.Sprintf("[pre-deploy] %s", strings.TrimSpace(string(out))))
-		if err != nil {
+		if err := runHook(ctx, "pre-deploy", opts.PreDeployHook, opts.ProjectPath, result); err != nil {
 			result.Duration = time.Since(start)
-			return result, fmt.Errorf("pre-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+			return result, err
 		}
 	}
 
@@ -165,15 +163,10 @@ func (s *RollingStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Depl
 		}
 	}
 
-	// Run post-deploy hook
 	if opts.PostDeployHook != "" {
-		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PostDeployHook)
-		hookCmd.Dir = opts.ProjectPath
-		out, err := hookCmd.CombinedOutput()
-		result.Logs = append(result.Logs, fmt.Sprintf("[post-deploy] %s", strings.TrimSpace(string(out))))
-		if err != nil {
+		if err := runHook(ctx, "post-deploy", opts.PostDeployHook, opts.ProjectPath, result); err != nil {
 			result.Duration = time.Since(start)
-			return result, fmt.Errorf("post-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+			return result, err
 		}
 	}
 
