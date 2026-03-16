@@ -31,6 +31,7 @@ Examples:
 
 		port, _ := cmd.Flags().GetString("port")
 		keyFile, _ := cmd.Flags().GetString("key")
+		passphrase, _ := cmd.Flags().GetString("passphrase")
 
 		// Resolve SSH key path
 		if keyFile == "" {
@@ -62,7 +63,11 @@ Examples:
 			return fmt.Errorf("reading SSH key %s: %w", keyFile, err)
 		}
 
-		client, err := remote.NewClientTOFU(host, port, user, keyData, nil)
+		var passphraseBytes []byte
+		if passphrase != "" {
+			passphraseBytes = []byte(passphrase)
+		}
+		client, err := remote.NewClientTOFU(host, port, user, keyData, passphraseBytes)
 		if err != nil {
 			return fmt.Errorf("SSH connection failed: %w", err)
 		}
@@ -179,7 +184,12 @@ var serverStatusCmd = &cobra.Command{
 				continue
 			}
 
-			client, err := remote.NewClientTOFU(s.Host, s.Port, s.User, keyData, nil)
+			passphrase, _ := cmd.Flags().GetString("passphrase")
+			var passphraseBytes []byte
+			if passphrase != "" {
+				passphraseBytes = []byte(passphrase)
+			}
+			client, err := remote.NewClientTOFU(s.Host, s.Port, s.User, keyData, passphraseBytes)
 			if err != nil {
 				ui.Error("  Connection failed: %v", err)
 				d.UpdateServerStatus(s.Name, "unreachable")
@@ -206,6 +216,9 @@ var serverStatusCmd = &cobra.Command{
 func init() {
 	serverAddCmd.Flags().String("port", "22", "SSH port")
 	serverAddCmd.Flags().String("key", "", "Path to SSH private key")
+	serverAddCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
+
+	serverStatusCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
 
 	serverCmd.AddCommand(serverAddCmd)
 	serverCmd.AddCommand(serverListCmd)
