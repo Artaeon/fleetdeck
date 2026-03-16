@@ -115,14 +115,9 @@ func execRemote(cmd *cobra.Command, serverName, projectPath, service string, noT
 	}
 	defer client.Close()
 
-	// Build the remote docker compose exec command
-	composeCmd := "cd " + shellQuote(projectPath) + " && docker compose exec"
-	if noTTY {
-		composeCmd += " -T"
-	} else {
-		// Remote SSH sessions are non-interactive by default, use -T
-		composeCmd += " -T"
-	}
+	// Build the remote docker compose exec command.
+	// Remote SSH sessions are non-interactive, so always use -T.
+	composeCmd := "cd " + shellQuote(projectPath) + " && docker compose exec -T"
 	composeCmd += " " + shellQuote(service)
 	for _, arg := range execArgs {
 		composeCmd += " " + shellQuote(arg)
