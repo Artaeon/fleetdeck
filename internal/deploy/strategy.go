@@ -20,6 +20,8 @@ type DeployOptions struct {
 	ComposeFile    string
 	HealthCheckURL string
 	Timeout        time.Duration
+	PreDeployHook  string // Command to run before deploy (e.g. "npm run migrate")
+	PostDeployHook string // Command to run after deploy (e.g. "npm run seed")
 }
 
 // DeployResult captures the outcome of a deployment.
@@ -56,6 +58,18 @@ func (s *BasicStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Deploy
 	old, _ := listContainers(opts.ProjectPath)
 	result.OldContainers = old
 
+	// Run pre-deploy hook
+	if opts.PreDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PreDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[pre-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("pre-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	}
+
 	args := []string{"compose"}
 	if opts.ComposeFile != "" {
 		args = append(args, "-f", opts.ComposeFile)
@@ -69,6 +83,18 @@ func (s *BasicStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Deploy
 	if err != nil {
 		result.Duration = time.Since(start)
 		return result, fmt.Errorf("docker compose up: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	// Run post-deploy hook
+	if opts.PostDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PostDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[post-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("post-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 
 	// Capture new containers after deploy.
@@ -86,6 +112,18 @@ func (s *RollingStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Depl
 	result := &DeployResult{}
 
 	result.OldContainers, _ = listContainers(opts.ProjectPath)
+
+	// Run pre-deploy hook
+	if opts.PreDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PreDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[pre-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("pre-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	}
 
 	// Pull new images first.
 	pullArgs := []string{"compose"}
@@ -124,6 +162,18 @@ func (s *RollingStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Depl
 		if err != nil {
 			result.Duration = time.Since(start)
 			return result, fmt.Errorf("updating service %s: %s: %w", svc, strings.TrimSpace(string(out)), err)
+		}
+	}
+
+	// Run post-deploy hook
+	if opts.PostDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PostDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[post-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("post-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
 		}
 	}
 

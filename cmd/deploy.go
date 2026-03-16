@@ -58,6 +58,8 @@ Examples:
 		strategyName, _ := cmd.Flags().GetString("strategy")
 		name, _ := cmd.Flags().GetString("name")
 		timeout, _ := cmd.Flags().GetDuration("timeout")
+		preDeployHook, _ := cmd.Flags().GetString("pre-deploy")
+		postDeployHook, _ := cmd.Flags().GetString("post-deploy")
 
 		if domain == "" {
 			return fmt.Errorf("--domain is required")
@@ -105,14 +107,14 @@ Examples:
 
 		// Step 2: Remote or local?
 		if server != "" {
-			return deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout)
+			return deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook)
 		}
 
-		return deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout)
+		return deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook)
 	},
 }
 
-func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration) error {
+func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string) error {
 	projectPath := cfg.ProjectPath(name)
 
 	// Acquire per-project lock to prevent concurrent deployments.
@@ -143,6 +145,8 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 		ComposeFile:    filepath.Join(projectPath, "docker-compose.yml"),
 		HealthCheckURL: healthURL,
 		Timeout:        timeout,
+		PreDeployHook:  preDeployHook,
+		PostDeployHook: postDeployHook,
 	}
 
 	result, err := strategy.Deploy(ctx, opts)
@@ -172,7 +176,7 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 	return nil
 }
 
-func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration) error {
+func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string) error {
 	// Acquire per-project lock using a canonical path based on project name,
 	// so concurrent deploys from different directories are serialized on this machine.
 	lockDir := filepath.Join(os.TempDir(), "fleetdeck-locks", name)
@@ -303,6 +307,18 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Step 4: Build and deploy
 	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
 
+	// Run pre-deploy hook
+	if preDeployHook != "" {
+		ui.Info("Running pre-deploy hook...")
+		hookCmd := fmt.Sprintf("cd %s && docker compose exec -T app sh -c '%s'", quotedPath, preDeployHook)
+		output, err := client.Run(hookCmd)
+		if err != nil {
+			ui.Error("Pre-deploy hook failed: %s", output)
+			return fmt.Errorf("pre-deploy hook failed: %w", err)
+		}
+		ui.Success("Pre-deploy hook completed")
+	}
+
 	// Build first (common to all strategies)
 	buildCmd := "cd " + quotedPath + " && docker compose build"
 	output, err := client.Run(buildCmd)
@@ -345,6 +361,19 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		ui.Error("Remote deployment failed: %s", output)
 		return fmt.Errorf("remote deployment: %w", err)
 	}
+
+	// Run post-deploy hook
+	if postDeployHook != "" {
+		ui.Info("Running post-deploy hook...")
+		hookCmd := fmt.Sprintf("cd %s && docker compose exec -T app sh -c '%s'", quotedPath, postDeployHook)
+		output, err := client.Run(hookCmd)
+		if err != nil {
+			ui.Error("Post-deploy hook failed: %s", output)
+			return fmt.Errorf("post-deploy hook failed: %w", err)
+		}
+		ui.Success("Post-deploy hook completed")
+	}
+
 	ui.Success("Application deployed on server")
 
 	// Step 5: Summary
@@ -371,6 +400,8 @@ func init() {
 	deployCmd.Flags().Duration("timeout", 5*time.Minute, "Deployment timeout")
 	deployCmd.Flags().Bool("insecure", false, "Skip SSH host key verification for remote deploys")
 	deployCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
+	deployCmd.Flags().String("pre-deploy", "", "Command to run before deploy (e.g. \"npm run migrate\")")
+	deployCmd.Flags().String("post-deploy", "", "Command to run after deploy (e.g. \"npm run seed\")")
 
 	rootCmd.AddCommand(deployCmd)
 }

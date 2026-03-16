@@ -26,6 +26,18 @@ func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*De
 	// Capture old containers.
 	result.OldContainers, _ = listContainers(opts.ProjectPath)
 
+	// Run pre-deploy hook
+	if opts.PreDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PreDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[pre-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("pre-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+	}
+
 	// Step 1: Bring up new containers under a different project name.
 	result.Logs = append(result.Logs, "starting new containers")
 	if err := s.startNew(ctx, opts, newProject); err != nil {
@@ -59,6 +71,18 @@ func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*De
 	if err := s.startOriginal(ctx, opts); err != nil {
 		result.Duration = time.Since(start)
 		return result, fmt.Errorf("promoting new containers: %w", err)
+	}
+
+	// Run post-deploy hook
+	if opts.PostDeployHook != "" {
+		hookCmd := exec.CommandContext(ctx, "docker", "compose", "exec", "-T", "app", "sh", "-c", opts.PostDeployHook)
+		hookCmd.Dir = opts.ProjectPath
+		out, err := hookCmd.CombinedOutput()
+		result.Logs = append(result.Logs, fmt.Sprintf("[post-deploy] %s", strings.TrimSpace(string(out))))
+		if err != nil {
+			result.Duration = time.Since(start)
+			return result, fmt.Errorf("post-deploy hook failed: %s: %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 
 	result.NewContainers, _ = listContainers(opts.ProjectPath)
