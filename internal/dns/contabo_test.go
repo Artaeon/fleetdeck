@@ -395,3 +395,86 @@ func TestContaboRequestID(t *testing.T) {
 		t.Errorf("expected UUID-format x-request-id (36 chars), got %q (%d chars)", gotRequestID, len(gotRequestID))
 	}
 }
+
+// ---------- Test: ListRecords pagination ----------
+
+func TestContaboListRecordsPagination(t *testing.T) {
+	var recordPages int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Zone lookup
+		if r.Method == http.MethodGet && r.URL.Path == "/dns/zones" {
+			json.NewEncoder(w).Encode(contaboZonesResponse([]contaboZone{
+				{ID: "zone-pg", Name: "example.com"},
+			}))
+			return
+		}
+
+		// List records with pagination
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/records") {
+			recordPages++
+			page := r.URL.Query().Get("page")
+
+			switch page {
+			case "1", "":
+				json.NewEncoder(w).Encode(contaboAPIResponse{
+					Data: mustMarshal([]contaboRecord{
+						{ID: "r1", Type: "A", Name: "@", Value: "10.0.0.1", TTL: 300},
+						{ID: "r2", Type: "CNAME", Name: "www", Value: "example.com", TTL: 600},
+					}),
+					Pagination: &contaboPagination{
+						Size:          2,
+						TotalElements: 4,
+						TotalPages:    2,
+						Page:          1,
+					},
+				})
+			case "2":
+				json.NewEncoder(w).Encode(contaboAPIResponse{
+					Data: mustMarshal([]contaboRecord{
+						{ID: "r3", Type: "MX", Name: "@", Value: "mail.example.com", TTL: 3600},
+						{ID: "r4", Type: "TXT", Name: "@", Value: "v=spf1 include:example.com ~all", TTL: 3600},
+					}),
+					Pagination: &contaboPagination{
+						Size:          2,
+						TotalElements: 4,
+						TotalPages:    2,
+						Page:          2,
+					},
+				})
+			default:
+				http.Error(w, "unexpected page", http.StatusBadRequest)
+			}
+			return
+		}
+
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	p := cbProvider(srv.URL)
+	records, err := p.ListRecords("example.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if recordPages != 2 {
+		t.Errorf("expected 2 record page requests, got %d", recordPages)
+	}
+
+	if len(records) != 4 {
+		t.Fatalf("expected 4 records across 2 pages, got %d", len(records))
+	}
+
+	if records[0].ID != "r1" || records[0].Type != "A" {
+		t.Errorf("unexpected first record: %+v", records[0])
+	}
+	if records[2].ID != "r3" || records[2].Type != "MX" {
+		t.Errorf("unexpected third record: %+v", records[2])
+	}
+	if records[3].ID != "r4" || records[3].Type != "TXT" {
+		t.Errorf("unexpected fourth record: %+v", records[3])
+	}
+}

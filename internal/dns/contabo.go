@@ -104,7 +104,15 @@ func (c *ContaboProvider) ListRecords(domain string) ([]Record, error) {
 
 // contaboAPIResponse is the common envelope for Contabo API responses.
 type contaboAPIResponse struct {
-	Data json.RawMessage `json:"data"`
+	Data       json.RawMessage    `json:"data"`
+	Pagination *contaboPagination `json:"_pagination"`
+}
+
+type contaboPagination struct {
+	Size          int `json:"size"`
+	TotalElements int `json:"totalElements"`
+	TotalPages    int `json:"totalPages"`
+	Page          int `json:"page"`
 }
 
 type contaboZone struct {
@@ -122,72 +130,92 @@ type contaboRecord struct {
 
 // findZoneID resolves a domain (e.g. "app.example.com") to its Contabo
 // zone ID by extracting the root domain and querying the zones API.
+// It paginates through all pages until the matching zone is found.
 func (c *ContaboProvider) findZoneID(domain string) (string, error) {
 	root := rootDomain(domain)
 
-	url := fmt.Sprintf("%s/dns/zones", contaboAPIBase)
-	resp, err := c.doRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if err := c.checkResponse(resp, "zone lookup"); err != nil {
-		return "", err
-	}
-
-	var apiResp contaboAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return "", fmt.Errorf("decoding zone lookup response: %w", err)
-	}
-
-	var zones []contaboZone
-	if err := json.Unmarshal(apiResp.Data, &zones); err != nil {
-		return "", fmt.Errorf("decoding zones: %w", err)
-	}
-
-	for _, z := range zones {
-		if z.Name == root {
-			return z.ID, nil
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/dns/zones?page=%d&size=100", contaboAPIBase, page)
+		resp, err := c.doRequest("GET", url, nil)
+		if err != nil {
+			return "", err
 		}
+		defer resp.Body.Close()
+
+		if err := c.checkResponse(resp, "zone lookup"); err != nil {
+			return "", err
+		}
+
+		var apiResp contaboAPIResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			return "", fmt.Errorf("decoding zone lookup response: %w", err)
+		}
+
+		var zones []contaboZone
+		if err := json.Unmarshal(apiResp.Data, &zones); err != nil {
+			return "", fmt.Errorf("decoding zones: %w", err)
+		}
+
+		for _, z := range zones {
+			if z.Name == root {
+				return z.ID, nil
+			}
+		}
+
+		if apiResp.Pagination == nil || page >= apiResp.Pagination.TotalPages {
+			break
+		}
+		page++
 	}
 
 	return "", fmt.Errorf("no zone found for domain %s", root)
 }
 
-// listZoneRecords fetches all DNS records for the given zone ID.
+// listZoneRecords fetches all DNS records for the given zone ID,
+// paginating through all pages to accumulate the complete record set.
 func (c *ContaboProvider) listZoneRecords(zoneID, zoneName string) ([]Record, error) {
-	url := fmt.Sprintf("%s/dns/zones/%s/records", contaboAPIBase, zoneID)
-	resp, err := c.doRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	var records []Record
 
-	if err := c.checkResponse(resp, "listing records"); err != nil {
-		return nil, err
-	}
-
-	var apiResp contaboAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("decoding records response: %w", err)
-	}
-
-	var cbRecords []contaboRecord
-	if err := json.Unmarshal(apiResp.Data, &cbRecords); err != nil {
-		return nil, fmt.Errorf("decoding records: %w", err)
-	}
-
-	records := make([]Record, len(cbRecords))
-	for i, r := range cbRecords {
-		records[i] = Record{
-			ID:    r.ID,
-			Type:  r.Type,
-			Name:  contaboFullName(r.Name, zoneName),
-			Value: r.Value,
-			TTL:   r.TTL,
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/dns/zones/%s/records?page=%d&size=500", contaboAPIBase, zoneID, page)
+		resp, err := c.doRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
 		}
+		defer resp.Body.Close()
+
+		if err := c.checkResponse(resp, "listing records"); err != nil {
+			return nil, err
+		}
+
+		var apiResp contaboAPIResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			return nil, fmt.Errorf("decoding records response: %w", err)
+		}
+
+		var cbRecords []contaboRecord
+		if err := json.Unmarshal(apiResp.Data, &cbRecords); err != nil {
+			return nil, fmt.Errorf("decoding records: %w", err)
+		}
+
+		for _, r := range cbRecords {
+			records = append(records, Record{
+				ID:    r.ID,
+				Type:  r.Type,
+				Name:  contaboFullName(r.Name, zoneName),
+				Value: r.Value,
+				TTL:   r.TTL,
+			})
+		}
+
+		if apiResp.Pagination == nil || page >= apiResp.Pagination.TotalPages {
+			break
+		}
+		page++
 	}
+
 	return records, nil
 }
 
