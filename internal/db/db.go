@@ -108,6 +108,11 @@ func Open(path string) (*DB, error) {
 	return db, nil
 }
 
+// Ping verifies the database connection is alive.
+func (db *DB) Ping() error {
+	return db.conn.Ping()
+}
+
 func (db *DB) Close() error {
 	// Checkpoint WAL on close for a clean shutdown
 	if err := db.walCheckpoint(); err != nil {

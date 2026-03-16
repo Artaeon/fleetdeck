@@ -29,7 +29,7 @@ type WebhookConfig struct {
 // AddWebhookRoutes registers webhook endpoints on the given mux.
 func (s *Server) AddWebhookRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/webhook/github", s.handleGitHubWebhook)
-	mux.HandleFunc("POST /api/webhook/deploy/{name}", s.handleManualDeploy)
+	mux.HandleFunc("POST /api/webhook/deploy/{name}", s.requireAuth(s.handleManualDeploy))
 }
 
 type githubPushPayload struct {

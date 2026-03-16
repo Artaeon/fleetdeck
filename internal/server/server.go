@@ -133,10 +133,13 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
 	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
-	// Prometheus metrics endpoint (no auth for scraping)
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	// Prometheus metrics endpoint (auth required)
+	mux.HandleFunc("GET /metrics", s.requireAuth(s.handleMetrics))
 
-	// Webhook routes (use HMAC auth, not bearer token)
+	// Unauthenticated health check for load balancers
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+
+	// Webhook routes (GitHub uses HMAC auth; manual deploy uses bearer token)
 	s.AddWebhookRoutes(mux)
 
 	// Dashboard UI (require auth via cookie or query param)
@@ -259,6 +262,18 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
+}
+
+// handleHealthz is an unauthenticated health check for load balancers and
+// uptime monitors. Returns 200 if the server is running and the database is
+// accessible.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeJSON(w, map[string]string{"status": "unhealthy", "error": "database unreachable"})
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 // --- API Handlers ---
