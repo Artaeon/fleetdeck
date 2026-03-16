@@ -45,6 +45,10 @@ func GetProvider(name string, apiToken string) (Provider, error) {
 	switch name {
 	case "cloudflare":
 		return NewCloudflareProvider(apiToken)
+	case "hetzner":
+		return NewHetznerProvider(apiToken)
+	case "contabo":
+		return NewContaboProvider(apiToken)
 	default:
 		return nil, fmt.Errorf("unknown DNS provider: %s", name)
 	}

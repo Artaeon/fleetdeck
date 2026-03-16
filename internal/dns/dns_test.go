@@ -83,6 +83,50 @@ func TestGetProvider(t *testing.T) {
 	if cf.httpClient == nil {
 		t.Error("expected non-nil httpClient")
 	}
+
+	// Hetzner provider
+	hProvider, hErr := GetProvider("hetzner", "test-hetzner-token")
+	if hErr != nil {
+		t.Fatalf("unexpected error: %v", hErr)
+	}
+	if hProvider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if hProvider.Name() != "hetzner" {
+		t.Errorf("expected provider name %q, got %q", "hetzner", hProvider.Name())
+	}
+	hz, ok := hProvider.(*HetznerProvider)
+	if !ok {
+		t.Fatalf("expected *HetznerProvider, got %T", hProvider)
+	}
+	if hz.apiToken != "test-hetzner-token" {
+		t.Errorf("expected apiToken %q, got %q", "test-hetzner-token", hz.apiToken)
+	}
+	if hz.httpClient == nil {
+		t.Error("expected non-nil httpClient")
+	}
+
+	// Contabo provider
+	cProvider, cErr := GetProvider("contabo", "test-contabo-token")
+	if cErr != nil {
+		t.Fatalf("unexpected error: %v", cErr)
+	}
+	if cProvider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if cProvider.Name() != "contabo" {
+		t.Errorf("expected provider name %q, got %q", "contabo", cProvider.Name())
+	}
+	cb, ok := cProvider.(*ContaboProvider)
+	if !ok {
+		t.Fatalf("expected *ContaboProvider, got %T", cProvider)
+	}
+	if cb.apiToken != "test-contabo-token" {
+		t.Errorf("expected apiToken %q, got %q", "test-contabo-token", cb.apiToken)
+	}
+	if cb.httpClient == nil {
+		t.Error("expected non-nil httpClient")
+	}
 }
 
 func TestGetProviderEmptyToken(t *testing.T) {

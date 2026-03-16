@@ -38,7 +38,9 @@ var dnsCmd = &cobra.Command{
 	Long: `Manage DNS records for your projects via supported providers.
 
 Currently supports:
-  - Cloudflare (--provider cloudflare --token <api-token>)`,
+  - Cloudflare (--provider cloudflare --token <api-token>)
+  - Hetzner (--provider hetzner --token <api-token>)
+  - Contabo (--provider contabo --token <api-token>)`,
 }
 
 var dnsSetupCmd = &cobra.Command{
@@ -176,7 +178,7 @@ var dnsDeleteCmd = &cobra.Command{
 
 func init() {
 	// Add persistent flags to dns command (inherited by subcommands)
-	dnsCmd.PersistentFlags().String("provider", "cloudflare", "DNS provider (cloudflare)")
+	dnsCmd.PersistentFlags().String("provider", "cloudflare", "DNS provider (cloudflare, hetzner, contabo)")
 	dnsCmd.PersistentFlags().String("token", "", "API token for the DNS provider")
 
 	dnsCmd.AddCommand(dnsSetupCmd)
