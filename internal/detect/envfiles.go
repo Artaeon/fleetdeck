@@ -180,7 +180,8 @@ func isPlaceholderValue(value string) bool {
 func generateSecret() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
+		// Fallback to a fixed placeholder rather than crashing.
+		return "GENERATE_ME_MANUALLY"
 	}
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
 }
