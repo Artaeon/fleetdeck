@@ -46,7 +46,9 @@ func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*De
 		// Unhealthy: tear down the new set and keep the old running.
 		result.Logs = append(result.Logs, fmt.Sprintf("health check failed: %v", err))
 		result.Logs = append(result.Logs, "rolling back: removing new containers")
-		s.removeProject(opts.ProjectPath, newProject)
+		if err := s.removeProject(opts.ProjectPath, newProject); err != nil {
+			result.Logs = append(result.Logs, fmt.Sprintf("warning: rollback cleanup failed: %v", err))
+		}
 		result.Duration = time.Since(start)
 		return result, fmt.Errorf("health check failed, rolled back: %w", err)
 	}
@@ -62,7 +64,9 @@ func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*De
 	// Docker Compose doesn't support renaming, so we stop the new project
 	// and bring it back up under the original name.
 	result.Logs = append(result.Logs, "promoting new containers")
-	s.removeProject(opts.ProjectPath, newProject)
+	if err := s.removeProject(opts.ProjectPath, newProject); err != nil {
+		result.Logs = append(result.Logs, fmt.Sprintf("warning: failed to remove temp project: %v", err))
+	}
 	if err := s.startOriginal(ctx, opts); err != nil {
 		result.Duration = time.Since(start)
 		return result, fmt.Errorf("promoting new containers: %w", err)
@@ -175,8 +179,12 @@ func (s *BlueGreenStrategy) startOriginal(ctx context.Context, opts DeployOption
 }
 
 // removeProject tears down a compose project entirely.
-func (s *BlueGreenStrategy) removeProject(projectPath, projectName string) {
+func (s *BlueGreenStrategy) removeProject(projectPath, projectName string) error {
 	cmd := exec.Command("docker", "compose", "-p", projectName, "down", "--remove-orphans")
 	cmd.Dir = projectPath
-	cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("removing project %s: %s: %w", projectName, strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
