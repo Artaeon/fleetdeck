@@ -72,10 +72,45 @@ func (c *Client) Download(remotePath, localPath string) error {
 	return nil
 }
 
+// skipDirs contains directory names that should never be uploaded to the
+// server. These are build artifacts, dependency caches, and VCS metadata
+// that would waste bandwidth and are rebuilt on the server.
+var skipDirs = map[string]bool{
+	"node_modules":   true,
+	".next":          true,
+	".nuxt":          true,
+	".git":           true,
+	".svn":           true,
+	"dist":           true,
+	"build":          true,
+	"vendor":         true,
+	"__pycache__":    true,
+	".venv":          true,
+	"venv":           true,
+	".tox":           true,
+	"target":         true, // Rust, Java
+	".gradle":        true,
+	".cache":         true,
+	".parcel-cache":  true,
+	".turbo":         true,
+	".vercel":        true,
+	".output":        true,
+	"coverage":       true,
+	".nyc_output":    true,
+	".pytest_cache":  true,
+	".mypy_cache":    true,
+}
+
 func (c *Client) UploadDir(localDir, remoteDir string) error {
+	fileCount := 0
 	return filepath.Walk(localDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Skip build artifacts and dependency directories.
+		if info.IsDir() && skipDirs[info.Name()] {
+			return filepath.SkipDir
 		}
 
 		rel, err := filepath.Rel(localDir, path)
@@ -93,6 +128,12 @@ func (c *Client) UploadDir(localDir, remoteDir string) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
 		}
+
+		fileCount++
+		if fileCount%50 == 0 {
+			fmt.Printf("  uploaded %d files...\n", fileCount)
+		}
+
 		return c.UploadBytes(data, remotePath, info.Mode())
 	})
 }
