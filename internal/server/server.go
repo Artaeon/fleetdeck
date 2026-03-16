@@ -126,6 +126,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("POST /api/projects/{name}/backup/{id}/restore", s.requireAuth(s.handleRestoreBackup))
 	mux.HandleFunc("DELETE /api/projects/{name}/backup/{id}", s.requireAuth(s.handleDeleteBackup))
 	mux.HandleFunc("GET /api/projects/{name}/deployments", s.requireAuth(s.handleListDeployments))
+	mux.HandleFunc("GET /api/servers", s.requireAuth(s.handleListServers))
 	mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
 	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
 	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
@@ -958,6 +959,40 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, recent)
+}
+
+func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
+	servers, err := s.db.ListServers()
+	if err != nil {
+		log.Printf("failed to list servers: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to list servers")
+		return
+	}
+
+	type apiServer struct {
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		Host      string    `json:"host"`
+		Port      string    `json:"port"`
+		User      string    `json:"user"`
+		Status    string    `json:"status"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	result := make([]apiServer, 0, len(servers))
+	for _, sv := range servers {
+		result = append(result, apiServer{
+			ID:        sv.ID,
+			Name:      sv.Name,
+			Host:      sv.Host,
+			Port:      sv.Port,
+			User:      sv.User,
+			Status:    sv.Status,
+			CreatedAt: sv.CreatedAt,
+		})
+	}
+
+	writeJSON(w, result)
 }
 
 // --- Helpers ---

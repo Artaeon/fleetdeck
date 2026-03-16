@@ -24,18 +24,33 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		headers := []string{"NAME", "DOMAIN", "STATUS", "CONTAINERS", "TEMPLATE", "CREATED"}
+		// Build server name lookup
+		servers, _ := d.ListServers()
+		serverNames := make(map[string]string)
+		for _, s := range servers {
+			serverNames[s.ID] = s.Name
+		}
+
+		headers := []string{"NAME", "DOMAIN", "STATUS", "CONTAINERS", "SERVER", "TEMPLATE", "CREATED"}
 		var rows [][]string
 
 		for _, p := range projects {
 			running, total := project.CountContainers(p.ProjectPath)
 			containers := fmt.Sprintf("%d/%d", running, total)
 
+			serverName := "local"
+			if p.ServerID != "" {
+				if name, ok := serverNames[p.ServerID]; ok {
+					serverName = name
+				}
+			}
+
 			rows = append(rows, []string{
 				p.Name,
 				p.Domain,
 				ui.StatusColor(p.Status),
 				containers,
+				serverName,
 				p.Template,
 				p.CreatedAt.Format("2006-01-02"),
 			})

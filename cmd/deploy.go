@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
@@ -32,6 +33,7 @@ var deployCmd = &cobra.Command{
 Examples:
   fleetdeck deploy ./my-app --domain app.example.com
   fleetdeck deploy ./my-app --server root@1.2.3.4 --domain app.example.com --profile saas
+  fleetdeck deploy ./my-app --server prod --domain app.example.com  # use registered server name
   fleetdeck deploy . --strategy bluegreen --domain app.example.com`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -181,10 +183,29 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Pre-deploy snapshot to protect against failed deployments
 	autoSnapshot(name, "deploy")
 
-	host, user := parseTarget(server)
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
 	passphrase, _ := cmd.Flags().GetString("passphrase")
+
+	// Resolve server: either a registered name or user@host
+	var host, user string
+	if !strings.Contains(server, "@") && !strings.Contains(server, ".") {
+		// Looks like a registered server name (no @ or dots)
+		d := openDB()
+		s, err := d.GetServer(server)
+		if err == nil {
+			host = s.Host
+			user = s.User
+			port = s.Port
+			keyFile = s.KeyPath
+			ui.Info("Using registered server %s (%s@%s)", s.Name, user, host)
+		} else {
+			// Fall back to treating it as a hostname
+			host, user = parseTarget(server)
+		}
+	} else {
+		host, user = parseTarget(server)
+	}
 
 	// Read SSH key
 	var keyData []byte
@@ -300,7 +321,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 
 func init() {
 	deployCmd.Flags().String("domain", "", "Domain for the application (required)")
-	deployCmd.Flags().String("server", "", "Remote server (user@host) for remote deployment")
+	deployCmd.Flags().String("server", "", "Remote server (user@host or registered name) for remote deployment")
 	deployCmd.Flags().String("port", "22", "SSH port for remote deployment")
 	deployCmd.Flags().String("key", "", "Path to SSH private key for remote deployment")
 	deployCmd.Flags().String("profile", "", "Deployment profile (auto-detected if not set)")
