@@ -892,20 +892,19 @@ func TestWebhookHMACRejectsWrongSignature(t *testing.T) {
 	}
 }
 
-func TestWebhookNoSecretConfiguredSkipsValidation(t *testing.T) {
+func TestWebhookNoSecretConfiguredRejectsRequests(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	srv.webhookSecret = "" // No secret configured.
 
 	body := `{"ref":"refs/heads/main","after":"abc123","repository":{"full_name":"org/nonexistent"}}`
 	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
-	// No signature header.
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
-	// Should not get 401 (HMAC not checked). Will get 404 because no project matches.
-	if w.Code == http.StatusUnauthorized {
-		t.Error("without webhook secret configured, requests should not require a signature")
+	// Without a webhook secret, all requests should be rejected.
+	if w.Code != http.StatusForbidden {
+		t.Errorf("without webhook secret configured, expected 403, got %d", w.Code)
 	}
 }
 
@@ -1085,9 +1084,9 @@ func TestManualDeployInvalidProjectName(t *testing.T) {
 
 func TestWebhookRejectsInvalidJSONBody(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader("not json"))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, "not json", "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1101,14 +1100,17 @@ func TestWebhookRejectsInvalidJSONBody(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGenerateAPITokenIsHex(t *testing.T) {
-	token := GenerateAPIToken()
+	token, err := GenerateAPIToken()
+	if err != nil {
+		t.Fatalf("GenerateAPIToken: %v", err)
+	}
 
 	if len(token) != 64 {
 		t.Errorf("expected 64 hex chars, got %d", len(token))
 	}
 
 	// Verify it is valid hex.
-	_, err := hex.DecodeString(token)
+	_, err = hex.DecodeString(token)
 	if err != nil {
 		t.Errorf("token should be valid hex: %v", err)
 	}
@@ -1117,7 +1119,10 @@ func TestGenerateAPITokenIsHex(t *testing.T) {
 func TestGenerateAPITokenUniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		token := GenerateAPIToken()
+		token, err := GenerateAPIToken()
+		if err != nil {
+			t.Fatalf("GenerateAPIToken: %v", err)
+		}
 		if seen[token] {
 			t.Fatalf("duplicate token generated on iteration %d", i)
 		}

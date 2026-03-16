@@ -13,11 +13,28 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/db"
 )
 
+const testWebhookSecret = "test-webhook-secret"
+
+// signedWebhookRequest creates a POST request to the webhook endpoint with a
+// valid HMAC signature. The test server's webhookSecret must be set to
+// testWebhookSecret.
+func signedWebhookRequest(t *testing.T, body, event string) *http.Request {
+	t.Helper()
+	mac := hmac.New(sha256.New, []byte(testWebhookSecret))
+	mac.Write([]byte(body))
+	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req.Header.Set("X-GitHub-Event", event)
+	req.Header.Set("X-Hub-Signature-256", sig)
+	return req
+}
+
 func TestHandleGitHubWebhookPing(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(`{}`))
-	req.Header.Set("X-GitHub-Event", "ping")
+	req := signedWebhookRequest(t, `{}`, "ping")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -34,9 +51,9 @@ func TestHandleGitHubWebhookPing(t *testing.T) {
 
 func TestHandleGitHubWebhookIgnoresNonPush(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(`{}`))
-	req.Header.Set("X-GitHub-Event", "issues")
+	req := signedWebhookRequest(t, `{}`, "issues")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -53,10 +70,10 @@ func TestHandleGitHubWebhookIgnoresNonPush(t *testing.T) {
 
 func TestHandleGitHubWebhookIgnoresNonMainBranch(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	body := `{"ref":"refs/heads/feature-branch","after":"abc123","repository":{"full_name":"org/repo"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -73,10 +90,10 @@ func TestHandleGitHubWebhookIgnoresNonMainBranch(t *testing.T) {
 
 func TestHandleGitHubWebhookNoMatchingProject(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	body := `{"ref":"refs/heads/main","after":"abc123def456","repository":{"full_name":"org/nonexistent"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

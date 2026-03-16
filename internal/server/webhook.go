@@ -47,13 +47,15 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify HMAC signature if webhook secret is configured
-	if s.webhookSecret != "" {
-		sig := r.Header.Get("X-Hub-Signature-256")
-		if !verifyHMAC(body, sig, s.webhookSecret) {
-			writeError(w, http.StatusUnauthorized, "invalid signature")
-			return
-		}
+	// Verify HMAC signature (required — reject if no secret configured)
+	if s.webhookSecret == "" {
+		writeError(w, http.StatusForbidden, "webhook secret not configured")
+		return
+	}
+	sig := r.Header.Get("X-Hub-Signature-256")
+	if !verifyHMAC(body, sig, s.webhookSecret) {
+		writeError(w, http.StatusUnauthorized, "invalid signature")
+		return
 	}
 
 	event := r.Header.Get("X-GitHub-Event")

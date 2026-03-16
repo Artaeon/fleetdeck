@@ -346,6 +346,7 @@ func TestHandleDeleteProjectKeepData(t *testing.T) {
 
 func TestHandleGitHubWebhookPushToMainMatchesProject(t *testing.T) {
 	srv, database := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	dir := t.TempDir()
 	database.CreateProject(&db.Project{
@@ -359,8 +360,7 @@ func TestHandleGitHubWebhookPushToMainMatchesProject(t *testing.T) {
 	})
 
 	body := `{"ref":"refs/heads/main","after":"abcdef1234567890abcdef","repository":{"full_name":"org/webhook-app"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -384,6 +384,7 @@ func TestHandleGitHubWebhookPushToMainMatchesProject(t *testing.T) {
 
 func TestHandleGitHubWebhookPushToMasterBranch(t *testing.T) {
 	srv, database := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	dir := t.TempDir()
 	database.CreateProject(&db.Project{
@@ -396,8 +397,7 @@ func TestHandleGitHubWebhookPushToMasterBranch(t *testing.T) {
 	})
 
 	body := `{"ref":"refs/heads/master","after":"fedcba9876543210fedc","repository":{"full_name":"org/master-app"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -417,6 +417,7 @@ func TestHandleGitHubWebhookPushToMasterBranch(t *testing.T) {
 
 func TestHandleGitHubWebhookPushToFeatureBranchIgnored(t *testing.T) {
 	srv, database := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	dir := t.TempDir()
 	database.CreateProject(&db.Project{
@@ -429,8 +430,7 @@ func TestHandleGitHubWebhookPushToFeatureBranchIgnored(t *testing.T) {
 	})
 
 	body := `{"ref":"refs/heads/feature/add-login","after":"abc123","repository":{"full_name":"org/feat-app"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -450,10 +450,10 @@ func TestHandleGitHubWebhookPushToFeatureBranchIgnored(t *testing.T) {
 
 func TestHandleGitHubWebhookPushToDevBranchIgnored(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	body := `{"ref":"refs/heads/develop","after":"abc123","repository":{"full_name":"org/some-app"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -466,6 +466,7 @@ func TestHandleGitHubWebhookPushToDevBranchIgnored(t *testing.T) {
 
 func TestHandleGitHubWebhookShortCommitSHA(t *testing.T) {
 	srv, database := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	dir := t.TempDir()
 	database.CreateProject(&db.Project{
@@ -479,8 +480,7 @@ func TestHandleGitHubWebhookShortCommitSHA(t *testing.T) {
 
 	// Commit SHA shorter than 12 chars should not be truncated
 	body := `{"ref":"refs/heads/main","after":"abc123","repository":{"full_name":"org/sha-app"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "push")
+	req := signedWebhookRequest(t, body, "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1172,11 +1172,11 @@ func TestHandleProjectLogsBoundaryLines(t *testing.T) {
 
 func TestWebhookIgnoresVariousNonPushEvents(t *testing.T) {
 	srv, _ := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
 
 	events := []string{"pull_request", "issues", "release", "create", "delete", "star"}
 	for _, event := range events {
-		req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(`{}`))
-		req.Header.Set("X-GitHub-Event", event)
+		req := signedWebhookRequest(t, `{}`, event)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
