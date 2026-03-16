@@ -40,6 +40,7 @@ type Server struct {
 	apiToken      string
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
+	metrics       *Metrics
 }
 
 // GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
@@ -105,6 +106,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		webhookSecret: cfg.Server.WebhookSecret,
 		apiToken:      cfg.Server.APIToken,
 		rateLimiter:   newIPLimiter(rate.Limit(10), 20),
+		metrics:       newMetrics(),
 	}
 
 	mux := http.NewServeMux()
@@ -128,6 +130,9 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
 	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
+	// Prometheus metrics endpoint (no auth for scraping)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
 	// Webhook routes (use HMAC auth, not bearer token)
 	s.AddWebhookRoutes(mux)
 
@@ -139,8 +144,16 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /static/app.js", s.handleJS)
 	mux.HandleFunc("GET /static/style.css", s.handleCSS)
 
-	// Wrap the mux with rate limiting for API routes only.
-	handler := rateLimitMiddleware(s.rateLimiter, mux)
+	// Wrap the mux with metrics counting and rate limiting.
+	metricsMiddleware := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.metrics.incRequests()
+		sw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		mux.ServeHTTP(sw, r)
+		if sw.statusCode >= 400 {
+			s.metrics.incErrors()
+		}
+	})
+	handler := rateLimitMiddleware(s.rateLimiter, metricsMiddleware)
 
 	s.server = &http.Server{
 		Addr:           addr,
