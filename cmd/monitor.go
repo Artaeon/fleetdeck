@@ -40,6 +40,7 @@ Examples:
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		webhookURL, _ := cmd.Flags().GetString("webhook")
 		slackURL, _ := cmd.Flags().GetString("slack")
+		discordURL, _ := cmd.Flags().GetString("discord")
 		threshold, _ := cmd.Flags().GetInt("threshold")
 
 		var targets []monitor.Target
@@ -64,6 +65,9 @@ Examples:
 		}
 		if slackURL != "" {
 			providers = append(providers, monitor.NewSlackProvider(slackURL))
+		}
+		if discordURL != "" {
+			providers = append(providers, monitor.NewDiscordProvider(discordURL))
 		}
 
 		statePath := filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")
@@ -159,6 +163,7 @@ func init() {
 	monitorStartCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout per check")
 	monitorStartCmd.Flags().String("webhook", "", "Webhook URL for alerts")
 	monitorStartCmd.Flags().String("slack", "", "Slack webhook URL for alerts")
+	monitorStartCmd.Flags().String("discord", "", "Discord webhook URL for alerts")
 	monitorStartCmd.Flags().Int("threshold", 3, "Failures before alerting")
 
 	monitorCheckCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout")
