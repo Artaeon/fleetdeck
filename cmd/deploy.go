@@ -180,7 +180,9 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Acquire per-project lock using a canonical path based on project name,
 	// so concurrent deploys from different directories are serialized on this machine.
 	lockDir := filepath.Join(os.TempDir(), "fleetdeck-locks", name)
-	os.MkdirAll(lockDir, 0755)
+	if err := os.MkdirAll(lockDir, 0755); err != nil {
+		return fmt.Errorf("creating lock directory: %w", err)
+	}
 	lock, err := deploy.AcquireLock(lockDir)
 	if err != nil {
 		return fmt.Errorf("acquiring deploy lock: %w (another deploy for %q may be running)", err, name)
