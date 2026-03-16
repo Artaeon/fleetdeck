@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/server"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
@@ -29,7 +30,11 @@ var dashboardCmd = &cobra.Command{
 		go func() {
 			<-ctx.Done()
 			ui.Info("Shutting down dashboard...")
-			srv.Shutdown(context.Background())
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				ui.Warn("Forced shutdown: %v", err)
+			}
 		}()
 
 		fmt.Println()
