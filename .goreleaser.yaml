@@ -1,0 +1,52 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: fleetdeck
+    main: .
+    binary: fleetdeck
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/fleetdeck/fleetdeck/cmd.Version={{.Version}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "fleetdeck_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+      - INSTALL*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: fleetdeck
+    name: fleetdeck
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+# Also upload raw binaries for fleetdeck upgrade command
+extra_files:
+  - glob: dist/fleetdeck-linux-amd64
+  - glob: dist/fleetdeck-linux-arm64
