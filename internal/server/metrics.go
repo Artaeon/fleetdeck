@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -20,6 +22,19 @@ type Metrics struct {
 	deploymentsFailures atomic.Int64
 	backupsTotal        atomic.Int64
 	startedAt           time.Time
+
+	// Cached system metrics (refreshed periodically)
+	cacheMu          sync.RWMutex
+	cachedProjects   int
+	cachedRunning    int
+	cachedStopped    int
+	cachedContainers int
+	cachedMemTotal   int64
+	cachedMemAvail   int64
+	cachedDiskTotal  int64
+	cachedDiskUsed   int64
+	cachedTraefikUp  int
+	cacheUpdatedAt   time.Time
 }
 
 func newMetrics() *Metrics {
@@ -28,11 +43,65 @@ func newMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) incRequests()          { m.httpRequestsTotal.Add(1) }
-func (m *Metrics) incErrors()            { m.httpRequestErrors.Add(1) }
-func (m *Metrics) incDeployments()       { m.deploymentsTotal.Add(1) }
+func (m *Metrics) incRequests()           { m.httpRequestsTotal.Add(1) }
+func (m *Metrics) incErrors()             { m.httpRequestErrors.Add(1) }
+func (m *Metrics) incDeployments()        { m.deploymentsTotal.Add(1) }
 func (m *Metrics) incDeploymentFailures() { m.deploymentsFailures.Add(1) }
-func (m *Metrics) incBackups()           { m.backupsTotal.Add(1) }
+func (m *Metrics) incBackups()            { m.backupsTotal.Add(1) }
+
+// startCacheRefresh launches a background goroutine that refreshes cached
+// system metrics every 30 seconds, so handleMetrics never runs expensive
+// subprocess calls inline.
+func (m *Metrics) startCacheRefresh(s *Server) {
+	m.refreshCache(s)
+
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		for range ticker.C {
+			m.refreshCache(s)
+		}
+	}()
+}
+
+// refreshCache collects all expensive system metrics and stores them under
+// cacheMu so that handleMetrics can read them cheaply.
+func (m *Metrics) refreshCache(s *Server) {
+	projects, _ := s.db.ListProjects()
+	var running, stopped, totalContainers int
+	for _, p := range projects {
+		switch p.Status {
+		case "running":
+			running++
+		case "stopped":
+			stopped++
+		}
+		_, cnt := countContainers(p.ProjectPath)
+		totalContainers += cnt
+	}
+
+	memTotal, memAvail := parseMemInfo()
+	diskTotal, diskUsed := parseDiskUsage(s.cfg.Server.BasePath)
+
+	traefikUp := 0
+	if out, err := exec.Command("docker", "ps", "--filter", "name=traefik", "--format", "{{.Status}}").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		traefikUp = 1
+	}
+
+	m.cacheMu.Lock()
+	m.cachedProjects = len(projects)
+	m.cachedRunning = running
+	m.cachedStopped = stopped
+	m.cachedContainers = totalContainers
+	m.cachedMemTotal = memTotal
+	m.cachedMemAvail = memAvail
+	m.cachedDiskTotal = diskTotal
+	m.cachedDiskUsed = diskUsed
+	m.cachedTraefikUp = traefikUp
+	m.cacheUpdatedAt = time.Now()
+	m.cacheMu.Unlock()
+
+	log.Printf("metrics cache refreshed: %d projects, %d containers", len(projects), totalContainers)
+}
 
 // handleMetrics serves a Prometheus-compatible /metrics endpoint using the
 // text exposition format. No external dependencies required.
@@ -74,23 +143,23 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("# TYPE fleetdeck_backups_total counter\n")
 	fmt.Fprintf(&b, "fleetdeck_backups_total %d\n", s.metrics.backupsTotal.Load())
 
-	// Project metrics (live query)
-	projects, _ := s.db.ListProjects()
-	var running, stopped, totalContainers int
-	for _, p := range projects {
-		switch p.Status {
-		case "running":
-			running++
-		case "stopped":
-			stopped++
-		}
-		_, cnt := countContainers(p.ProjectPath)
-		totalContainers += cnt
-	}
+	// Read cached system metrics
+	s.metrics.cacheMu.RLock()
+	projects := s.metrics.cachedProjects
+	running := s.metrics.cachedRunning
+	stopped := s.metrics.cachedStopped
+	totalContainers := s.metrics.cachedContainers
+	memTotal := s.metrics.cachedMemTotal
+	memAvail := s.metrics.cachedMemAvail
+	diskTotal := s.metrics.cachedDiskTotal
+	diskUsed := s.metrics.cachedDiskUsed
+	traefikUp := s.metrics.cachedTraefikUp
+	s.metrics.cacheMu.RUnlock()
 
+	// Project metrics
 	b.WriteString("# HELP fleetdeck_projects_total Total number of projects.\n")
 	b.WriteString("# TYPE fleetdeck_projects_total gauge\n")
-	fmt.Fprintf(&b, "fleetdeck_projects_total %d\n", len(projects))
+	fmt.Fprintf(&b, "fleetdeck_projects_total %d\n", projects)
 
 	b.WriteString("# HELP fleetdeck_projects_running Number of running projects.\n")
 	b.WriteString("# TYPE fleetdeck_projects_running gauge\n")
@@ -113,8 +182,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("# TYPE fleetdeck_goroutines gauge\n")
 	fmt.Fprintf(&b, "fleetdeck_goroutines %d\n", runtime.NumGoroutine())
 
-	// Memory from /proc/meminfo (Linux)
-	if memTotal, memAvail := parseMemInfo(); memTotal > 0 {
+	// Memory
+	if memTotal > 0 {
 		b.WriteString("# HELP fleetdeck_memory_total_bytes Total system memory in bytes.\n")
 		b.WriteString("# TYPE fleetdeck_memory_total_bytes gauge\n")
 		fmt.Fprintf(&b, "fleetdeck_memory_total_bytes %d\n", memTotal)
@@ -125,7 +194,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Disk usage
-	if diskTotal, diskUsed := parseDiskUsage(s.cfg.Server.BasePath); diskTotal > 0 {
+	if diskTotal > 0 {
 		b.WriteString("# HELP fleetdeck_disk_total_bytes Total disk space in bytes.\n")
 		b.WriteString("# TYPE fleetdeck_disk_total_bytes gauge\n")
 		fmt.Fprintf(&b, "fleetdeck_disk_total_bytes %d\n", diskTotal)
@@ -136,10 +205,6 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Traefik status
-	traefikUp := 0
-	if out, err := exec.Command("docker", "ps", "--filter", "name=traefik", "--format", "{{.Status}}").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-		traefikUp = 1
-	}
 	b.WriteString("# HELP fleetdeck_traefik_up Whether Traefik reverse proxy is running.\n")
 	b.WriteString("# TYPE fleetdeck_traefik_up gauge\n")
 	fmt.Fprintf(&b, "fleetdeck_traefik_up %d\n", traefikUp)

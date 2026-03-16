@@ -109,6 +109,8 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		metrics:       newMetrics(),
 	}
 
+	s.metrics.startCacheRefresh(s)
+
 	mux := http.NewServeMux()
 
 	// API routes (require auth)
