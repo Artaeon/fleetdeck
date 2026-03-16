@@ -53,12 +53,14 @@ func setTimezone(runner CommandRunner) error {
 	return nil
 }
 
-// configureSSH hardens the SSH daemon by disabling password authentication
-// and root login.
+// configureSSH hardens the SSH daemon by disabling password authentication.
+// Root login is restricted to key-based auth only (prohibit-password) rather
+// than fully disabled, because FleetDeck itself connects as root for server
+// management.
 func configureSSH(runner CommandRunner) error {
 	sedCmds := []string{
 		"sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config",
-		"sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config",
+		"sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
 	}
 	for _, cmd := range sedCmds {
 		if _, err := runner.Run(cmd); err != nil {

@@ -284,7 +284,7 @@ func TestConfigureSSH(t *testing.T) {
 	// Verify PermitRootLogin is disabled.
 	foundRootLogin := false
 	for _, cmd := range runner.commands {
-		if strings.Contains(cmd, "PermitRootLogin no") && strings.Contains(cmd, "sshd_config") {
+		if strings.Contains(cmd, "PermitRootLogin prohibit-password") && strings.Contains(cmd, "sshd_config") {
 			foundRootLogin = true
 			break
 		}
