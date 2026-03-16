@@ -70,7 +70,7 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 
 	step := 0
 
-	// Stop running containers first
+	// Stop running containers (AFTER verification above confirmed backup is valid)
 	step++
 	ui.Step(step, totalSteps, "Stopping project containers...")
 	_ = project.ComposeDown(projectPath)

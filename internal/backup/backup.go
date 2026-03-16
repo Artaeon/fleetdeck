@@ -83,7 +83,8 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		ui.Step(step, totalSteps, "Dumping databases...")
 		dbComponents, err := BackupDatabases(project.ProjectPath, backupDir)
 		if err != nil {
-			ui.Warn("Database dump failed: %v", err)
+			os.RemoveAll(backupDir)
+			return nil, fmt.Errorf("database dump failed: %w", err)
 		} else if len(dbComponents) > 0 {
 			manifest.Components = append(manifest.Components, dbComponents...)
 			ui.Success("Database dumps created (%d databases)", len(dbComponents))
@@ -98,7 +99,8 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		ui.Step(step, totalSteps, "Backing up volumes...")
 		volComponents, err := BackupVolumes(project.ProjectPath, backupDir)
 		if err != nil {
-			ui.Warn("Volume backup failed: %v", err)
+			os.RemoveAll(backupDir)
+			return nil, fmt.Errorf("volume backup failed: %w", err)
 		} else if len(volComponents) > 0 {
 			manifest.Components = append(manifest.Components, volComponents...)
 			ui.Success("Volumes backed up (%d volumes)", len(volComponents))
