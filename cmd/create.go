@@ -79,6 +79,22 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 			AppType:         templateName,
 		}
 
+		// Set CPU and memory resource limits per profile.
+		switch profileName {
+		case "bare":
+			profileData.CPULimit = "1.0"
+			profileData.MemoryLimit = "512M"
+		case "saas":
+			profileData.CPULimit = "2.0"
+			profileData.MemoryLimit = "2G"
+		case "static":
+			profileData.CPULimit = "0.5"
+			profileData.MemoryLimit = "256M"
+		default: // server, worker, fullstack
+			profileData.CPULimit = "1.0"
+			profileData.MemoryLimit = "1G"
+		}
+
 		projectPath := cfg.ProjectPath(name)
 		linuxUser := project.LinuxUserName(name)
 		totalSteps := 8

@@ -12,6 +12,11 @@ func init() {
     image: nginx:alpine
     container_name: {{.Name}}-nginx
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '{{.CPULimit}}'
+          memory: {{.MemoryLimit}}
     volumes:
       - ./public:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

@@ -33,6 +33,8 @@ type ProfileData struct {
 	RedisVersion    string
 	AppType         string
 	Framework       string
+	CPULimit        string // e.g. "1.0" (cores)
+	MemoryLimit     string // e.g. "512M"
 }
 
 var registry = map[string]*Profile{}

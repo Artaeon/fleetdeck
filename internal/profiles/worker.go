@@ -15,6 +15,11 @@ func init() {
     image: {{.Name}}:local
     container_name: {{.Name}}-worker
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '{{.CPULimit}}'
+          memory: {{.MemoryLimit}}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379

@@ -13,6 +13,11 @@ func init() {
     image: {{.Name}}:local
     container_name: {{.Name}}-app
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '{{.CPULimit}}'
+          memory: {{.MemoryLimit}}
     environment:
       PORT: "{{.Port}}"
     labels:

@@ -19,6 +19,11 @@ func init() {
     image: {{.Name}}-frontend:local
     container_name: {{.Name}}-frontend
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '{{.CPULimit}}'
+          memory: {{.MemoryLimit}}
     environment:
       NEXT_PUBLIC_API_URL: https://api.{{.Domain}}
       PORT: "3000"
@@ -42,6 +47,11 @@ func init() {
     image: {{.Name}}-backend:local
     container_name: {{.Name}}-backend
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '{{.CPULimit}}'
+          memory: {{.MemoryLimit}}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
