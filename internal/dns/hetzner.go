@@ -138,6 +138,10 @@ func (h *HetznerProvider) findZoneID(domain string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if err := h.checkResponse(resp, "zone lookup"); err != nil {
+		return "", err
+	}
+
 	var zonesResp hetznerZonesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&zonesResp); err != nil {
 		return "", fmt.Errorf("decoding zone lookup response: %w", err)
@@ -158,6 +162,10 @@ func (h *HetznerProvider) listZoneRecords(zoneID, zoneName string) ([]Record, er
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if err := h.checkResponse(resp, "listing records"); err != nil {
+		return nil, err
+	}
 
 	var recordsResp hetznerRecordsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&recordsResp); err != nil {
