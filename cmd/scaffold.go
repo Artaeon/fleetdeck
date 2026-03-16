@@ -98,9 +98,10 @@ Examples:
 		ui.Step(2, 3, "Checking existing files...")
 		existingFiles := []string{}
 		filesToWrite := map[string]bool{
-			"Dockerfile":        tmpl.Dockerfile != "",
-			"docker-compose.yml": tmpl.Compose != "",
-			".gitignore":        tmpl.GitIgnore != "",
+			"Dockerfile":                       tmpl.Dockerfile != "",
+			"docker-compose.yml":               tmpl.Compose != "",
+			".gitignore":                       tmpl.GitIgnore != "",
+			".github/workflows/deploy.yml":     tmpl.Workflow != "",
 		}
 
 		for file, shouldWrite := range filesToWrite {
@@ -181,25 +182,34 @@ Examples:
 
 		// Write .gitignore
 		if tmpl.GitIgnore != "" {
-			content := tmpl.GitIgnore
-			if err := os.WriteFile(filepath.Join(absDir, ".gitignore"), []byte(content), 0644); err != nil {
-				return fmt.Errorf("writing .gitignore: %w", err)
+			gitignorePath := filepath.Join(absDir, ".gitignore")
+			if _, err := os.Stat(gitignorePath); os.IsNotExist(err) || force {
+				if err := os.WriteFile(gitignorePath, []byte(tmpl.GitIgnore), 0644); err != nil {
+					return fmt.Errorf("writing .gitignore: %w", err)
+				}
+				ui.Success("Created .gitignore")
+				filesWritten++
+			} else {
+				ui.Info("Skipped .gitignore (already exists)")
 			}
-			ui.Success("Created .gitignore")
-			filesWritten++
 		}
 
 		// Write GitHub Actions workflow
 		if tmpl.Workflow != "" {
-			workflowDir := filepath.Join(absDir, ".github", "workflows")
-			if err := os.MkdirAll(workflowDir, 0755); err != nil {
-				return fmt.Errorf("creating workflow directory: %w", err)
+			workflowPath := filepath.Join(absDir, ".github", "workflows", "deploy.yml")
+			if _, err := os.Stat(workflowPath); os.IsNotExist(err) || force {
+				workflowDir := filepath.Join(absDir, ".github", "workflows")
+				if err := os.MkdirAll(workflowDir, 0755); err != nil {
+					return fmt.Errorf("creating workflow directory: %w", err)
+				}
+				if err := os.WriteFile(workflowPath, []byte(tmpl.Workflow), 0644); err != nil {
+					return fmt.Errorf("writing deploy workflow: %w", err)
+				}
+				ui.Success("Created .github/workflows/deploy.yml")
+				filesWritten++
+			} else {
+				ui.Info("Skipped .github/workflows/deploy.yml (already exists)")
 			}
-			if err := os.WriteFile(filepath.Join(workflowDir, "deploy.yml"), []byte(tmpl.Workflow), 0644); err != nil {
-				return fmt.Errorf("writing deploy workflow: %w", err)
-			}
-			ui.Success("Created .github/workflows/deploy.yml")
-			filesWritten++
 		}
 
 		fmt.Println()
