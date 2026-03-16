@@ -35,6 +35,7 @@ The server must be accessible via SSH with key-based auth.`,
 
 		port, _ := cmd.Flags().GetString("port")
 		keyFile, _ := cmd.Flags().GetString("key")
+		passphrase, _ := cmd.Flags().GetString("passphrase")
 		domain, _ := cmd.Flags().GetString("domain")
 		email, _ := cmd.Flags().GetString("email")
 		swapGB, _ := cmd.Flags().GetInt("swap")
@@ -79,11 +80,15 @@ The server must be accessible via SSH with key-based auth.`,
 			client  *remote.Client
 			connErr error
 		)
+		var passphraseBytes []byte
+		if passphrase != "" {
+			passphraseBytes = []byte(passphrase)
+		}
 		if insecure {
 			ui.Warn("Using Trust On First Use SSH host key verification (--insecure)")
-			client, connErr = remote.NewClientTOFU(host, port, user, keyData)
+			client, connErr = remote.NewClientTOFU(host, port, user, keyData, passphraseBytes)
 		} else {
-			client, connErr = remote.NewClient(host, port, user, keyData)
+			client, connErr = remote.NewClient(host, port, user, keyData, passphraseBytes)
 		}
 		if connErr != nil {
 			return fmt.Errorf("SSH connection failed: %w", connErr)
@@ -166,6 +171,7 @@ func init() {
 	serverSetupCmd.Flags().Int("swap", 2, "Swap file size in GB")
 	serverSetupCmd.Flags().String("traefik-network", "traefik_default", "Docker network for Traefik")
 	serverSetupCmd.Flags().Bool("insecure", false, "Skip SSH host key verification")
+	serverSetupCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
 
 	serverCmd.AddCommand(serverSetupCmd)
 	rootCmd.AddCommand(serverCmd)

@@ -20,12 +20,15 @@ type Client struct {
 	conn *ssh.Client
 }
 
-func ParsePrivateKey(data []byte) (ssh.Signer, error) {
+func ParsePrivateKey(data []byte, passphrase []byte) (ssh.Signer, error) {
 	signer, err := ssh.ParsePrivateKey(data)
 	if err != nil {
-		// Detect encrypted keys and provide a helpful error message.
+		// Detect encrypted keys and attempt decryption with passphrase.
 		if strings.Contains(err.Error(), "encrypted") || strings.Contains(err.Error(), "passphrase") {
-			return nil, fmt.Errorf("private key is encrypted with a passphrase, which is not supported; use an unencrypted key or an SSH agent: %w", err)
+			if len(passphrase) > 0 {
+				return ssh.ParsePrivateKeyWithPassphrase(data, passphrase)
+			}
+			return nil, fmt.Errorf("private key is encrypted; use --passphrase to provide one: %w", err)
 		}
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
@@ -35,8 +38,8 @@ func ParsePrivateKey(data []byte) (ssh.Signer, error) {
 // NewClient creates an SSH client using known_hosts-based host key verification.
 // The known_hosts file is read from ~/.ssh/known_hosts. If the file does not
 // exist, an error is returned; use NewClientInsecure to skip host key checking.
-func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
-	signer, err := ParsePrivateKey(privateKey)
+func NewClient(host, port, user string, privateKey []byte, passphrase []byte) (*Client, error) {
+	signer, err := ParsePrivateKey(privateKey, passphrase)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +70,8 @@ func NewClient(host, port, user string, privateKey []byte) (*Client, error) {
 // verified normally. If the host is not yet known, the key is accepted and
 // appended to known_hosts for future verification. This mirrors the behavior
 // of ssh -o StrictHostKeyChecking=accept-new.
-func NewClientTOFU(host, port, user string, privateKey []byte) (*Client, error) {
-	signer, err := ParsePrivateKey(privateKey)
+func NewClientTOFU(host, port, user string, privateKey []byte, passphrase []byte) (*Client, error) {
+	signer, err := ParsePrivateKey(privateKey, passphrase)
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +143,8 @@ func NewClientTOFU(host, port, user string, privateKey []byte) (*Client, error) 
 
 // NewClientInsecure creates an SSH client using Trust On First Use host key
 // verification. Deprecated: use NewClientTOFU directly.
-func NewClientInsecure(host, port, user string, privateKey []byte) (*Client, error) {
-	return NewClientTOFU(host, port, user, privateKey)
+func NewClientInsecure(host, port, user string, privateKey []byte, passphrase []byte) (*Client, error) {
+	return NewClientTOFU(host, port, user, privateKey, passphrase)
 }
 
 func dialSSH(host, port, user string, config *ssh.ClientConfig) (*Client, error) {

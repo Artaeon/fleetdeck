@@ -32,7 +32,7 @@ func sshTestConfig(t *testing.T) (host, port, user string, key []byte) {
 func TestIntegrationSSHConnect(t *testing.T) {
 	host, port, user, key := sshTestConfig(t)
 
-	client, err := NewClientTOFU(host, port, user, key)
+	client, err := NewClientTOFU(host, port, user, key, nil)
 	if err != nil {
 		t.Fatalf("NewClientTOFU failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestIntegrationSSHConnect(t *testing.T) {
 func TestIntegrationSSHRunCommand(t *testing.T) {
 	host, port, user, key := sshTestConfig(t)
 
-	client, err := NewClientTOFU(host, port, user, key)
+	client, err := NewClientTOFU(host, port, user, key, nil)
 	if err != nil {
 		t.Fatalf("NewClientTOFU failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestIntegrationSSHRunCommand(t *testing.T) {
 func TestIntegrationSSHUploadDownload(t *testing.T) {
 	host, port, user, key := sshTestConfig(t)
 
-	client, err := NewClientTOFU(host, port, user, key)
+	client, err := NewClientTOFU(host, port, user, key, nil)
 	if err != nil {
 		t.Fatalf("NewClientTOFU failed: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestIntegrationSSHUploadDownload(t *testing.T) {
 func TestIntegrationSSHUploadDir(t *testing.T) {
 	host, port, user, key := sshTestConfig(t)
 
-	client, err := NewClientTOFU(host, port, user, key)
+	client, err := NewClientTOFU(host, port, user, key, nil)
 	if err != nil {
 		t.Fatalf("NewClientTOFU failed: %v", err)
 	}

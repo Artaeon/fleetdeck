@@ -239,7 +239,7 @@ func TestNewClientRequiresHOME(t *testing.T) {
 	// Unset HOME and verify NewClient returns an error mentioning HOME.
 	t.Setenv("HOME", "")
 
-	_, err := NewClient("127.0.0.1", "22", "testuser", keyData)
+	_, err := NewClient("127.0.0.1", "22", "testuser", keyData, nil)
 	if err == nil {
 		t.Fatal("NewClient() should return error when HOME is empty")
 	}
@@ -258,7 +258,7 @@ func TestNewClientRequiresHOMENotSet(t *testing.T) {
 	// t.Setenv("HOME", "") sets it to empty string; this tests that case.
 	t.Setenv("HOME", "")
 
-	client, err := NewClient("example.com", "22", "deploy", keyData)
+	client, err := NewClient("example.com", "22", "deploy", keyData, nil)
 	if err == nil {
 		t.Fatal("NewClient() should fail when HOME is not set")
 		if client != nil {
@@ -272,7 +272,7 @@ func TestNewClientInvalidKeyBeforeHOMECheck(t *testing.T) {
 	// not about HOME -- verifying error ordering.
 	t.Setenv("HOME", "")
 
-	_, err := NewClient("127.0.0.1", "22", "user", []byte("not a key"))
+	_, err := NewClient("127.0.0.1", "22", "user", []byte("not a key"), nil)
 	if err == nil {
 		t.Fatal("NewClient() should fail with invalid key")
 	}

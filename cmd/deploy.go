@@ -178,6 +178,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	host, user := parseTarget(server)
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
+	passphrase, _ := cmd.Flags().GetString("passphrase")
 
 	// Read SSH key
 	var keyData []byte
@@ -210,11 +211,15 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		client   *remote.Client
 		connErr  error
 	)
+	var passphraseBytes []byte
+	if passphrase != "" {
+		passphraseBytes = []byte(passphrase)
+	}
 	if insecure {
 		ui.Warn("Using Trust On First Use SSH host key verification (--insecure)")
-		client, connErr = remote.NewClientTOFU(host, port, user, keyData)
+		client, connErr = remote.NewClientTOFU(host, port, user, keyData, passphraseBytes)
 	} else {
-		client, connErr = remote.NewClient(host, port, user, keyData)
+		client, connErr = remote.NewClient(host, port, user, keyData, passphraseBytes)
 	}
 	if connErr != nil {
 		return fmt.Errorf("SSH connection failed: %w", connErr)
@@ -297,6 +302,7 @@ func init() {
 	deployCmd.Flags().String("name", "", "Project name (defaults to directory name)")
 	deployCmd.Flags().Duration("timeout", 5*time.Minute, "Deployment timeout")
 	deployCmd.Flags().Bool("insecure", false, "Skip SSH host key verification for remote deploys")
+	deployCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
 
 	rootCmd.AddCommand(deployCmd)
 }

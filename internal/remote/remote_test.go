@@ -32,7 +32,7 @@ func generateTestED25519Key(t *testing.T) []byte {
 func TestParsePrivateKey(t *testing.T) {
 	keyData := generateTestED25519Key(t)
 
-	signer, err := ParsePrivateKey(keyData)
+	signer, err := ParsePrivateKey(keyData, nil)
 	if err != nil {
 		t.Fatalf("ParsePrivateKey() returned unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestParsePrivateKeyInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			signer, err := ParsePrivateKey(tt.data)
+			signer, err := ParsePrivateKey(tt.data, nil)
 			if err == nil {
 				t.Error("ParsePrivateKey() should return an error for invalid input")
 			}
