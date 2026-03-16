@@ -173,10 +173,13 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 }
 
 func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration) error {
-	// Acquire per-project lock to prevent concurrent deployments.
-	lock, err := deploy.AcquireLock(dir)
+	// Acquire per-project lock using a canonical path based on project name,
+	// so concurrent deploys from different directories are serialized on this machine.
+	lockDir := filepath.Join(os.TempDir(), "fleetdeck-locks", name)
+	os.MkdirAll(lockDir, 0755)
+	lock, err := deploy.AcquireLock(lockDir)
 	if err != nil {
-		return fmt.Errorf("acquiring deploy lock: %w", err)
+		return fmt.Errorf("acquiring deploy lock: %w (another deploy for %q may be running)", err, name)
 	}
 	defer lock.Release()
 
@@ -295,9 +298,46 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	}
 
 	// Step 4: Build and deploy
-	ui.Step(4, 5, "Building and deploying on server...")
-	deployCmd := "cd " + quotedPath + " && docker compose build && docker compose up -d"
-	output, err := client.Run(deployCmd)
+	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
+
+	// Build first (common to all strategies)
+	buildCmd := "cd " + quotedPath + " && docker compose build"
+	output, err := client.Run(buildCmd)
+	if err != nil {
+		ui.Error("Remote build failed: %s", output)
+		return fmt.Errorf("remote build: %w", err)
+	}
+
+	// Execute strategy-specific deploy
+	var remoteDeployCmd string
+	switch strategyName {
+	case "bluegreen":
+		// Bring up new set under temporary project name, then swap
+		newProject := name + "-new"
+		remoteDeployCmd = fmt.Sprintf(
+			"cd %s && "+
+				"docker compose -p %s up -d --pull always && "+
+				"sleep 5 && "+
+				"docker compose down && "+
+				"docker compose -p %s down --remove-orphans && "+
+				"docker compose up -d --pull always",
+			quotedPath, newProject, newProject,
+		)
+	case "rolling":
+		// Pull first, then restart each service one at a time
+		remoteDeployCmd = fmt.Sprintf(
+			"cd %s && docker compose pull && "+
+				"for svc in $(docker compose config --services); do "+
+				"docker compose up -d --no-deps $svc; "+
+				"sleep 2; "+
+				"done",
+			quotedPath,
+		)
+	default: // "basic"
+		remoteDeployCmd = "cd " + quotedPath + " && docker compose up -d --pull always"
+	}
+
+	output, err = client.Run(remoteDeployCmd)
 	if err != nil {
 		ui.Error("Remote deployment failed: %s", output)
 		return fmt.Errorf("remote deployment: %w", err)
