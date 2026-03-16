@@ -9,13 +9,16 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/compose"
 	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
 // WebhookConfig holds webhook authentication settings.
@@ -199,6 +202,24 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 	report := waitForHealthy(p.ProjectPath, 30*time.Second)
 	if report != nil && report.Healthy {
 		logBuf.WriteString("All services healthy.\n")
+
+		// Step 6: Run post-deploy hook from .fleetdeck.yml
+		if hook := loadPostDeployHook(p.ProjectPath); hook != "" {
+			logBuf.WriteString("\n=== Post-Deploy Hook ===\n")
+			logBuf.WriteString(fmt.Sprintf("Running: %s\n", hook))
+			hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", hook)
+			hookCmd.Dir = p.ProjectPath
+			if out, err := hookCmd.CombinedOutput(); err != nil {
+				logBuf.WriteString(string(out))
+				logBuf.WriteString(fmt.Sprintf("\npost-deploy hook failed: %v\n", err))
+				s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
+				return
+			} else {
+				logBuf.WriteString(string(out))
+			}
+			logBuf.WriteString("Post-deploy hook completed.\n")
+		}
+
 		logBuf.WriteString("\nDeployment successful!\n")
 		s.finishDeployment(dep, "success", logBuf.String(), p.Name)
 		return
@@ -391,4 +412,30 @@ func verifyHMAC(body []byte, signature, secret string) bool {
 	mac.Write(body)
 	expected := mac.Sum(nil)
 	return hmac.Equal(sig, expected)
+}
+
+// fleetdeckConfig represents the project-level .fleetdeck.yml configuration.
+type fleetdeckConfig struct {
+	Hooks struct {
+		PreDeploy  string `yaml:"pre_deploy"`
+		PostDeploy string `yaml:"post_deploy"`
+	} `yaml:"hooks"`
+}
+
+// loadPostDeployHook reads a .fleetdeck.yml file from the project directory
+// and returns the post_deploy hook command, if any.
+func loadPostDeployHook(projectPath string) string {
+	for _, name := range []string{".fleetdeck.yml", "fleetdeck.yml"} {
+		data, err := os.ReadFile(filepath.Join(projectPath, name))
+		if err != nil {
+			continue
+		}
+		var cfg fleetdeckConfig
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			log.Printf("warning: failed to parse %s: %v", name, err)
+			return ""
+		}
+		return cfg.Hooks.PostDeploy
+	}
+	return ""
 }
