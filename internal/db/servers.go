@@ -106,7 +106,9 @@ func (db *DB) UpdateServerStatus(name, status string) error {
 func (db *DB) DeleteServer(name string) error {
 	// Check if any projects reference this server
 	var count int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM projects WHERE server_id = (SELECT id FROM servers WHERE name = ?)`, name).Scan(&count)
+	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM projects WHERE server_id = (SELECT id FROM servers WHERE name = ?)`, name).Scan(&count); err != nil {
+		return fmt.Errorf("checking project references: %w", err)
+	}
 	if count > 0 {
 		return fmt.Errorf("server %q has %d project(s) assigned; reassign or remove them first", name, count)
 	}
