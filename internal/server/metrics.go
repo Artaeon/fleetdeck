@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -148,7 +149,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 // parseMemInfo reads /proc/meminfo for total and available memory.
 func parseMemInfo() (total, available int64) {
-	out, err := exec.Command("cat", "/proc/meminfo").Output()
+	out, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return 0, 0
 	}
