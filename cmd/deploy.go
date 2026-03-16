@@ -307,18 +307,6 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Step 4: Build and deploy
 	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
 
-	// Run pre-deploy hook
-	if preDeployHook != "" {
-		ui.Info("Running pre-deploy hook...")
-		hookCmd := fmt.Sprintf("cd %s && docker compose exec -T app sh -c '%s'", quotedPath, preDeployHook)
-		output, err := client.Run(hookCmd)
-		if err != nil {
-			ui.Error("Pre-deploy hook failed: %s", output)
-			return fmt.Errorf("pre-deploy hook failed: %w", err)
-		}
-		ui.Success("Pre-deploy hook completed")
-	}
-
 	// Build first (common to all strategies)
 	buildCmd := "cd " + quotedPath + " && docker compose build"
 	output, err := client.Run(buildCmd)
@@ -356,6 +344,18 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		remoteDeployCmd = "cd " + quotedPath + " && docker compose up -d --pull always"
 	}
 
+	// Run pre-deploy hook (after build, before deploy — containers must exist)
+	if preDeployHook != "" {
+		ui.Info("Running pre-deploy hook...")
+		hookCmd := "cd " + quotedPath + " && docker compose exec -T app sh -c " + shellQuote(preDeployHook)
+		output, err := client.Run(hookCmd)
+		if err != nil {
+			ui.Error("Pre-deploy hook failed: %s", output)
+			return fmt.Errorf("pre-deploy hook failed: %w", err)
+		}
+		ui.Success("Pre-deploy hook completed")
+	}
+
 	output, err = client.Run(remoteDeployCmd)
 	if err != nil {
 		ui.Error("Remote deployment failed: %s", output)
@@ -365,7 +365,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Run post-deploy hook
 	if postDeployHook != "" {
 		ui.Info("Running post-deploy hook...")
-		hookCmd := fmt.Sprintf("cd %s && docker compose exec -T app sh -c '%s'", quotedPath, postDeployHook)
+		hookCmd := "cd " + quotedPath + " && docker compose exec -T app sh -c " + shellQuote(postDeployHook)
 		output, err := client.Run(hookCmd)
 		if err != nil {
 			ui.Error("Post-deploy hook failed: %s", output)
