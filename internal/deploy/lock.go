@@ -39,8 +39,18 @@ func (l *ProjectLock) Release() error {
 	if l.lockFile == nil {
 		return nil
 	}
-	syscall.Flock(int(l.lockFile.Fd()), syscall.LOCK_UN)
-	l.lockFile.Close()
-	os.Remove(l.path)
+	var errs []error
+	if err := syscall.Flock(int(l.lockFile.Fd()), syscall.LOCK_UN); err != nil {
+		errs = append(errs, fmt.Errorf("unlocking: %w", err))
+	}
+	if err := l.lockFile.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("closing lock file: %w", err))
+	}
+	if err := os.Remove(l.path); err != nil && !os.IsNotExist(err) {
+		errs = append(errs, fmt.Errorf("removing lock file: %w", err))
+	}
+	if len(errs) > 0 {
+		return errs[0]
+	}
 	return nil
 }
