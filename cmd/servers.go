@@ -32,6 +32,9 @@ Examples:
 		port, _ := cmd.Flags().GetString("port")
 		keyFile, _ := cmd.Flags().GetString("key")
 		passphrase, _ := cmd.Flags().GetString("passphrase")
+		if envPass := os.Getenv("FLEETDECK_SSH_PASSPHRASE"); envPass != "" {
+			passphrase = envPass
+		}
 
 		// Resolve SSH key path
 		if keyFile == "" {
@@ -185,6 +188,9 @@ var serverStatusCmd = &cobra.Command{
 			}
 
 			passphrase, _ := cmd.Flags().GetString("passphrase")
+			if envPass := os.Getenv("FLEETDECK_SSH_PASSPHRASE"); envPass != "" {
+				passphrase = envPass
+			}
 			var passphraseBytes []byte
 			if passphrase != "" {
 				passphraseBytes = []byte(passphrase)

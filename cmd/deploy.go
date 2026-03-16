@@ -189,6 +189,9 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
 	passphrase, _ := cmd.Flags().GetString("passphrase")
+	if envPass := os.Getenv("FLEETDECK_SSH_PASSPHRASE"); envPass != "" {
+		passphrase = envPass
+	}
 
 	// Resolve server: either a registered name or user@host
 	var host, user string

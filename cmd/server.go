@@ -36,6 +36,9 @@ The server must be accessible via SSH with key-based auth.`,
 		port, _ := cmd.Flags().GetString("port")
 		keyFile, _ := cmd.Flags().GetString("key")
 		passphrase, _ := cmd.Flags().GetString("passphrase")
+		if envPass := os.Getenv("FLEETDECK_SSH_PASSPHRASE"); envPass != "" {
+			passphrase = envPass
+		}
 		domain, _ := cmd.Flags().GetString("domain")
 		email, _ := cmd.Flags().GetString("email")
 		swapGB, _ := cmd.Flags().GetInt("swap")
