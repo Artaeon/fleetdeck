@@ -120,6 +120,9 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 	}
 	defer lock.Release()
 
+	// Pre-deploy snapshot to protect against failed deployments
+	autoSnapshot(name, "deploy")
+
 	// Step 3: Deploy
 	ui.Step(3, 5, "Deploying with %s strategy...", strategyName)
 
@@ -174,6 +177,9 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		return fmt.Errorf("acquiring deploy lock: %w", err)
 	}
 	defer lock.Release()
+
+	// Pre-deploy snapshot to protect against failed deployments
+	autoSnapshot(name, "deploy")
 
 	host, user := parseTarget(server)
 	port, _ := cmd.Flags().GetString("port")
