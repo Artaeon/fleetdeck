@@ -270,6 +270,30 @@ func TestDuplicateProjectName(t *testing.T) {
 	}
 }
 
+func TestProjectBranchMappings(t *testing.T) {
+	db := newTestDB(t)
+
+	p := &Project{
+		Name:           "branch-test",
+		Domain:         "branch.io",
+		LinuxUser:      "fleetdeck-branch-test",
+		ProjectPath:    "/opt/test",
+		Template:       "node",
+		BranchMappings: `{"main":"production","develop":"staging"}`,
+	}
+	if err := db.CreateProject(p); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := db.GetProject("branch-test")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.BranchMappings != p.BranchMappings {
+		t.Errorf("BranchMappings = %q, want %q", got.BranchMappings, p.BranchMappings)
+	}
+}
+
 // --- Deployment tests ---
 
 func TestCreateAndListDeployments(t *testing.T) {

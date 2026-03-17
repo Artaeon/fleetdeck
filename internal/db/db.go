@@ -35,8 +35,9 @@ type Project struct {
 	Template    string
 	Status      string
 	Source      string // "created", "imported", "discovered"
-	ServerID    string // optional: links to a registered server
-	CreatedAt   time.Time
+	ServerID       string // optional: links to a registered server
+	BranchMappings string // JSON: {"main":"production","develop":"staging"}
+	CreatedAt      time.Time
 	UpdatedAt   time.Time
 }
 
@@ -269,6 +270,7 @@ func (db *DB) migrate() error {
 	alterStatements := []string{
 		`ALTER TABLE projects ADD COLUMN source TEXT DEFAULT 'created'`,
 		`ALTER TABLE projects ADD COLUMN server_id TEXT DEFAULT ''`,
+		`ALTER TABLE projects ADD COLUMN branch_mappings TEXT DEFAULT ''`,
 	}
 	for _, stmt := range alterStatements {
 		db.conn.Exec(stmt) // ignore "duplicate column" errors
