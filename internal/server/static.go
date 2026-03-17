@@ -1623,6 +1623,154 @@ const appJS = `
     };
 
     // -----------------------------------------------------------------------
+    // Servers Page
+    // -----------------------------------------------------------------------
+    function renderServers() {
+        setHeader('Servers');
+        showLoading();
+
+        api('GET', '/api/servers').then(function(servers) {
+            if (!servers || servers.length === 0) {
+                setBody('<div class="empty-state"><h3>No servers</h3><p>Server information is not available.</p></div>');
+                return;
+            }
+            var html = '<div class="stats-grid">';
+            for (var i = 0; i < servers.length; i++) {
+                var s = servers[i];
+                html += '<div class="card">';
+                html += '<div class="card-header"><span class="card-title">' + escapeHTML(s.hostname || s.name || 'Server ' + (i+1)) + '</span>';
+                html += statusBadge(s.status || 'online') + '</div>';
+                html += '<div class="detail-grid">';
+                html += detailItem('IP', s.ip || s.address || '-');
+                html += detailItem('CPU Cores', s.cpus || '-');
+                html += detailItem('Memory', s.memory_total ? formatBytes(s.memory_total) : (s.memory || '-'));
+                html += detailItem('Disk', s.disk_total ? formatBytes(s.disk_total) : (s.disk || '-'));
+                html += detailItem('Uptime', s.uptime || '-');
+                html += detailItem('OS', s.os || '-');
+                html += '</div></div>';
+            }
+            html += '</div>';
+            setBody(html);
+        }).catch(function(err) {
+            // If servers endpoint returns single server info
+            api('GET', '/api/status').then(function(status) {
+                var html = '<div class="card">';
+                html += '<div class="card-header"><span class="card-title">Local Server</span>';
+                html += statusBadge('online') + '</div>';
+                html += '<div class="detail-grid">';
+                html += detailItem('Hostname', status.hostname || '-');
+                html += detailItem('CPU Cores', status.cpus || '-');
+                html += detailItem('Memory Total', status.memory_total ? formatBytes(status.memory_total) : '-');
+                html += detailItem('Memory Used', status.memory_used ? formatBytes(status.memory_used) : '-');
+                html += detailItem('Disk Total', status.disk_total ? formatBytes(status.disk_total) : '-');
+                html += detailItem('Disk Used', status.disk_used ? formatBytes(status.disk_used) : '-');
+                html += detailItem('Projects', status.projects || 0);
+                html += detailItem('Running', status.running || 0);
+                html += '</div></div>';
+                setBody(html);
+            }).catch(function(err2) {
+                showError(err2.message);
+            });
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // DNS Page
+    // -----------------------------------------------------------------------
+    function renderDNS() {
+        setHeader('DNS Management');
+        var html = '<div class="card">';
+        html += '<div class="card-header"><span class="card-title">DNS Lookup</span></div>';
+        html += '<form id="dns-form" class="mb-24">';
+        html += '<div class="filter-bar">';
+        html += '<div class="form-group" style="margin-bottom:0;flex:1">';
+        html += '<input class="form-input" name="domain" placeholder="example.com" required>';
+        html += '</div>';
+        html += '<button type="submit" class="btn btn-primary">Lookup</button>';
+        html += '</div></form>';
+        html += '<div id="dns-results"></div>';
+        html += '</div>';
+        setBody(html);
+
+        setTimeout(function() {
+            var form = document.getElementById('dns-form');
+            if (form) {
+                form.onsubmit = function(e) {
+                    e.preventDefault();
+                    var domain = new FormData(form).get('domain');
+                    var el = document.getElementById('dns-results');
+                    el.innerHTML = '<div class="loading-spinner"></div>';
+                    api('GET', '/api/dns/' + encodeURIComponent(domain)).then(function(data) {
+                        if (!data || !data.records || data.records.length === 0) {
+                            el.innerHTML = '<div class="empty-state"><p>No DNS records found.</p></div>';
+                            return;
+                        }
+                        var html = '<table class="data-table"><thead><tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th></tr></thead><tbody>';
+                        for (var i = 0; i < data.records.length; i++) {
+                            var r = data.records[i];
+                            html += '<tr>';
+                            html += '<td>' + statusBadge(r.type) + '</td>';
+                            html += '<td>' + escapeHTML(r.name || domain) + '</td>';
+                            html += '<td><code>' + escapeHTML(r.value || r.data || '-') + '</code></td>';
+                            html += '<td class="text-secondary">' + escapeHTML(String(r.ttl || '-')) + '</td>';
+                            html += '</tr>';
+                        }
+                        html += '</tbody></table>';
+                        el.innerHTML = html;
+                    }).catch(function(err) {
+                        el.innerHTML = '<div class="alert alert-error">' + escapeHTML(err.message) + '</div>';
+                    });
+                };
+            }
+        }, 50);
+    }
+
+    // -----------------------------------------------------------------------
+    // Deploy Page
+    // -----------------------------------------------------------------------
+    function renderDeploy() {
+        setHeader('Deploy');
+        showLoading();
+
+        api('GET', '/api/projects').then(function(projects) {
+            var html = '<div class="card">';
+            html += '<div class="card-header"><span class="card-title">Trigger Deployment</span></div>';
+            if (!projects || projects.length === 0) {
+                html += '<div class="empty-state"><p>No projects available to deploy.</p></div>';
+            } else {
+                html += '<form id="deploy-form">';
+                html += '<div class="form-group"><label class="form-label">Project</label>';
+                html += '<select class="form-select" name="project" required>';
+                for (var i = 0; i < projects.length; i++) {
+                    html += '<option value="' + escapeHTML(projects[i].name) + '">' + escapeHTML(projects[i].name) + ' (' + escapeHTML(projects[i].status) + ')</option>';
+                }
+                html += '</select></div>';
+                html += '<button type="submit" class="btn btn-primary">Deploy Now</button>';
+                html += '</form>';
+            }
+            html += '</div>';
+            setBody(html);
+
+            setTimeout(function() {
+                var form = document.getElementById('deploy-form');
+                if (form) {
+                    form.onsubmit = function(e) {
+                        e.preventDefault();
+                        var name = new FormData(form).get('project');
+                        api('POST', '/api/webhook/deploy/' + name).then(function() {
+                            toast('Deployment started for ' + name, 'success');
+                        }).catch(function(err) {
+                            toast(err.message, 'error');
+                        });
+                    };
+                }
+            }, 50);
+        }).catch(function(err) {
+            showError(err.message);
+        });
+    }
+
+    // -----------------------------------------------------------------------
     // Initialize
     // -----------------------------------------------------------------------
     window.addEventListener('hashchange', navigate);
