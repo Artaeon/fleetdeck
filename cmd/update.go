@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
+	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
@@ -48,13 +49,18 @@ Examples:
 		preDeployHook, _ := cmd.Flags().GetString("pre-deploy")
 		postDeployHook, _ := cmd.Flags().GetString("post-deploy")
 
-		// Look up project in DB once for dir and server resolution
-		d := openDB()
-		proj, projErr := d.GetProject(projectName)
+		// Only open DB when we actually need it (dir or server not provided)
+		needsDB := dir == "" || server == ""
+		var d *db.DB
+		if needsDB {
+			d = openDB()
+		}
 
 		// Resolve local source directory
-		if dir == "" && projErr == nil && proj.ProjectPath != "" {
-			dir = proj.ProjectPath
+		if dir == "" && d != nil {
+			if proj, err := d.GetProject(projectName); err == nil && proj.ProjectPath != "" {
+				dir = proj.ProjectPath
+			}
 		}
 		if dir == "" && !restartOnly {
 			return fmt.Errorf("could not find local directory for %q; use --dir or --restart-only", projectName)
@@ -72,10 +78,11 @@ Examples:
 		}
 
 		// Resolve server from DB if not specified
-		if server == "" && projErr == nil && proj.ServerID != "" {
-			s, err := d.GetServerByID(proj.ServerID)
-			if err == nil {
-				server = s.Name
+		if server == "" && d != nil {
+			if proj, err := d.GetProject(projectName); err == nil && proj.ServerID != "" {
+				if s, err := d.GetServerByID(proj.ServerID); err == nil {
+					server = s.Name
+				}
 			}
 		}
 		if server == "" {
@@ -92,6 +99,9 @@ Examples:
 		// Resolve server: registered name or user@host
 		var host, user string
 		if !strings.Contains(server, "@") && !strings.Contains(server, ".") && !strings.Contains(server, ":") {
+			if d == nil {
+				d = openDB()
+			}
 			s, err := d.GetServer(server)
 			if err != nil {
 				return fmt.Errorf("server %q not found; use 'fleetdeck server add' to register it or specify user@host", server)
