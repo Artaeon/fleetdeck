@@ -139,6 +139,12 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
 	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
+	// Environment management
+	mux.HandleFunc("GET /api/projects/{name}/environments", s.requireAuth(s.handleListEnvironments))
+	mux.HandleFunc("POST /api/projects/{name}/environments", s.requireAuth(s.handleCreateEnvironment))
+	mux.HandleFunc("DELETE /api/projects/{name}/environments/{env}", s.requireAuth(s.handleDeleteEnvironment))
+	mux.HandleFunc("POST /api/projects/{name}/environments/promote", s.requireAuth(s.handlePromoteEnvironment))
+
 	// Prometheus metrics endpoint (auth required)
 	mux.HandleFunc("GET /metrics", s.requireAuth(s.handleMetrics))
 
