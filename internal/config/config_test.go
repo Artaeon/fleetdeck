@@ -21,8 +21,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Traefik.Entrypoint != "websecure" {
 		t.Errorf("expected entrypoint websecure, got %s", cfg.Traefik.Entrypoint)
 	}
-	if cfg.Traefik.CertResolver != "myresolver" {
-		t.Errorf("expected cert resolver myresolver, got %s", cfg.Traefik.CertResolver)
+	if cfg.Traefik.CertResolver != "letsencrypt" {
+		t.Errorf("expected cert resolver letsencrypt, got %s", cfg.Traefik.CertResolver)
 	}
 
 	// Defaults section
@@ -106,9 +106,10 @@ func TestLoadNonExistentConfig(t *testing.T) {
 		t.Fatalf("expected no error for missing config, got %v", err)
 	}
 
-	// Should return defaults
-	if cfg.Server.BasePath != "/opt/fleetdeck" {
-		t.Errorf("expected default base path, got %s", cfg.Server.BasePath)
+	// BasePath depends on whether /opt/fleetdeck exists (server vs local).
+	// On dev machines it falls back to ~/.local/share/fleetdeck.
+	if cfg.Server.BasePath == "" {
+		t.Error("expected non-empty base path")
 	}
 	if cfg.Traefik.Network != "traefik_default" {
 		t.Errorf("expected default traefik network, got %s", cfg.Traefik.Network)

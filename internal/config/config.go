@@ -92,7 +92,7 @@ func DefaultConfig() *Config {
 		Traefik: TraefikConfig{
 			Network:      "traefik_default",
 			Entrypoint:   "websecure",
-			CertResolver: "myresolver",
+			CertResolver: "letsencrypt",
 		},
 		Defaults: DefaultsConfig{
 			Template:        "node",
@@ -142,6 +142,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			applyEnvOverrides(cfg)
+			applyLocalBasePath(cfg)
 			return cfg, nil
 		}
 		return nil, err
@@ -156,6 +157,31 @@ func Load(path string) (*Config, error) {
 	applyEnvOverrides(cfg)
 
 	return cfg, nil
+}
+
+// applyLocalBasePath detects when running locally (not on a server where
+// /opt/fleetdeck exists) and switches the base path to a user-local directory.
+// This avoids requiring FLEETDECK_BASE_PATH for local CLI usage.
+// It only applies when no env override was set and the default path doesn't exist.
+func applyLocalBasePath(cfg *Config) {
+	// If the user explicitly set FLEETDECK_BASE_PATH, respect it.
+	if os.Getenv("FLEETDECK_BASE_PATH") != "" {
+		return
+	}
+
+	// If the default /opt/fleetdeck exists (we're on the server), keep it.
+	if _, err := os.Stat(cfg.Server.BasePath); err == nil {
+		return
+	}
+
+	// Use ~/.local/share/fleetdeck as the local base path.
+	home := os.Getenv("HOME")
+	if home == "" {
+		return
+	}
+
+	localPath := filepath.Join(home, ".local", "share", "fleetdeck")
+	cfg.Server.BasePath = localPath
 }
 
 // applyEnvOverrides reads sensitive values from environment variables,
