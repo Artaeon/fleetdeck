@@ -1771,6 +1771,165 @@ const appJS = `
     }
 
     // -----------------------------------------------------------------------
+    // Scheduling Page
+    // -----------------------------------------------------------------------
+    function renderScheduling() {
+        setHeader('Scheduling');
+        showLoading();
+
+        api('GET', '/api/schedule').then(function(schedules) {
+            if (!schedules || schedules.length === 0) {
+                setBody(
+                    '<div class="card"><div class="card-header"><span class="card-title">Scheduled Tasks</span></div>' +
+                    '<div class="empty-state"><h3>No scheduled tasks</h3><p>No cron jobs or scheduled tasks configured.</p></div></div>'
+                );
+                return;
+            }
+            var html = '<div class="card">';
+            html += '<div class="card-header"><span class="card-title">Scheduled Tasks</span></div>';
+            html += '<table class="data-table"><thead><tr><th>Project</th><th>Schedule</th><th>Command</th><th>Last Run</th><th>Status</th></tr></thead><tbody>';
+            for (var i = 0; i < schedules.length; i++) {
+                var s = schedules[i];
+                html += '<tr>';
+                html += '<td><a href="#/project/' + escapeHTML(s.project || '') + '" class="table-link">' + escapeHTML(s.project || '-') + '</a></td>';
+                html += '<td><code>' + escapeHTML(s.schedule || s.cron || '-') + '</code></td>';
+                html += '<td>' + escapeHTML(s.command || s.task || '-') + '</td>';
+                html += '<td class="text-secondary">' + timeAgo(s.last_run) + '</td>';
+                html += '<td>' + statusBadge(s.status || 'pending') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+            setBody(html);
+        }).catch(function(err) {
+            setBody(
+                '<div class="card"><div class="card-header"><span class="card-title">Scheduled Tasks</span></div>' +
+                '<div class="empty-state"><h3>Scheduling not available</h3><p>' + escapeHTML(err.message) + '</p></div></div>'
+            );
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Volumes Page
+    // -----------------------------------------------------------------------
+    function renderVolumes() {
+        setHeader('Volumes');
+        showLoading();
+
+        api('GET', '/api/volumes').then(function(volumes) {
+            if (!volumes || volumes.length === 0) {
+                setBody(
+                    '<div class="card"><div class="card-header"><span class="card-title">Volumes</span></div>' +
+                    '<div class="empty-state"><h3>No volumes</h3><p>No persistent volumes have been created.</p></div></div>'
+                );
+                return;
+            }
+            var html = '<div class="card">';
+            html += '<div class="card-header"><span class="card-title">Volumes</span></div>';
+            html += '<table class="data-table"><thead><tr><th>Name</th><th>Size</th><th>Project</th><th>Mount</th><th>Created</th><th></th></tr></thead><tbody>';
+            for (var i = 0; i < volumes.length; i++) {
+                var v = volumes[i];
+                html += '<tr>';
+                html += '<td><span class="table-link">' + escapeHTML(v.name || '-') + '</span></td>';
+                html += '<td>' + escapeHTML(v.size || '-') + '</td>';
+                html += '<td>' + escapeHTML(v.project || '-') + '</td>';
+                html += '<td><code>' + escapeHTML(v.mount_path || v.path || '-') + '</code></td>';
+                html += '<td class="text-secondary">' + timeAgo(v.created_at) + '</td>';
+                html += '<td><button class="btn btn-ghost btn-sm" onclick="window.__deleteVolume(\'' + escapeHTML(v.name || '') + '\')">Delete</button></td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+            setBody(html);
+        }).catch(function(err) {
+            setBody(
+                '<div class="card"><div class="card-header"><span class="card-title">Volumes</span></div>' +
+                '<div class="empty-state"><h3>Volumes not available</h3><p>' + escapeHTML(err.message) + '</p></div></div>'
+            );
+        });
+    }
+
+    window.__deleteVolume = function(name) {
+        openModal(
+            '<h3>Delete Volume</h3>' +
+            '<p>Are you sure you want to delete volume <strong>' + escapeHTML(name) + '</strong>? All data will be lost.</p>' +
+            '<div class="modal-actions">' +
+                '<button class="btn btn-secondary" onclick="window.__closeModal()">Cancel</button>' +
+                '<button class="btn btn-danger" onclick="window.__confirmDeleteVolume(\'' + escapeHTML(name) + '\')">Delete</button>' +
+            '</div>'
+        );
+    };
+
+    window.__confirmDeleteVolume = function(name) {
+        api('DELETE', '/api/volumes/' + name).then(function() {
+            closeModal();
+            toast('Volume deleted', 'success');
+            renderVolumes();
+        }).catch(function(err) {
+            closeModal();
+            toast(err.message, 'error');
+        });
+    };
+
+    // -----------------------------------------------------------------------
+    // Discovery Page
+    // -----------------------------------------------------------------------
+    function renderDiscovery() {
+        setHeader('Service Discovery');
+        var html = '<div class="card">';
+        html += '<div class="card-header"><span class="card-title">Discover Services</span></div>';
+        html += '<p class="text-secondary mb-16">Scan for running services and containers on this server.</p>';
+        html += '<button class="btn btn-primary" id="discover-btn" onclick="window.__runDiscovery()">Run Discovery</button>';
+        html += '<div id="discovery-results" class="mt-24"></div>';
+        html += '</div>';
+        setBody(html);
+    }
+
+    window.__runDiscovery = function() {
+        var el = document.getElementById('discovery-results');
+        el.innerHTML = '<div class="loading-spinner"></div>';
+        var btn = document.getElementById('discover-btn');
+        if (btn) btn.disabled = true;
+
+        api('POST', '/api/discover').then(function(data) {
+            if (btn) btn.disabled = false;
+            var services = data.services || data || [];
+            if (!services.length && !Array.isArray(services)) {
+                // Maybe it is an object with keys
+                var keys = Object.keys(services);
+                if (keys.length === 0) {
+                    el.innerHTML = '<div class="empty-state"><p>No services discovered.</p></div>';
+                    return;
+                }
+                var html = '<table class="data-table"><thead><tr><th>Service</th><th>Details</th></tr></thead><tbody>';
+                for (var i = 0; i < keys.length; i++) {
+                    html += '<tr><td>' + escapeHTML(keys[i]) + '</td><td>' + escapeHTML(JSON.stringify(services[keys[i]])) + '</td></tr>';
+                }
+                html += '</tbody></table>';
+                el.innerHTML = html;
+                return;
+            }
+            if (services.length === 0) {
+                el.innerHTML = '<div class="empty-state"><p>No services discovered.</p></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr><th>Name</th><th>Type</th><th>Port</th><th>Status</th></tr></thead><tbody>';
+            for (var j = 0; j < services.length; j++) {
+                var s = services[j];
+                html += '<tr>';
+                html += '<td>' + escapeHTML(s.name || '-') + '</td>';
+                html += '<td>' + escapeHTML(s.type || '-') + '</td>';
+                html += '<td>' + escapeHTML(String(s.port || '-')) + '</td>';
+                html += '<td>' + statusBadge(s.status || 'discovered') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }).catch(function(err) {
+            if (btn) btn.disabled = false;
+            el.innerHTML = '<div class="alert alert-error">' + escapeHTML(err.message) + '</div>';
+        });
+    };
+
+    // -----------------------------------------------------------------------
     // Initialize
     // -----------------------------------------------------------------------
     window.addEventListener('hashchange', navigate);
