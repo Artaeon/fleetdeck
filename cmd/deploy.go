@@ -11,6 +11,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/detect"
+	"github.com/fleetdeck/fleetdeck/internal/generate"
 	"github.com/fleetdeck/fleetdeck/internal/profiles"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
@@ -60,6 +61,8 @@ Examples:
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		preDeployHook, _ := cmd.Flags().GetString("pre-deploy")
 		postDeployHook, _ := cmd.Flags().GetString("post-deploy")
+		noCache, _ := cmd.Flags().GetBool("no-cache")
+		fresh, _ := cmd.Flags().GetBool("fresh")
 
 		if domain == "" {
 			return fmt.Errorf("--domain is required")
@@ -84,6 +87,13 @@ Examples:
 			ui.Info("Detected application port: %d", result.Port)
 		}
 
+		// Show detection warnings
+		if warnings, ok := getWarnings(result); ok {
+			for _, w := range warnings {
+				ui.Warn(w)
+			}
+		}
+
 		// Use detected profile if none specified
 		if profileName == "" {
 			profileName = result.Profile
@@ -105,16 +115,22 @@ Examples:
 			return fmt.Errorf("invalid project name %q: %w", name, err)
 		}
 
-		// Step 2: Remote or local?
-		if server != "" {
-			return deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook)
+		// Auto-generate missing deployment files
+		generated := generateMissingFiles(absDir, name, domain, result)
+		for _, g := range generated {
+			ui.Success("Generated %s", g)
 		}
 
-		return deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook)
+		// Step 2: Remote or local?
+		if server != "" {
+			return deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache, fresh)
+		}
+
+		return deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache)
 	},
 }
 
-func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string) error {
+func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string, noCache bool) error {
 	projectPath := cfg.ProjectPath(name)
 
 	// Acquire per-project lock to prevent concurrent deployments.
@@ -147,6 +163,7 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 		Timeout:        timeout,
 		PreDeployHook:  preDeployHook,
 		PostDeployHook: postDeployHook,
+		NoCache:        noCache,
 	}
 
 	result, err := strategy.Deploy(ctx, opts)
@@ -176,7 +193,7 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 	return nil
 }
 
-func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string) error {
+func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string, noCache, fresh bool) error {
 	// Acquire per-project lock using a canonical path based on project name,
 	// so concurrent deploys from different directories are serialized on this machine.
 	lockDir := filepath.Join(os.TempDir(), "fleetdeck-locks", name)
@@ -309,8 +326,20 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	// Step 4: Build and deploy
 	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
 
+	// Fresh deploy: tear down existing containers and volumes
+	if fresh {
+		ui.Info("Fresh deploy: removing existing containers and volumes...")
+		freshCmd := "cd " + quotedPath + " && docker compose down -v"
+		if output, err := client.Run(freshCmd); err != nil {
+			ui.Warn("Fresh teardown returned an error (may be first deploy): %s", output)
+		}
+	}
+
 	// Build first (common to all strategies)
 	buildCmd := "cd " + quotedPath + " && docker compose build"
+	if noCache {
+		buildCmd += " --no-cache"
+	}
 	output, err := client.Run(buildCmd)
 	if err != nil {
 		ui.Error("Remote build failed: %s", output)
@@ -391,6 +420,70 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	return nil
 }
 
+// generateMissingFiles creates Dockerfile, docker-compose.yml, and .dockerignore
+// in the project directory if they don't already exist. Returns a list of generated filenames.
+func generateMissingFiles(dir, name, domain string, result *detect.Result) []string {
+	var generated []string
+
+	// Generate Dockerfile if missing
+	if !fileExistsInDir(dir, "Dockerfile") {
+		content := generate.Dockerfile(result)
+		if content != "" {
+			if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(content), 0644); err == nil {
+				generated = append(generated, "Dockerfile")
+			}
+		}
+	}
+
+	// Generate docker-compose.yml if missing
+	if !fileExistsInDir(dir, "docker-compose.yml") {
+		port := result.Port
+		if port == 0 {
+			port = 3000
+		}
+		content := generate.Compose(generate.ComposeOptions{
+			ProjectName: name,
+			Domain:      domain,
+			Port:        port,
+			HasDB:       result.HasDB,
+			AppType:     result.AppType,
+		})
+		if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(content), 0644); err == nil {
+			generated = append(generated, "docker-compose.yml")
+		}
+	}
+
+	// Generate .dockerignore if missing
+	if !fileExistsInDir(dir, ".dockerignore") {
+		content := generate.Dockerignore(result.AppType)
+		if content != "" {
+			if err := os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte(content), 0644); err == nil {
+				generated = append(generated, ".dockerignore")
+			}
+		}
+	}
+
+	return generated
+}
+
+// getWarnings extracts warnings from a detect result.
+func getWarnings(result *detect.Result) ([]string, bool) {
+	type warnable interface {
+		GetWarnings() []string
+	}
+	// Use type assertion if Warnings field exists on result
+	// For now, we check via the field directly
+	if len(result.Warnings) > 0 {
+		return result.Warnings, true
+	}
+	return nil, false
+}
+
+func fileExistsInDir(dir, name string) bool {
+	info, err := os.Stat(filepath.Join(dir, name))
+	return err == nil && !info.IsDir()
+}
+
 func init() {
 	deployCmd.Flags().String("domain", "", "Domain for the application (required)")
 	deployCmd.Flags().String("server", "", "Remote server (user@host or registered name) for remote deployment")
@@ -404,6 +497,8 @@ func init() {
 	deployCmd.Flags().String("passphrase", "", "Passphrase for encrypted SSH private key")
 	deployCmd.Flags().String("pre-deploy", "", "Command to run before deploy (e.g. \"npm run migrate\")")
 	deployCmd.Flags().String("post-deploy", "", "Command to run after deploy (e.g. \"npm run seed\")")
+	deployCmd.Flags().Bool("no-cache", false, "Pass --no-cache to docker compose build for clean rebuilds")
+	deployCmd.Flags().Bool("fresh", false, "Remove existing containers and volumes before deploying (docker compose down -v)")
 
 	rootCmd.AddCommand(deployCmd)
 }
