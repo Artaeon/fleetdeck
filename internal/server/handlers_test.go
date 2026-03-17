@@ -560,7 +560,7 @@ func TestHandleDashboardHTMLContent(t *testing.T) {
 		{"<html", "HTML element"},
 		{"/static/style.css", "CSS link"},
 		{"/static/app.js", "JS script"},
-		{"projects-grid", "projects grid element"},
+		{"sidebar", "sidebar element"},
 		{"Dashboard", "dashboard link"},
 	}
 	for _, c := range checks {
@@ -654,31 +654,14 @@ func TestHandleProjectPage(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	// SPA: project page now redirects to hash-based route
+	if w.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect, got %d", w.Code)
 	}
 
-	ct := w.Header().Get("Content-Type")
-	if ct != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want text/html; charset=utf-8", ct)
-	}
-
-	body := w.Body.String()
-	checks := []struct {
-		contains string
-		label    string
-	}{
-		{"FleetDeck", "brand name"},
-		{"Project", "project title"},
-		{"Overview", "overview tab"},
-		{"Logs", "logs tab"},
-		{"Backups", "backups tab"},
-		{"/static/app.js", "JS script"},
-	}
-	for _, c := range checks {
-		if !strings.Contains(body, c.contains) {
-			t.Errorf("project page missing %s: expected to contain %q", c.label, c.contains)
-		}
+	loc := w.Header().Get("Location")
+	if loc != "/#/project/myapp" {
+		t.Errorf("expected redirect to /#/project/myapp, got %s", loc)
 	}
 }
 
@@ -705,8 +688,13 @@ func TestHandleProjectPageWithValidCookie(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200 for project page with valid cookie, got %d", w.Code)
+	// SPA: project page now redirects to hash-based route
+	if w.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect for project page with valid cookie, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if loc != "/#/project/anyapp" {
+		t.Errorf("expected redirect to /#/project/anyapp, got %s", loc)
 	}
 }
 
