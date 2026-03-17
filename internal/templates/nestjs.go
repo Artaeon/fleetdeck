@@ -37,7 +37,7 @@ CMD ["node", "dist/main.js"]
       - "traefik.enable=true"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}.tls.certresolver=myresolver"
+      - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{.Name}}.tls=true"
       - "traefik.http.services.{{.Name}}.loadbalancer.server.port=3000"
     depends_on:

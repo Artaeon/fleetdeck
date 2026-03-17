@@ -74,9 +74,9 @@ var initCmd = &cobra.Command{
 			ui.Info("  -p 80:80 -p 443:443 \\")
 			ui.Info("  -v /var/run/docker.sock:/var/run/docker.sock \\")
 			ui.Info("  traefik:v3.0 --providers.docker --entrypoints.websecure.address=:443 \\")
-			ui.Info("  --certificatesresolvers.myresolver.acme.tlschallenge=true \\")
-			ui.Info("  --certificatesresolvers.myresolver.acme.email=you@example.com \\")
-			ui.Info("  --certificatesresolvers.myresolver.acme.storage=/acme.json")
+			ui.Info("  --certificatesresolvers.letsencrypt.acme.tlschallenge=true \\")
+			ui.Info("  --certificatesresolvers.letsencrypt.acme.email=you@example.com \\")
+			ui.Info("  --certificatesresolvers.letsencrypt.acme.storage=/acme.json")
 		} else {
 			ui.Success("Traefik is running")
 		}

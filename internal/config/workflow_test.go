@@ -227,7 +227,7 @@ domain = "legacy.example.com"
 [traefik]
 network = "legacy-net"
 entrypoint = "websecure"
-cert_resolver = "myresolver"
+cert_resolver = "letsencrypt"
 
 [defaults]
 template = "rails"

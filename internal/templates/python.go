@@ -30,7 +30,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
       - "traefik.enable=true"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}.tls.certresolver=myresolver"
+      - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{.Name}}.tls=true"
       - "traefik.http.services.{{.Name}}.loadbalancer.server.port=8000"
     depends_on:

@@ -38,7 +38,7 @@ func init() {
       - "traefik.enable=true"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}.tls.certresolver=myresolver"
+      - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{.Name}}.tls=true"
       - "traefik.http.services.{{.Name}}.loadbalancer.server.port={{.Port}}"
     depends_on:
@@ -104,7 +104,7 @@ func init() {
       - "traefik.enable=true"
       - "traefik.http.routers.{{.Name}}-s3.rule=Host(` + "`s3.{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}-s3.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}-s3.tls.certresolver=myresolver"
+      - "traefik.http.routers.{{.Name}}-s3.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{.Name}}-s3.tls=true"
       - "traefik.http.services.{{.Name}}-s3.loadbalancer.server.port=9000"
     networks:
@@ -124,7 +124,7 @@ func init() {
       - "traefik.enable=true"
       - "traefik.http.routers.{{.Name}}-mail.rule=Host(` + "`mail.{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}-mail.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}-mail.tls.certresolver=myresolver"
+      - "traefik.http.routers.{{.Name}}-mail.tls.certresolver=letsencrypt"
       - "traefik.http.routers.{{.Name}}-mail.tls=true"
       - "traefik.http.services.{{.Name}}-mail.loadbalancer.server.port=8025"
     networks:

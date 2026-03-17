@@ -1035,6 +1035,22 @@ func TestRegisterAndGetCustomProfile(t *testing.T) {
 	delete(registry, "custom-test-profile")
 }
 
+func TestProfilesUseLetsencryptCertResolver(t *testing.T) {
+	// All profiles that have traefik labels should use "letsencrypt" certresolver.
+	for _, name := range []string{"bare", "server", "saas", "static", "fullstack"} {
+		p, err := Get(name)
+		if err != nil {
+			t.Fatalf("Get(%q) error: %v", name, err)
+		}
+		if strings.Contains(p.Compose, "certresolver=myresolver") {
+			t.Errorf("profile %q still uses deprecated certresolver=myresolver", name)
+		}
+		if strings.Contains(p.Compose, "traefik.http.routers") && !strings.Contains(p.Compose, "certresolver=letsencrypt") {
+			t.Errorf("profile %q with traefik routing should use certresolver=letsencrypt", name)
+		}
+	}
+}
+
 func TestRenderEnvIsSameAsRender(t *testing.T) {
 	// RenderEnv delegates to Render, verify they produce the same output
 	tmpl := "DB_NAME={{.Name}}\nDOMAIN={{.Domain}}\nPORT={{.Port}}\n"

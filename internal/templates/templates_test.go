@@ -116,6 +116,18 @@ func TestTemplatesHaveTraefikLabels(t *testing.T) {
 	}
 }
 
+func TestTemplatesUseLetsencryptCertResolver(t *testing.T) {
+	for _, name := range []string{"node", "python", "go", "nextjs", "nestjs", "static", "custom"} {
+		tmpl, _ := Get(name)
+		if !strings.Contains(tmpl.Compose, "certresolver=letsencrypt") {
+			t.Errorf("template %q should use certresolver=letsencrypt", name)
+		}
+		if strings.Contains(tmpl.Compose, "certresolver=myresolver") {
+			t.Errorf("template %q still uses deprecated certresolver=myresolver", name)
+		}
+	}
+}
+
 func TestTemplatesWithPostgres(t *testing.T) {
 	dbTemplates := []string{"node", "python", "go", "nextjs", "nestjs"}
 	for _, name := range dbTemplates {
