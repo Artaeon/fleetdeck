@@ -32,6 +32,7 @@ func TestAllCommandsRegistered(t *testing.T) {
 		"audit",
 		"sync",
 		"templates",
+		"setup-cd",
 	}
 
 	registered := make(map[string]bool)
