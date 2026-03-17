@@ -145,6 +145,20 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("DELETE /api/projects/{name}/environments/{env}", s.requireAuth(s.handleDeleteEnvironment))
 	mux.HandleFunc("POST /api/projects/{name}/environments/promote", s.requireAuth(s.handlePromoteEnvironment))
 
+	// DNS management
+	mux.HandleFunc("GET /api/dns/{domain}", s.requireAuth(s.handleListDNSRecords))
+	mux.HandleFunc("POST /api/dns/{domain}/setup", s.requireAuth(s.handleSetupDNS))
+	mux.HandleFunc("DELETE /api/dns/{domain}/{type}/{record}", s.requireAuth(s.handleDeleteDNSRecord))
+
+	// Scheduling
+	mux.HandleFunc("GET /api/schedule", s.requireAuth(s.handleListSchedules))
+	mux.HandleFunc("POST /api/schedule/{project}/enable", s.requireAuth(s.handleEnableSchedule))
+	mux.HandleFunc("POST /api/schedule/{project}/disable", s.requireAuth(s.handleDisableSchedule))
+
+	// Volumes
+	mux.HandleFunc("GET /api/volumes", s.requireAuth(s.handleListVolumes))
+	mux.HandleFunc("DELETE /api/volumes/{name}", s.requireAuth(s.handleDeleteVolume))
+
 	// Prometheus metrics endpoint (auth required)
 	mux.HandleFunc("GET /metrics", s.requireAuth(s.handleMetrics))
 
