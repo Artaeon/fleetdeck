@@ -878,9 +878,756 @@ code {
 `
 
 const appJS = `
-// Placeholder - SPA JS will be added in subsequent commits
-document.addEventListener('DOMContentLoaded', function() {
-    var body = document.getElementById('content-body');
-    if (body) { body.innerHTML = '<div class="loading-spinner"></div>'; }
-});
+(function() {
+    'use strict';
+
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+    var state = {
+        projects: [],
+        status: null,
+        refreshTimer: null
+    };
+
+    // -----------------------------------------------------------------------
+    // API helper
+    // -----------------------------------------------------------------------
+    function api(method, path, body) {
+        var opts = { method: method, credentials: 'same-origin', headers: {} };
+        if (body) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        return fetch(path, opts).then(function(res) {
+            if (res.status === 204) return null;
+            if (!res.ok) {
+                return res.json().catch(function() {
+                    return { error: res.statusText };
+                }).then(function(err) {
+                    throw new Error(err.error || res.statusText);
+                });
+            }
+            return res.json();
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Toast notifications
+    // -----------------------------------------------------------------------
+    function toast(message, type) {
+        var container = document.getElementById('toast-container');
+        var el = document.createElement('div');
+        el.className = 'toast toast-' + (type || 'info');
+        el.textContent = message;
+        container.appendChild(el);
+        setTimeout(function() {
+            el.classList.add('toast-fade-out');
+            setTimeout(function() { el.remove(); }, 300);
+        }, 3000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Slide Panel
+    // -----------------------------------------------------------------------
+    function openPanel(title, contentHTML) {
+        var panel = document.getElementById('slide-panel');
+        panel.classList.remove('hidden');
+        panel.innerHTML =
+            '<div class="panel-header">' +
+                '<h2>' + escapeHTML(title) + '</h2>' +
+                '<button class="panel-close" onclick="window.__closePanel()">&times;</button>' +
+            '</div>' +
+            '<div class="panel-body">' + contentHTML + '</div>';
+        requestAnimationFrame(function() {
+            panel.classList.add('open');
+        });
+    }
+
+    function closePanel() {
+        var panel = document.getElementById('slide-panel');
+        panel.classList.remove('open');
+        setTimeout(function() { panel.classList.add('hidden'); }, 300);
+    }
+    window.__closePanel = closePanel;
+
+    // -----------------------------------------------------------------------
+    // Modal
+    // -----------------------------------------------------------------------
+    function openModal(contentHTML) {
+        var backdrop = document.getElementById('modal-backdrop');
+        backdrop.classList.remove('hidden');
+        backdrop.innerHTML = '<div class="modal">' + contentHTML + '</div>';
+        backdrop.onclick = function(e) {
+            if (e.target === backdrop) closeModal();
+        };
+    }
+
+    function closeModal() {
+        document.getElementById('modal-backdrop').classList.add('hidden');
+    }
+    window.__closeModal = closeModal;
+
+    // -----------------------------------------------------------------------
+    // Utilities
+    // -----------------------------------------------------------------------
+    function escapeHTML(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function timeAgo(date) {
+        if (!date) return 'never';
+        var seconds = Math.floor((new Date() - new Date(date)) / 1000);
+        if (seconds < 0) seconds = 0;
+        if (seconds < 60) return 'just now';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+        return Math.floor(seconds / 86400) + 'd ago';
+    }
+
+    function statusDot(status) {
+        var colors = {
+            running: 'var(--green)',
+            stopped: 'var(--red)',
+            error: 'var(--red)',
+            deploying: 'var(--yellow)',
+            created: 'var(--text-tertiary)',
+            success: 'var(--green)',
+            failed: 'var(--red)',
+            pending: 'var(--yellow)'
+        };
+        var c = colors[status] || 'var(--text-tertiary)';
+        return '<span class="status-dot" style="background:' + c + '"></span>';
+    }
+
+    function statusBadge(status) {
+        var map = {
+            running: 'badge-green',
+            stopped: 'badge-red',
+            error: 'badge-red',
+            deploying: 'badge-yellow',
+            created: 'badge-gray',
+            success: 'badge-green',
+            failed: 'badge-red',
+            pending: 'badge-yellow',
+            healthy: 'badge-green',
+            unhealthy: 'badge-red'
+        };
+        var cls = map[status] || 'badge-gray';
+        return '<span class="badge ' + cls + '">' + escapeHTML(status || 'unknown') + '</span>';
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        if (i >= units.length) i = units.length - 1;
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+    }
+
+    function setHeader(title, breadcrumbs) {
+        var el = document.getElementById('content-header');
+        var html = '';
+        if (breadcrumbs) {
+            html += '<div class="breadcrumbs">' + breadcrumbs + '</div>';
+        }
+        html += '<h1>' + escapeHTML(title) + '</h1>';
+        el.innerHTML = html;
+    }
+
+    function setBody(html) {
+        document.getElementById('content-body').innerHTML = html;
+    }
+
+    function showLoading() {
+        setBody('<div class="loading-spinner"></div>');
+    }
+
+    function showError(msg) {
+        setBody(
+            '<div class="empty-state">' +
+                '<h3>Error</h3>' +
+                '<p>' + escapeHTML(msg) + '</p>' +
+            '</div>'
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Router
+    // -----------------------------------------------------------------------
+    var routes = [
+        { pattern: /^\/$/, fn: renderDashboard },
+        { pattern: /^\/projects$/, fn: renderProjects },
+        { pattern: /^\/project\/([a-z0-9][a-z0-9-]*[a-z0-9])$/, fn: renderProjectDetail },
+        { pattern: /^\/servers$/, fn: renderServers },
+        { pattern: /^\/deploy$/, fn: renderDeploy },
+        { pattern: /^\/dns$/, fn: renderDNS },
+        { pattern: /^\/volumes$/, fn: renderVolumes },
+        { pattern: /^\/scheduling$/, fn: renderScheduling },
+        { pattern: /^\/discovery$/, fn: renderDiscovery },
+        { pattern: /^\/templates$/, fn: renderTemplates },
+        { pattern: /^\/audit$/, fn: renderAudit },
+        { pattern: /^\/settings$/, fn: renderSettings }
+    ];
+
+    function navigate() {
+        if (state.refreshTimer) {
+            clearInterval(state.refreshTimer);
+            state.refreshTimer = null;
+        }
+
+        var hash = location.hash.slice(1) || '/';
+        // Update active nav
+        var navItems = document.querySelectorAll('.nav-item');
+        for (var i = 0; i < navItems.length; i++) {
+            var route = navItems[i].getAttribute('data-route');
+            var isActive = false;
+            if (route === '/') {
+                isActive = (hash === '/');
+            } else if (route && hash.indexOf(route) === 0) {
+                isActive = true;
+            }
+            if (isActive) {
+                navItems[i].classList.add('active');
+            } else {
+                navItems[i].classList.remove('active');
+            }
+        }
+
+        for (var j = 0; j < routes.length; j++) {
+            var match = hash.match(routes[j].pattern);
+            if (match) {
+                routes[j].fn.apply(null, match.slice(1));
+                return;
+            }
+        }
+
+        // 404
+        setHeader('Not Found');
+        setBody(
+            '<div class="empty-state">' +
+                '<h3>Page not found</h3>' +
+                '<p>The page you are looking for does not exist.</p>' +
+            '</div>'
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Dashboard Page
+    // -----------------------------------------------------------------------
+    function renderDashboard() {
+        setHeader('Dashboard');
+        showLoading();
+
+        Promise.all([
+            api('GET', '/api/status'),
+            api('GET', '/api/projects')
+        ]).then(function(results) {
+            state.status = results[0];
+            state.projects = results[1] || [];
+            renderDashboardContent();
+        }).catch(function(err) {
+            showError(err.message);
+        });
+
+        state.refreshTimer = setInterval(function() {
+            Promise.all([
+                api('GET', '/api/status'),
+                api('GET', '/api/projects')
+            ]).then(function(results) {
+                state.status = results[0];
+                state.projects = results[1] || [];
+                renderDashboardContent();
+            }).catch(function() {});
+        }, 15000);
+    }
+
+    function renderDashboardContent() {
+        var s = state.status || {};
+        var projects = state.projects || [];
+
+        var running = 0;
+        var stopped = 0;
+        var errors = 0;
+        for (var i = 0; i < projects.length; i++) {
+            if (projects[i].status === 'running') running++;
+            else if (projects[i].status === 'stopped') stopped++;
+            else if (projects[i].status === 'error') errors++;
+        }
+
+        var html = '';
+
+        // Stats
+        html += '<div class="stats-grid">';
+        html += statCard('Projects', projects.length, '');
+        html += statCard('Running', running, 'text-green');
+        html += statCard('Stopped', stopped, '');
+        html += statCard('Errors', errors, errors > 0 ? 'text-red' : '');
+        html += statCard('CPU Cores', s.cpus || '-', '');
+        html += statCard('Memory', s.memory_total ? formatBytes(s.memory_total) : '-', '');
+        html += '</div>';
+
+        // Recent projects
+        html += '<div class="card">';
+        html += '<div class="card-header"><span class="card-title">Projects</span>';
+        html += '<a href="#/projects" class="btn btn-secondary btn-sm">View All</a></div>';
+        if (projects.length === 0) {
+            html += '<div class="empty-state"><h3>No projects yet</h3><p>Create your first project to get started.</p></div>';
+        } else {
+            html += '<table class="data-table"><thead><tr>';
+            html += '<th>Name</th><th>Status</th><th>Domain</th><th>Template</th><th>Created</th>';
+            html += '</tr></thead><tbody>';
+            var shown = projects.slice(0, 10);
+            for (var j = 0; j < shown.length; j++) {
+                var p = shown[j];
+                html += '<tr onclick="location.hash=\'#/project/' + escapeHTML(p.name) + '\'" style="cursor:pointer">';
+                html += '<td><span class="table-link">' + escapeHTML(p.name) + '</span></td>';
+                html += '<td>' + statusDot(p.status) + escapeHTML(p.status) + '</td>';
+                html += '<td class="text-secondary">' + escapeHTML(p.domain) + '</td>';
+                html += '<td>' + statusBadge(p.template) + '</td>';
+                html += '<td class="text-secondary">' + timeAgo(p.created_at) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+        }
+        html += '</div>';
+
+        setBody(html);
+    }
+
+    function statCard(label, value, cls) {
+        return '<div class="stat-card">' +
+            '<div class="stat-label">' + escapeHTML(label) + '</div>' +
+            '<div class="stat-value ' + (cls || '') + '">' + escapeHTML(String(value)) + '</div>' +
+            '</div>';
+    }
+
+    // -----------------------------------------------------------------------
+    // Projects Page
+    // -----------------------------------------------------------------------
+    function renderProjects() {
+        setHeader('Projects');
+        showLoading();
+
+        api('GET', '/api/projects').then(function(projects) {
+            state.projects = projects || [];
+            renderProjectsList(projects || []);
+        }).catch(function(err) {
+            showError(err.message);
+        });
+    }
+
+    function renderProjectsList(projects) {
+        var html = '';
+
+        // Actions bar
+        html += '<div class="section-header">';
+        html += '<div class="filter-bar">';
+        html += '<div class="search-bar">';
+        html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+        html += '<input type="text" id="project-search" placeholder="Search projects..." oninput="window.__filterProjects()">';
+        html += '</div>';
+        html += '<select id="project-filter-status" class="form-select" style="width:auto" onchange="window.__filterProjects()">';
+        html += '<option value="">All Status</option><option value="running">Running</option>';
+        html += '<option value="stopped">Stopped</option><option value="error">Error</option>';
+        html += '</select>';
+        html += '</div>';
+        html += '<button class="btn btn-primary" onclick="window.__openCreateProject()">New Project</button>';
+        html += '</div>';
+
+        html += '<div id="projects-list">';
+        html += renderProjectsTable(projects);
+        html += '</div>';
+
+        setBody(html);
+    }
+
+    function renderProjectsTable(projects) {
+        if (projects.length === 0) {
+            return '<div class="empty-state"><h3>No projects found</h3><p>No projects match your filter criteria.</p></div>';
+        }
+        var html = '<div class="projects-grid">';
+        for (var i = 0; i < projects.length; i++) {
+            var p = projects[i];
+            html += '<div class="project-card" onclick="location.hash=\'#/project/' + escapeHTML(p.name) + '\'">';
+            html += '<div class="project-card-header">';
+            html += '<span class="project-card-name">' + escapeHTML(p.name) + '</span>';
+            html += statusBadge(p.status);
+            html += '</div>';
+            html += '<div class="project-card-meta">';
+            html += '<span>' + escapeHTML(p.domain || 'No domain') + '</span>';
+            html += '<span>' + escapeHTML(p.template) + ' &middot; ' + timeAgo(p.created_at) + '</span>';
+            html += '</div>';
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    window.__filterProjects = function() {
+        var search = (document.getElementById('project-search').value || '').toLowerCase();
+        var status = document.getElementById('project-filter-status').value;
+        var filtered = (state.projects || []).filter(function(p) {
+            if (search && p.name.toLowerCase().indexOf(search) === -1 && (p.domain || '').toLowerCase().indexOf(search) === -1) return false;
+            if (status && p.status !== status) return false;
+            return true;
+        });
+        document.getElementById('projects-list').innerHTML = renderProjectsTable(filtered);
+    };
+
+    window.__openCreateProject = function() {
+        var html = '<form id="create-project-form">';
+        html += '<div class="form-group"><label class="form-label">Name</label>';
+        html += '<input class="form-input" name="name" placeholder="my-app" required></div>';
+        html += '<div class="form-group"><label class="form-label">Domain</label>';
+        html += '<input class="form-input" name="domain" placeholder="myapp.example.com"></div>';
+        html += '<div class="form-group"><label class="form-label">Template</label>';
+        html += '<select class="form-select" name="template" id="create-template-select">';
+        html += '<option value="">Loading...</option></select></div>';
+        html += '<div class="form-group"><label class="form-label">GitHub Repo (optional)</label>';
+        html += '<input class="form-input" name="github_repo" placeholder="user/repo"></div>';
+        html += '<div class="panel-footer" style="padding:0;border:none;margin-top:16px">';
+        html += '<button type="button" class="btn btn-secondary" onclick="window.__closePanel()">Cancel</button>';
+        html += '<button type="submit" class="btn btn-primary">Create Project</button>';
+        html += '</div></form>';
+
+        openPanel('New Project', html);
+
+        // Load templates
+        api('GET', '/api/templates').then(function(templates) {
+            var sel = document.getElementById('create-template-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            if (templates && templates.length) {
+                for (var i = 0; i < templates.length; i++) {
+                    var opt = document.createElement('option');
+                    opt.value = templates[i].name || templates[i];
+                    opt.textContent = templates[i].name || templates[i];
+                    sel.appendChild(opt);
+                }
+            }
+        }).catch(function() {});
+
+        setTimeout(function() {
+            var form = document.getElementById('create-project-form');
+            if (form) {
+                form.onsubmit = function(e) {
+                    e.preventDefault();
+                    var fd = new FormData(form);
+                    var data = {
+                        name: fd.get('name'),
+                        domain: fd.get('domain'),
+                        template: fd.get('template'),
+                        github_repo: fd.get('github_repo')
+                    };
+                    api('POST', '/api/projects', data).then(function() {
+                        closePanel();
+                        toast('Project created successfully', 'success');
+                        navigate();
+                    }).catch(function(err) {
+                        toast(err.message, 'error');
+                    });
+                };
+            }
+        }, 100);
+    };
+
+    // -----------------------------------------------------------------------
+    // Project Detail Page
+    // -----------------------------------------------------------------------
+    function renderProjectDetail(name) {
+        setHeader(name, '<a href="#/projects">Projects</a> / ' + escapeHTML(name));
+        showLoading();
+
+        api('GET', '/api/projects/' + name).then(function(project) {
+            renderProjectDetailContent(project);
+        }).catch(function(err) {
+            showError(err.message);
+        });
+
+        state.refreshTimer = setInterval(function() {
+            api('GET', '/api/projects/' + name).then(function(project) {
+                // Only update if still on same page
+                if (location.hash === '#/project/' + name) {
+                    renderProjectDetailContent(project);
+                }
+            }).catch(function() {});
+        }, 10000);
+    }
+
+    function renderProjectDetailContent(project) {
+        var name = project.name;
+        var html = '';
+
+        // Action buttons
+        html += '<div class="header-actions mb-24">';
+        html += statusBadge(project.status);
+        html += '<div class="btn-group" style="margin-left:auto">';
+        if (project.status === 'running') {
+            html += '<button class="btn btn-secondary btn-sm" onclick="window.__projectAction(\'' + escapeHTML(name) + '\',\'restart\')">Restart</button>';
+            html += '<button class="btn btn-secondary btn-sm" onclick="window.__projectAction(\'' + escapeHTML(name) + '\',\'stop\')">Stop</button>';
+        } else {
+            html += '<button class="btn btn-primary btn-sm" onclick="window.__projectAction(\'' + escapeHTML(name) + '\',\'start\')">Start</button>';
+        }
+        html += '<button class="btn btn-secondary btn-sm" onclick="window.__deployProject(\'' + escapeHTML(name) + '\')">Deploy</button>';
+        html += '<button class="btn btn-danger btn-sm" onclick="window.__deleteProject(\'' + escapeHTML(name) + '\')">Delete</button>';
+        html += '</div></div>';
+
+        // Tabs
+        html += '<div class="tabs">';
+        html += '<button class="tab-btn active" onclick="window.__switchTab(this,\'overview\')">Overview</button>';
+        html += '<button class="tab-btn" onclick="window.__switchTab(this,\'logs\')">Logs</button>';
+        html += '<button class="tab-btn" onclick="window.__switchTab(this,\'backups\')">Backups</button>';
+        html += '<button class="tab-btn" onclick="window.__switchTab(this,\'deployments\')">Deployments</button>';
+        html += '<button class="tab-btn" onclick="window.__switchTab(this,\'envs\')">Environments</button>';
+        html += '<button class="tab-btn" onclick="window.__switchTab(this,\'health\')">Health</button>';
+        html += '</div>';
+
+        // Tab: Overview
+        html += '<div class="tab-content active" id="tab-overview">';
+        html += '<div class="card"><div class="detail-grid">';
+        html += detailItem('Name', project.name);
+        html += detailItem('Domain', project.domain || '-');
+        html += detailItem('Template', project.template);
+        html += detailItem('Status', project.status);
+        html += detailItem('Source', project.source || '-');
+        html += detailItem('GitHub', project.github_repo || '-');
+        html += detailItem('Created', project.created_at ? new Date(project.created_at).toLocaleString() : '-');
+        html += detailItem('Updated', project.updated_at ? new Date(project.updated_at).toLocaleString() : '-');
+        html += '</div></div>';
+        html += '</div>';
+
+        // Tab: Logs
+        html += '<div class="tab-content" id="tab-logs">';
+        html += '<div class="section-header mb-16">';
+        html += '<select id="log-lines" class="form-select" style="width:auto">';
+        html += '<option value="50">50 lines</option><option value="100" selected>100 lines</option>';
+        html += '<option value="500">500 lines</option></select>';
+        html += '<button class="btn btn-secondary btn-sm" onclick="window.__loadLogs(\'' + escapeHTML(name) + '\')">Refresh</button>';
+        html += '</div>';
+        html += '<pre class="log-output" id="log-output">Click refresh to load logs...</pre>';
+        html += '</div>';
+
+        // Tab: Backups
+        html += '<div class="tab-content" id="tab-backups">';
+        html += '<div class="section-header mb-16"><span class="section-title">Backups</span>';
+        html += '<button class="btn btn-primary btn-sm" onclick="window.__createBackup(\'' + escapeHTML(name) + '\')">Create Backup</button></div>';
+        html += '<div id="backup-list"><div class="loading-spinner"></div></div>';
+        html += '</div>';
+
+        // Tab: Deployments
+        html += '<div class="tab-content" id="tab-deployments">';
+        html += '<div id="deployments-list"><div class="loading-spinner"></div></div>';
+        html += '</div>';
+
+        // Tab: Environments
+        html += '<div class="tab-content" id="tab-envs">';
+        html += '<div id="envs-content"><div class="loading-spinner"></div></div>';
+        html += '</div>';
+
+        // Tab: Health
+        html += '<div class="tab-content" id="tab-health">';
+        html += '<div id="health-content"><div class="loading-spinner"></div></div>';
+        html += '</div>';
+
+        setBody(html);
+    }
+
+    function detailItem(label, value) {
+        return '<div class="detail-item"><span class="detail-label">' + escapeHTML(label) + '</span>' +
+            '<span class="detail-value">' + escapeHTML(String(value)) + '</span></div>';
+    }
+
+    window.__switchTab = function(btn, tabId) {
+        var tabs = btn.parentElement.querySelectorAll('.tab-btn');
+        for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+        btn.classList.add('active');
+
+        var contents = document.querySelectorAll('.tab-content');
+        for (var j = 0; j < contents.length; j++) contents[j].classList.remove('active');
+        var target = document.getElementById('tab-' + tabId);
+        if (target) target.classList.add('active');
+
+        // Lazy load tab content
+        var name = location.hash.replace('#/project/', '');
+        if (tabId === 'logs') window.__loadLogs(name);
+        if (tabId === 'backups') window.__loadBackups(name);
+        if (tabId === 'deployments') window.__loadDeployments(name);
+        if (tabId === 'envs') window.__loadEnvs(name);
+        if (tabId === 'health') window.__loadHealth(name);
+    };
+
+    window.__projectAction = function(name, action) {
+        api('POST', '/api/projects/' + name + '/' + action).then(function() {
+            toast('Project ' + action + ' initiated', 'success');
+            setTimeout(navigate, 1000);
+        }).catch(function(err) {
+            toast(err.message, 'error');
+        });
+    };
+
+    window.__deployProject = function(name) {
+        api('POST', '/api/webhook/deploy/' + name).then(function() {
+            toast('Deployment started', 'success');
+        }).catch(function(err) {
+            toast(err.message, 'error');
+        });
+    };
+
+    window.__deleteProject = function(name) {
+        openModal(
+            '<h3>Delete Project</h3>' +
+            '<p>Are you sure you want to delete <strong>' + escapeHTML(name) + '</strong>? This action cannot be undone.</p>' +
+            '<div class="modal-actions">' +
+                '<button class="btn btn-secondary" onclick="window.__closeModal()">Cancel</button>' +
+                '<button class="btn btn-danger" onclick="window.__confirmDelete(\'' + escapeHTML(name) + '\')">Delete</button>' +
+            '</div>'
+        );
+    };
+
+    window.__confirmDelete = function(name) {
+        api('DELETE', '/api/projects/' + name).then(function() {
+            closeModal();
+            toast('Project deleted', 'success');
+            location.hash = '#/projects';
+        }).catch(function(err) {
+            closeModal();
+            toast(err.message, 'error');
+        });
+    };
+
+    window.__loadLogs = function(name) {
+        var lines = document.getElementById('log-lines');
+        var n = lines ? lines.value : '100';
+        var el = document.getElementById('log-output');
+        if (el) el.textContent = 'Loading...';
+        api('GET', '/api/projects/' + name + '/logs?lines=' + n).then(function(data) {
+            if (el) el.textContent = data.logs || 'No logs available.';
+        }).catch(function(err) {
+            if (el) el.textContent = 'Error: ' + err.message;
+        });
+    };
+
+    window.__loadBackups = function(name) {
+        var el = document.getElementById('backup-list');
+        api('GET', '/api/projects/' + name + '/backups').then(function(backups) {
+            if (!backups || backups.length === 0) {
+                el.innerHTML = '<div class="empty-state"><p>No backups yet.</p></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr><th>ID</th><th>Type</th><th>Size</th><th>Created</th><th></th></tr></thead><tbody>';
+            for (var i = 0; i < backups.length; i++) {
+                var b = backups[i];
+                html += '<tr><td class="text-secondary">' + escapeHTML(b.id || '').substring(0, 8) + '</td>';
+                html += '<td>' + escapeHTML(b.type) + '</td>';
+                html += '<td>' + escapeHTML(b.size) + '</td>';
+                html += '<td class="text-secondary">' + timeAgo(b.created_at) + '</td>';
+                html += '<td><button class="btn btn-ghost btn-sm" onclick="window.__restoreBackup(\'' + escapeHTML(name) + '\',\'' + escapeHTML(b.id) + '\')">Restore</button></td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }).catch(function(err) {
+            el.innerHTML = '<div class="alert alert-error">' + escapeHTML(err.message) + '</div>';
+        });
+    };
+
+    window.__createBackup = function(name) {
+        api('POST', '/api/projects/' + name + '/backup').then(function() {
+            toast('Backup created', 'success');
+            window.__loadBackups(name);
+        }).catch(function(err) {
+            toast(err.message, 'error');
+        });
+    };
+
+    window.__restoreBackup = function(name, backupId) {
+        openModal(
+            '<h3>Restore Backup</h3>' +
+            '<p>Are you sure you want to restore this backup? Current data will be overwritten.</p>' +
+            '<div class="modal-actions">' +
+                '<button class="btn btn-secondary" onclick="window.__closeModal()">Cancel</button>' +
+                '<button class="btn btn-primary" onclick="window.__confirmRestore(\'' + escapeHTML(name) + '\',\'' + escapeHTML(backupId) + '\')">Restore</button>' +
+            '</div>'
+        );
+    };
+
+    window.__confirmRestore = function(name, backupId) {
+        api('POST', '/api/projects/' + name + '/backup/' + backupId + '/restore').then(function() {
+            closeModal();
+            toast('Backup restored', 'success');
+        }).catch(function(err) {
+            closeModal();
+            toast(err.message, 'error');
+        });
+    };
+
+    window.__loadDeployments = function(name) {
+        var el = document.getElementById('deployments-list');
+        api('GET', '/api/projects/' + name + '/deployments').then(function(deps) {
+            if (!deps || deps.length === 0) {
+                el.innerHTML = '<div class="empty-state"><p>No deployments yet.</p></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr><th>Commit</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead><tbody>';
+            for (var i = 0; i < deps.length; i++) {
+                var d = deps[i];
+                html += '<tr>';
+                html += '<td><code>' + escapeHTML(d.commit_sha || '-') + '</code></td>';
+                html += '<td>' + statusBadge(d.status) + '</td>';
+                html += '<td class="text-secondary">' + timeAgo(d.started_at) + '</td>';
+                html += '<td class="text-secondary">' + escapeHTML(d.duration || '-') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }).catch(function(err) {
+            el.innerHTML = '<div class="alert alert-error">' + escapeHTML(err.message) + '</div>';
+        });
+    };
+
+    window.__loadEnvs = function(name) {
+        var el = document.getElementById('envs-content');
+        api('GET', '/api/projects/' + name + '/env').then(function(data) {
+            var env = data || {};
+            var keys = Object.keys(env);
+            if (keys.length === 0) {
+                el.innerHTML = '<div class="empty-state"><p>No environment variables set.</p></div>';
+                return;
+            }
+            var html = '<div class="card">';
+            for (var i = 0; i < keys.length; i++) {
+                html += '<div class="kv-row"><span class="kv-key">' + escapeHTML(keys[i]) + '</span>';
+                html += '<span class="kv-value"><code>' + escapeHTML(String(env[keys[i]])) + '</code></span></div>';
+            }
+            html += '</div>';
+            el.innerHTML = html;
+        }).catch(function(err) {
+            el.innerHTML = '<div class="empty-state"><p>Environment variables not available.</p></div>';
+        });
+    };
+
+    window.__loadHealth = function(name) {
+        var el = document.getElementById('health-content');
+        api('GET', '/api/projects/' + name + '/health').then(function(data) {
+            var html = '<div class="card"><div class="detail-grid">';
+            html += detailItem('Status', data.status || 'unknown');
+            html += detailItem('Uptime', data.uptime || '-');
+            html += detailItem('Last Check', data.last_check ? timeAgo(data.last_check) : '-');
+            html += '</div></div>';
+            el.innerHTML = html;
+        }).catch(function(err) {
+            el.innerHTML = '<div class="empty-state"><p>Health data not available.</p></div>';
+        });
+    };
+
+    // -----------------------------------------------------------------------
+    // Initialize
+    // -----------------------------------------------------------------------
+    window.addEventListener('hashchange', navigate);
+    document.addEventListener('DOMContentLoaded', function() {
+        navigate();
+    });
+})();
 `
