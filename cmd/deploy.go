@@ -243,16 +243,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 			return fmt.Errorf("reading SSH key: %w", err)
 		}
 	} else {
-		for _, path := range []string{
-			os.ExpandEnv("$HOME/.ssh/id_ed25519"),
-			os.ExpandEnv("$HOME/.ssh/id_rsa"),
-		} {
-			data, err := os.ReadFile(path)
-			if err == nil {
-				keyData = data
-				break
-			}
-		}
+		keyData = findSSHKey(host)
 		if keyData == nil {
 			return fmt.Errorf("no SSH key found; use --key to specify one")
 		}
