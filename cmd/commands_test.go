@@ -33,12 +33,30 @@ func TestDeployCommandFlags(t *testing.T) {
 
 	expectedFlags := []string{
 		"domain", "server", "port", "key", "profile",
-		"strategy", "name", "timeout", "insecure",
+		"strategy", "name", "timeout", "insecure", "no-cache",
 	}
 	for _, name := range expectedFlags {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("expected flag --%s on deploy command", name)
 		}
+	}
+}
+
+func TestDeployNoCacheFlag(t *testing.T) {
+	cmd := findSubcommand(rootCmd, "deploy")
+	if cmd == nil {
+		t.Fatal("deploy command not found")
+	}
+
+	f := cmd.Flags().Lookup("no-cache")
+	if f == nil {
+		t.Fatal("expected --no-cache flag on deploy command")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("expected --no-cache default to be \"false\", got %q", f.DefValue)
+	}
+	if f.Usage == "" {
+		t.Error("expected --no-cache to have a usage description")
 	}
 }
 

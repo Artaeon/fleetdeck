@@ -26,6 +26,9 @@ func TestDeployOptionsDefaults(t *testing.T) {
 	if opts.Timeout != 0 {
 		t.Errorf("zero-value Timeout = %v, want 0", opts.Timeout)
 	}
+	if opts.NoCache {
+		t.Error("zero-value NoCache should be false")
+	}
 
 	// Verify the zero-value struct can be passed to GetStrategy without panic.
 	// We don't actually call Deploy because that would shell out to docker, but

@@ -178,6 +178,7 @@ func TestDeployOptionsFields(t *testing.T) {
 		ProjectName:    "myapp",
 		ComposeFile:    "docker-compose.prod.yml",
 		HealthCheckURL: "http://localhost:8080/health",
+		NoCache:        true,
 	}
 
 	if opts.ProjectPath != "/opt/myapp" {
@@ -191,6 +192,21 @@ func TestDeployOptionsFields(t *testing.T) {
 	}
 	if opts.HealthCheckURL != "http://localhost:8080/health" {
 		t.Errorf("unexpected HealthCheckURL: %s", opts.HealthCheckURL)
+	}
+	if !opts.NoCache {
+		t.Error("expected NoCache=true")
+	}
+}
+
+func TestDeployOptionsNoCacheDefault(t *testing.T) {
+	// Verify NoCache defaults to false when not set.
+	opts := DeployOptions{
+		ProjectPath: "/opt/myapp",
+		ProjectName: "myapp",
+	}
+
+	if opts.NoCache {
+		t.Error("expected NoCache to default to false")
 	}
 }
 

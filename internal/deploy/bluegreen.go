@@ -26,6 +26,14 @@ func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*De
 	// Capture old containers.
 	result.OldContainers, _ = listContainers(opts.ProjectPath)
 
+	// Build without cache if requested.
+	if opts.NoCache {
+		if err := buildNoCache(ctx, opts); err != nil {
+			result.Duration = time.Since(start)
+			return result, err
+		}
+	}
+
 	if opts.PreDeployHook != "" {
 		if err := runHook(ctx, "pre-deploy", opts.PreDeployHook, opts.ProjectPath, result); err != nil {
 			result.Duration = time.Since(start)

@@ -22,6 +22,7 @@ type DeployOptions struct {
 	Timeout        time.Duration
 	PreDeployHook  string // Command to run before deploy (e.g. "npm run migrate")
 	PostDeployHook string // Command to run after deploy (e.g. "npm run seed")
+	NoCache        bool   // Pass --no-cache to docker compose build
 }
 
 // DeployResult captures the outcome of a deployment.
@@ -60,6 +61,23 @@ func runHook(ctx context.Context, label, command, projectPath string, result *De
 	return nil
 }
 
+// buildNoCache runs "docker compose build --no-cache" for the given options.
+func buildNoCache(ctx context.Context, opts DeployOptions) error {
+	args := []string{"compose"}
+	if opts.ComposeFile != "" {
+		args = append(args, "-f", opts.ComposeFile)
+	}
+	args = append(args, "build", "--no-cache")
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Dir = opts.ProjectPath
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker compose build --no-cache: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // BasicStrategy performs a simple docker compose up -d deployment.
 type BasicStrategy struct{}
 
@@ -70,6 +88,14 @@ func (s *BasicStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Deploy
 	// Capture old containers before deploy.
 	old, _ := listContainers(opts.ProjectPath)
 	result.OldContainers = old
+
+	// Build without cache if requested.
+	if opts.NoCache {
+		if err := buildNoCache(ctx, opts); err != nil {
+			result.Duration = time.Since(start)
+			return result, err
+		}
+	}
 
 	if opts.PreDeployHook != "" {
 		if err := runHook(ctx, "pre-deploy", opts.PreDeployHook, opts.ProjectPath, result); err != nil {
@@ -115,6 +141,14 @@ func (s *RollingStrategy) Deploy(ctx context.Context, opts DeployOptions) (*Depl
 	result := &DeployResult{}
 
 	result.OldContainers, _ = listContainers(opts.ProjectPath)
+
+	// Build without cache if requested.
+	if opts.NoCache {
+		if err := buildNoCache(ctx, opts); err != nil {
+			result.Duration = time.Since(start)
+			return result, err
+		}
+	}
 
 	if opts.PreDeployHook != "" {
 		if err := runHook(ctx, "pre-deploy", opts.PreDeployHook, opts.ProjectPath, result); err != nil {
