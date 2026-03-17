@@ -228,7 +228,7 @@ fleetdeck server setup root@143.198.1.1 \
 
 Every step is **idempotent** -- run it again after six months and it just verifies everything is still configured correctly.
 
-**SSH Security:** Uses Trust On First Use (TOFU) -- the host key is verified against `~/.ssh/known_hosts`. On first connection with `--insecure`, the key is automatically saved for future verification.
+**SSH Security:** Uses Trust On First Use (TOFU) -- the host key is verified against `~/.ssh/known_hosts`. On first connection with `--insecure`, the key is automatically saved for future verification. SSH keys are **auto-discovered** by checking `~/.ssh/config`, then common key names (`id_ed25519`, `id_ecdsa`, `id_rsa`), then scanning `~/.ssh/` for any private keys -- the `--key` flag is only needed to override the default.
 
 ---
 
@@ -362,6 +362,10 @@ fleetdeck deploy ./new-project --server root@server --domain new.yourdomain.com
 # Create a staging environment
 fleetdeck env create myapp staging
 
+# Quick update without CI/CD
+fleetdeck update myapp --server prod
+fleetdeck update myapp --server prod --service app  # single service
+
 # Monitor health
 fleetdeck monitor start myapp --slack https://hooks.slack.com/xxx
 
@@ -369,6 +373,32 @@ fleetdeck monitor start myapp --slack https://hooks.slack.com/xxx
 fleetdeck backup create myapp
 # ... make changes ...
 fleetdeck rollback myapp --latest  # oops, revert
+```
+
+### Updating Live Applications
+
+For apps that are already deployed, `fleetdeck update` provides a lightweight alternative to full redeployment -- no CI/CD pipeline needed. It syncs your local files to the server, auto-detects Dockerfile or Compose changes, and rebuilds only when necessary.
+
+```bash
+# Sync files and rebuild only if Dockerfile/compose changed
+fleetdeck update myapp --server root@server
+
+# Force a full rebuild (e.g. after dependency changes)
+fleetdeck update myapp --server root@server --rebuild --no-cache
+
+# Update a single service in a multi-container stack
+fleetdeck update myapp --server root@server --service app
+
+# Pull latest images without rebuilding
+fleetdeck update myapp --server root@server --pull
+
+# Just restart containers (no file sync)
+fleetdeck update myapp --server root@server --restart-only
+
+# Run hooks before/after deployment
+fleetdeck update myapp --server root@server \
+  --pre-deploy "npm run migrate" \
+  --post-deploy "npm run seed"
 ```
 
 ### Managing Multiple Projects
@@ -396,8 +426,9 @@ Each project gets its own Linux user, SSH keys, Docker network, and backup sched
 
 | Command | Description |
 |---------|-------------|
-| **Deploy & Detect** | |
+| **Deploy & Update** | |
 | `fleetdeck deploy [dir]` | One-command deploy (local or remote via SSH) |
+| `fleetdeck update <name>` | Lightweight update for live apps (sync, rebuild if needed) |
 | `fleetdeck detect [dir]` | Auto-detect app type and recommend profile |
 | `fleetdeck profiles` | List all deployment profiles |
 | `fleetdeck profile <name>` | Inspect a profile (add `--compose` for template) |
@@ -423,6 +454,11 @@ Each project gets its own Linux user, SSH keys, Docker network, and backup sched
 | `fleetdeck rollback <name>` | Quick rollback to any snapshot |
 | `fleetdeck snapshot <name>` | Quick snapshot |
 | `fleetdeck schedule enable / disable / list` | Scheduled backups via systemd |
+| **CI/CD** | |
+| `fleetdeck setup-cd <name>` | Register project for auto-deploy from GitHub |
+| **Volumes** | |
+| `fleetdeck volumes list` | List Docker volumes for a project |
+| `fleetdeck volumes rm` | Remove Docker volumes |
 | **Discovery** | |
 | `fleetdeck discover` | Scan server for existing Docker Compose projects |
 | `fleetdeck discover import` | Import discovered projects |
@@ -443,7 +479,7 @@ webhook_secret = "github-webhook-secret"
 [traefik]
 network = "traefik_default"
 entrypoint = "websecure"
-cert_resolver = "myresolver"
+cert_resolver = "letsencrypt"
 
 [github]
 default_org = "your-github-org"
@@ -513,7 +549,7 @@ make release        # Build release binaries (amd64 + arm64)
 
 ### Test Coverage
 
-**883 test functions** across **59 test files**. All tests pass. Zero race conditions.
+**900+ test functions** across **60+ test files**. All tests pass. Zero race conditions.
 
 | Package | Coverage | Tests |
 |---------|----------|-------|
@@ -553,6 +589,9 @@ Every push runs: build, vet, race-detected tests, coverage report, Docker integr
 - [x] Secret encryption (AES-256-GCM)
 - [x] Audit logging with rotation
 - [x] GitHub Actions CI with integration tests
+- [x] Lightweight update command for live applications
+- [x] SSH key auto-discovery from ~/.ssh/config
+- [x] CI/CD setup with branch-based deployments
 - [ ] Hetzner and DigitalOcean DNS providers
 - [ ] Resource monitoring (CPU, RAM per project via cgroups)
 - [ ] Prometheus metrics endpoint
