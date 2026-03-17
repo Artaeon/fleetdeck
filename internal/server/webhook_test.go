@@ -69,8 +69,14 @@ func TestHandleGitHubWebhookIgnoresNonPush(t *testing.T) {
 }
 
 func TestHandleGitHubWebhookIgnoresNonMainBranch(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, database := setupTestServer(t)
 	srv.webhookSecret = testWebhookSecret
+
+	dir := t.TempDir()
+	database.CreateProject(&db.Project{
+		Name: "repo-app", Domain: "repo.com", LinuxUser: "fleetdeck-repo-app",
+		ProjectPath: dir, GitHubRepo: "org/repo",
+	})
 
 	body := `{"ref":"refs/heads/feature-branch","after":"abc123","repository":{"full_name":"org/repo"}}`
 	req := signedWebhookRequest(t, body, "push")

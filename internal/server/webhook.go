@@ -74,18 +74,19 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only deploy on main/master branch pushes
-	ref := payload.Ref
-	if ref != "refs/heads/main" && ref != "refs/heads/master" {
-		writeJSON(w, map[string]string{"status": "ignored", "reason": "not main branch"})
-		return
-	}
-
 	// Find matching project by GitHub repo
 	repoName := payload.Repository.FullName
 	project := s.findProjectByRepo(repoName)
 	if project == nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("no project for repo %s", repoName))
+		return
+	}
+
+	// Extract branch name and resolve target environment
+	branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+	targetEnv := resolveBranchEnvironment(project, branch)
+	if targetEnv == "" {
+		writeJSON(w, map[string]string{"status": "ignored", "reason": "branch not mapped"})
 		return
 	}
 
@@ -98,9 +99,10 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	go s.runDeployment(project, payload.After, commitSHA)
 
 	writeJSON(w, map[string]string{
-		"status":  "deploying",
-		"project": project.Name,
-		"commit":  commitSHA,
+		"status":      "deploying",
+		"project":     project.Name,
+		"commit":      commitSHA,
+		"environment": targetEnv,
 	})
 }
 
@@ -420,6 +422,27 @@ func (s *Server) findProjectByRepo(repoName string) *db.Project {
 		}
 	}
 	return nil
+}
+
+// resolveBranchEnvironment determines which environment a branch should deploy to.
+// Returns "" if the branch is not mapped to any environment.
+func resolveBranchEnvironment(p *db.Project, branch string) string {
+	// Check explicit branch mappings first
+	if p.BranchMappings != "" {
+		var mappings map[string]string
+		if err := json.Unmarshal([]byte(p.BranchMappings), &mappings); err == nil {
+			if env, ok := mappings[branch]; ok {
+				return env
+			}
+		}
+	}
+
+	// Default: main/master -> production
+	if branch == "main" || branch == "master" {
+		return "production"
+	}
+
+	return ""
 }
 
 func verifyHMAC(body []byte, signature, secret string) bool {

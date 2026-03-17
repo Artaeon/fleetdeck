@@ -443,14 +443,20 @@ func TestHandleGitHubWebhookPushToFeatureBranchIgnored(t *testing.T) {
 	if resp["status"] != "ignored" {
 		t.Errorf("expected status=ignored for non-main branch, got %q", resp["status"])
 	}
-	if resp["reason"] != "not main branch" {
-		t.Errorf("expected reason='not main branch', got %q", resp["reason"])
+	if resp["reason"] != "branch not mapped" {
+		t.Errorf("expected reason='branch not mapped', got %q", resp["reason"])
 	}
 }
 
 func TestHandleGitHubWebhookPushToDevBranchIgnored(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, database := setupTestServer(t)
 	srv.webhookSecret = testWebhookSecret
+
+	dir := t.TempDir()
+	database.CreateProject(&db.Project{
+		Name: "some-app", Domain: "some.io", LinuxUser: "fleetdeck-some-app",
+		ProjectPath: dir, GitHubRepo: "org/some-app", Template: "node",
+	})
 
 	body := `{"ref":"refs/heads/develop","after":"abc123","repository":{"full_name":"org/some-app"}}`
 	req := signedWebhookRequest(t, body, "push")
