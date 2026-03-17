@@ -140,6 +140,12 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 	s.db.CreateDeployment(dep)
 	s.db.UpdateProjectStatus(p.Name, "deploying")
 
+	// Report deployment status to GitHub
+	reportStatus := s.reportDeploymentStatus(p.GitHubRepo, fullSHA, "production")
+	defer func() {
+		reportStatus(dep.Status == "success")
+	}()
+
 	var logBuf strings.Builder
 
 	// Record current container image IDs for rollback
@@ -400,6 +406,7 @@ func checkProjectHealth(projectPath string) *healthReport {
 }
 
 func (s *Server) finishDeployment(dep *db.Deployment, status, logOutput, projectName string) {
+	dep.Status = status
 	if err := s.db.UpdateDeployment(dep.ID, status, logOutput); err != nil {
 		log.Printf("failed to update deployment %s: %v", dep.ID, err)
 	}
