@@ -159,6 +159,23 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/volumes", s.requireAuth(s.handleListVolumes))
 	mux.HandleFunc("DELETE /api/volumes/{name}", s.requireAuth(s.handleDeleteVolume))
 
+	// Deploy
+	mux.HandleFunc("POST /api/projects/{name}/deploy", s.requireAuth(s.handleDeployProject))
+
+	// Domain update
+	mux.HandleFunc("PUT /api/projects/{name}/domain", s.requireAuth(s.handleUpdateProjectDomain))
+
+	// Templates
+	mux.HandleFunc("GET /api/templates", s.requireAuth(s.handleListTemplates))
+
+	// Discovery
+	mux.HandleFunc("POST /api/discover", s.requireAuth(s.handleDiscover))
+	mux.HandleFunc("POST /api/discover/import", s.requireAuth(s.handleDiscoverImport))
+
+	// Config
+	mux.HandleFunc("GET /api/config", s.requireAuth(s.handleGetConfig))
+	mux.HandleFunc("GET /api/config/webhook-url", s.requireAuth(s.handleGetWebhookURL))
+
 	// Prometheus metrics endpoint (auth required)
 	mux.HandleFunc("GET /metrics", s.requireAuth(s.handleMetrics))
 
