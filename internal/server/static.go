@@ -1930,6 +1930,138 @@ const appJS = `
     };
 
     // -----------------------------------------------------------------------
+    // Templates Page
+    // -----------------------------------------------------------------------
+    function renderTemplates() {
+        setHeader('Templates');
+        showLoading();
+
+        api('GET', '/api/templates').then(function(templates) {
+            if (!templates || templates.length === 0) {
+                setBody(
+                    '<div class="card"><div class="card-header"><span class="card-title">Project Templates</span></div>' +
+                    '<div class="empty-state"><h3>No templates</h3><p>No project templates are available.</p></div></div>'
+                );
+                return;
+            }
+            var html = '<div class="card">';
+            html += '<div class="card-header"><span class="card-title">Project Templates</span></div>';
+            html += '<div class="projects-grid">';
+            for (var i = 0; i < templates.length; i++) {
+                var t = templates[i];
+                var name = t.name || t;
+                var desc = t.description || '';
+                html += '<div class="project-card" style="cursor:default">';
+                html += '<div class="project-card-header">';
+                html += '<span class="project-card-name">' + escapeHTML(name) + '</span>';
+                html += statusBadge(t.language || name);
+                html += '</div>';
+                if (desc) {
+                    html += '<div class="project-card-meta"><span>' + escapeHTML(desc) + '</span></div>';
+                }
+                if (t.ports) {
+                    html += '<div class="project-card-meta" style="margin-top:8px"><span>Ports: ' + escapeHTML(String(t.ports)) + '</span></div>';
+                }
+                html += '</div>';
+            }
+            html += '</div></div>';
+            setBody(html);
+        }).catch(function(err) {
+            showError(err.message);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Audit Log Page
+    // -----------------------------------------------------------------------
+    function renderAudit() {
+        setHeader('Audit Log');
+        showLoading();
+
+        api('GET', '/api/audit?limit=100').then(function(entries) {
+            if (!entries || entries.length === 0) {
+                setBody(
+                    '<div class="card"><div class="card-header"><span class="card-title">Audit Log</span></div>' +
+                    '<div class="empty-state"><h3>No audit entries</h3><p>No actions have been recorded yet.</p></div></div>'
+                );
+                return;
+            }
+            var html = '<div class="card">';
+            html += '<div class="card-header"><span class="card-title">Audit Log</span><span class="badge badge-gray">' + entries.length + ' entries</span></div>';
+            html += '<table class="data-table"><thead><tr><th>Time</th><th>Action</th><th>Project</th><th>User</th><th>Status</th></tr></thead><tbody>';
+            for (var i = 0; i < entries.length; i++) {
+                var e = entries[i];
+                html += '<tr>';
+                html += '<td class="text-secondary">' + (e.timestamp ? new Date(e.timestamp).toLocaleString() : '-') + '</td>';
+                html += '<td><code>' + escapeHTML(e.action || '-') + '</code></td>';
+                html += '<td>';
+                if (e.project) {
+                    html += '<a href="#/project/' + escapeHTML(e.project) + '" class="table-link">' + escapeHTML(e.project) + '</a>';
+                } else {
+                    html += '-';
+                }
+                html += '</td>';
+                html += '<td>' + escapeHTML(e.user || '-') + '</td>';
+                html += '<td>' + (e.success ? statusBadge('success') : statusBadge('failed')) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+            setBody(html);
+        }).catch(function(err) {
+            showError(err.message);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Settings Page
+    // -----------------------------------------------------------------------
+    function renderSettings() {
+        setHeader('Settings');
+        showLoading();
+
+        api('GET', '/api/config').then(function(config) {
+            renderSettingsContent(config);
+        }).catch(function() {
+            // If config endpoint not available, show basic settings
+            renderSettingsContent({});
+        });
+    }
+
+    function renderSettingsContent(config) {
+        var html = '';
+
+        // Server Info
+        html += '<div class="card mb-24">';
+        html += '<div class="card-header"><span class="card-title">Server Configuration</span></div>';
+        if (config && Object.keys(config).length > 0) {
+            var keys = Object.keys(config);
+            for (var i = 0; i < keys.length; i++) {
+                var val = config[keys[i]];
+                if (typeof val === 'object' && val !== null) {
+                    html += '<div class="kv-row"><span class="kv-key">' + escapeHTML(keys[i]) + '</span>';
+                    html += '<span class="kv-value"><code>' + escapeHTML(JSON.stringify(val)) + '</code></span></div>';
+                } else {
+                    html += '<div class="kv-row"><span class="kv-key">' + escapeHTML(keys[i]) + '</span>';
+                    html += '<span class="kv-value">' + escapeHTML(String(val)) + '</span></div>';
+                }
+            }
+        } else {
+            html += '<div class="empty-state"><p>Configuration details are not available via the API.</p></div>';
+        }
+        html += '</div>';
+
+        // Quick Actions
+        html += '<div class="card">';
+        html += '<div class="card-header"><span class="card-title">Quick Actions</span></div>';
+        html += '<div class="btn-group">';
+        html += '<a href="/login" class="btn btn-secondary">Logout</a>';
+        html += '</div>';
+        html += '</div>';
+
+        setBody(html);
+    }
+
+    // -----------------------------------------------------------------------
     // Initialize
     // -----------------------------------------------------------------------
     window.addEventListener('hashchange', navigate);
