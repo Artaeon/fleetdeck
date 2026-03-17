@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -34,6 +35,7 @@ type Result struct {
 	Profile     string   `json:"recommended_profile"`
 	Confidence  float64  `json:"confidence"`
 	Indicators  []string `json:"indicators"`
+	Warnings    []string `json:"warnings,omitempty"`
 }
 
 // Detect analyzes a directory and returns detection results.
@@ -106,6 +108,31 @@ func detectNextJS(dir string, r *Result) {
 	if _, ok := deps["typescript"]; ok {
 		r.Language = "typescript"
 		r.Indicators = append(r.Indicators, "TypeScript project")
+	}
+
+	// Check for standalone output configuration
+	standaloneFound := false
+	for _, configName := range []string{"next.config.js", "next.config.ts", "next.config.mjs"} {
+		data, err := os.ReadFile(filepath.Join(dir, configName))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		standaloneRe := regexp.MustCompile(`output\s*[:=]\s*["']standalone["']`)
+		if standaloneRe.MatchString(content) {
+			standaloneFound = true
+			r.Indicators = append(r.Indicators, "standalone output configured")
+			break
+		}
+	}
+	if !standaloneFound {
+		r.Warnings = append(r.Warnings, "Next.js standalone output not detected; add output: \"standalone\" to next.config for optimized Docker builds")
+	}
+
+	// Check for Prisma usage
+	if _, ok := deps["@prisma/client"]; ok {
+		r.HasDB = true
+		r.Indicators = append(r.Indicators, "uses Prisma (database)")
 	}
 }
 
