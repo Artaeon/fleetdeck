@@ -111,11 +111,13 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Start async deployment, tracked via asyncJobs so Shutdown waits
 	// for it before closing the DB handle. The context is the server's
-	// shutdownCtx; runDeployment doesn't consume it directly yet, but
-	// future work (exec.CommandContext on git/docker) picks it up here.
+	// shutdownCtx, which runDeployment threads through to every
+	// exec.CommandContext so a SIGTERM mid-deploy cancels git / docker
+	// subprocesses instead of letting them run to completion against
+	// a DB that is about to close.
 	p := project
 	sha := payload.After
-	s.goAsyncJob(func(context.Context) { s.runDeployment(p, sha, commitSHA) })
+	s.goAsyncJob(func(ctx context.Context) { s.runDeployment(ctx, p, sha, commitSHA) })
 
 	writeJSON(w, map[string]string{
 		"status":      "deploying",
@@ -138,14 +140,58 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proj := p
-	s.goAsyncJob(func(context.Context) { s.runDeployment(proj, "", "manual") })
+	s.goAsyncJob(func(ctx context.Context) { s.runDeployment(ctx, proj, "", "manual") })
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }
 
 
 
-func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
+// runStep wraps exec.CommandContext with a per-step timeout and
+// appends its output to logBuf regardless of outcome. Returns the
+// error from the command (including context.DeadlineExceeded on
+// timeout) so the caller can decide whether to abort or continue.
+//
+// The timeout replaces the previous "wait forever" behavior: a hung
+// docker daemon or a DNS stall during git pull now produces a clean
+// "step X timed out after N" line in the deployment log rather than
+// pinning a goroutine until the process exits.
+func runStep(ctx context.Context, dir string, timeout time.Duration, logBuf *strings.Builder, name string, args ...string) error {
+	stepCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(stepCtx, name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		logBuf.Write(out)
+		if !strings.HasSuffix(string(out), "\n") {
+			logBuf.WriteString("\n")
+		}
+	}
+	if stepCtx.Err() == context.DeadlineExceeded {
+		logBuf.WriteString(fmt.Sprintf("(step timed out after %s)\n", timeout.Round(time.Second)))
+		return fmt.Errorf("%s timed out after %s", name, timeout.Round(time.Second))
+	}
+	if ctx.Err() == context.Canceled {
+		logBuf.WriteString("(deploy cancelled)\n")
+		return fmt.Errorf("deploy cancelled: %w", ctx.Err())
+	}
+	return err
+}
+
+// Per-step timeouts. Generous enough for real workloads (a 1 GB
+// docker-image build on a modest VPS takes 5-10 min), tight enough
+// that a genuinely hung step doesn't burn a webhook worker slot
+// for the life of the process.
+const (
+	stepTimeoutGitPull     = 2 * time.Minute
+	stepTimeoutComposeBuild = 15 * time.Minute
+	stepTimeoutComposeUp    = 5 * time.Minute
+	stepTimeoutComposeExec  = 10 * time.Minute
+	stepTimeoutGitCheckout  = 30 * time.Second
+)
+
+func (s *Server) runDeployment(ctx context.Context, p *db.Project, fullSHA, shortSHA string) {
 	mu := s.projectMutex(p.Name)
 	mu.Lock()
 	defer mu.Unlock()
@@ -181,15 +227,10 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 
 	// Step 1: git pull
 	logBuf.WriteString("\n=== Git Pull ===\n")
-	cmd := exec.Command("git", "pull", "--ff-only")
-	cmd.Dir = p.ProjectPath
-	if out, err := cmd.CombinedOutput(); err != nil {
-		logBuf.WriteString(string(out))
-		logBuf.WriteString(fmt.Sprintf("\ngit pull failed: %v\n", err))
+	if err := runStep(ctx, p.ProjectPath, stepTimeoutGitPull, &logBuf, "git", "pull", "--ff-only"); err != nil {
+		logBuf.WriteString(fmt.Sprintf("git pull failed: %v\n", err))
 		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 		return
-	} else {
-		logBuf.WriteString(string(out))
 	}
 
 	// Step 2: validate compose configuration
@@ -203,15 +244,10 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 
 	// Step 3: docker compose build
 	logBuf.WriteString("\n=== Docker Compose Build ===\n")
-	cmd = exec.Command("docker", "compose", "build")
-	cmd.Dir = p.ProjectPath
-	if out, err := cmd.CombinedOutput(); err != nil {
-		logBuf.WriteString(string(out))
-		logBuf.WriteString(fmt.Sprintf("\nbuild failed: %v\n", err))
+	if err := runStep(ctx, p.ProjectPath, stepTimeoutComposeBuild, &logBuf, "docker", "compose", "build"); err != nil {
+		logBuf.WriteString(fmt.Sprintf("build failed: %v\n", err))
 		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 		return
-	} else {
-		logBuf.WriteString(string(out))
 	}
 
 	// Load .fleetdeck.yml hooks
@@ -221,30 +257,21 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 	if fdCfg != nil && fdCfg.Hooks.PreDeploy != "" {
 		logBuf.WriteString("\n=== Pre-Deploy Hook ===\n")
 		logBuf.WriteString(fmt.Sprintf("Running: %s\n", fdCfg.Hooks.PreDeploy))
-		hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PreDeploy)
-		hookCmd.Dir = p.ProjectPath
-		if out, err := hookCmd.CombinedOutput(); err != nil {
-			logBuf.WriteString(string(out))
-			logBuf.WriteString(fmt.Sprintf("\npre-deploy hook failed: %v\n", err))
+		if err := runStep(ctx, p.ProjectPath, stepTimeoutComposeExec, &logBuf,
+			"docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PreDeploy); err != nil {
+			logBuf.WriteString(fmt.Sprintf("pre-deploy hook failed: %v\n", err))
 			s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 			return
-		} else {
-			logBuf.WriteString(string(out))
 		}
 		logBuf.WriteString("Pre-deploy hook completed.\n")
 	}
 
 	// Step 4b: docker compose up -d
 	logBuf.WriteString("\n=== Docker Compose Up ===\n")
-	cmd = exec.Command("docker", "compose", "up", "-d")
-	cmd.Dir = p.ProjectPath
-	if out, err := cmd.CombinedOutput(); err != nil {
-		logBuf.WriteString(string(out))
-		logBuf.WriteString(fmt.Sprintf("\ncompose up failed: %v\n", err))
+	if err := runStep(ctx, p.ProjectPath, stepTimeoutComposeUp, &logBuf, "docker", "compose", "up", "-d"); err != nil {
+		logBuf.WriteString(fmt.Sprintf("compose up failed: %v\n", err))
 		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 		return
-	} else {
-		logBuf.WriteString(string(out))
 	}
 
 	// Step 5: Health check with rollback
@@ -257,15 +284,11 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 		if fdCfg != nil && fdCfg.Hooks.PostDeploy != "" {
 			logBuf.WriteString("\n=== Post-Deploy Hook ===\n")
 			logBuf.WriteString(fmt.Sprintf("Running: %s\n", fdCfg.Hooks.PostDeploy))
-			hookCmd := exec.Command("docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PostDeploy)
-			hookCmd.Dir = p.ProjectPath
-			if out, err := hookCmd.CombinedOutput(); err != nil {
-				logBuf.WriteString(string(out))
-				logBuf.WriteString(fmt.Sprintf("\npost-deploy hook failed: %v\n", err))
+			if err := runStep(ctx, p.ProjectPath, stepTimeoutComposeExec, &logBuf,
+				"docker", "compose", "exec", "-T", "app", "sh", "-c", fdCfg.Hooks.PostDeploy); err != nil {
+				logBuf.WriteString(fmt.Sprintf("post-deploy hook failed: %v\n", err))
 				s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 				return
-			} else {
-				logBuf.WriteString(string(out))
 			}
 			logBuf.WriteString("Post-deploy hook completed.\n")
 		}
@@ -296,26 +319,29 @@ func (s *Server) runDeployment(p *db.Project, fullSHA, shortSHA string) {
 
 	// Rollback: docker compose up -d to restart with previous state.
 	// We do git checkout to restore the previous compose file state.
-	rollbackCmd := exec.Command("git", "checkout", "HEAD~1", "--", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
-	rollbackCmd.Dir = p.ProjectPath
-	if out, err := rollbackCmd.CombinedOutput(); err != nil {
+	// Rollback uses the parent context (not ctx) deliberately: when
+	// the deploy was cancelled via SIGTERM, ctx is already Done and
+	// the rollback would be a no-op. Use a fresh Background context
+	// with a short timeout so rollback still gets a chance to run.
+	rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer rollbackCancel()
+
+	if err := runStep(rollbackCtx, p.ProjectPath, stepTimeoutGitCheckout, &logBuf,
+		"git", "checkout", "HEAD~1", "--", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"); err != nil {
 		// Git checkout may fail if some files don't exist — that's OK, try compose up anyway.
-		logBuf.WriteString(fmt.Sprintf("  git checkout previous compose files: %s (continuing)\n", strings.TrimSpace(string(out))))
+		logBuf.WriteString(fmt.Sprintf("  git checkout previous compose files returned: %v (continuing)\n", err))
 	}
 
-	upCmd := exec.Command("docker", "compose", "up", "-d")
-	upCmd.Dir = p.ProjectPath
-	if out, err := upCmd.CombinedOutput(); err != nil {
-		logBuf.WriteString(fmt.Sprintf("  rollback compose up failed: %s: %v\n", strings.TrimSpace(string(out)), err))
+	if err := runStep(rollbackCtx, p.ProjectPath, stepTimeoutComposeUp, &logBuf, "docker", "compose", "up", "-d"); err != nil {
+		logBuf.WriteString(fmt.Sprintf("  rollback compose up failed: %v\n", err))
 		logBuf.WriteString("\nDeployment failed and rollback failed.\n")
 		s.finishDeployment(dep, "failed", logBuf.String(), p.Name)
 		return
-	} else {
-		logBuf.WriteString(string(out))
 	}
 
-	// Restore working tree to current HEAD after rollback
-	restoreCmd := exec.Command("git", "checkout", "HEAD", "--", ".")
+	// Restore working tree to current HEAD after rollback (best-effort,
+	// uses the rollback context so it also bounded by the 2-min budget).
+	restoreCmd := exec.CommandContext(rollbackCtx, "git", "checkout", "HEAD", "--", ".")
 	restoreCmd.Dir = p.ProjectPath
 	restoreCmd.CombinedOutput() // best-effort
 
