@@ -128,6 +128,34 @@ func findBackupByPrefix(backups []*db.BackupRecord, prefix string) *db.BackupRec
 	return nil
 }
 
+// restoreBackupRecord runs the full restore pipeline for an existing
+// backup record and refreshes the project's running status. Shared
+// between 'fleetdeck rollback' and 'fleetdeck migrate rollback' so both
+// commands converge on identical restore semantics — one bug surface
+// rather than two.
+func restoreBackupRecord(p *db.Project, record *db.BackupRecord) error {
+	shortID := record.ID[:minInt(12, len(record.ID))]
+	ui.Info("Restoring %s from backup %s...", ui.Bold(p.Name), shortID)
+	fmt.Println()
+
+	if err := backup.RestoreBackup(record.Path, p.ProjectPath, backup.RestoreOptions{}); err != nil {
+		return fmt.Errorf("restoring backup: %w", err)
+	}
+
+	d := openDB()
+	if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
+		ui.Warn("Could not update project status: %v", err)
+	}
+
+	fmt.Println()
+	ui.Success("Project %s rolled back to backup %s (%s from %s)",
+		ui.Bold(p.Name),
+		shortID,
+		record.Type,
+		record.CreatedAt.Format("2006-01-02 15:04"))
+	return nil
+}
+
 func promptBackupSelection(backups []*db.BackupRecord) (*db.BackupRecord, error) {
 	ui.Info("Recent backups:")
 	fmt.Println()
