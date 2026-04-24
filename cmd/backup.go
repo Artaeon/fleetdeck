@@ -12,6 +12,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/backup/remote"
+	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -299,7 +300,9 @@ Requires the 'rclone' binary on PATH and a remote pre-configured via
 
 		driver, err := remote.Open(cfg.Backup.Remote)
 		if errors.Is(err, remote.ErrNoDriver) {
-			return fmt.Errorf("no backup remote configured; set [backup.remote] driver and target in %s", cfg.DBPath())
+			// Point the user at the TOML config, not the SQLite DB — the
+			// first cut of this error message was copy-pasted wrong.
+			return fmt.Errorf("no backup remote configured; set [backup.remote] driver and target in %s (override with --config)", cfgFileForError())
 		}
 		if err != nil {
 			return err
@@ -313,9 +316,8 @@ Requires the 'rclone' binary on PATH and a remote pre-configured via
 			return fmt.Errorf("no backups for %s; create one with 'fleetdeck backup create %s'", p.Name, p.Name)
 		}
 
-		var target *backup.Manifest
-		var record = backups[0] // default: most recent
-		var recordPath = backups[0].Path
+		record := backups[0] // default: most recent
+		recordPath := backups[0].Path
 		if len(args) == 2 {
 			found := false
 			for _, b := range backups {
@@ -330,11 +332,12 @@ Requires the 'rclone' binary on PATH and a remote pre-configured via
 				return fmt.Errorf("backup %q not found for project %s", args[1], p.Name)
 			}
 		}
-		target, err = backup.ReadManifest(recordPath)
-		if err != nil {
+		// ReadManifest validates the manifest on disk before we start
+		// shipping bytes across the network — fail fast on a corrupt local
+		// backup rather than uploading garbage.
+		if _, err := backup.ReadManifest(recordPath); err != nil {
 			return fmt.Errorf("reading manifest for backup %s: %w", record.ID[:minInt(12, len(record.ID))], err)
 		}
-		_ = target // manifest read validates integrity before we push
 
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
@@ -358,6 +361,17 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// cfgFileForError returns the config file path that was in effect for the
+// current invocation: the --config flag value if set, otherwise the
+// compiled-in default. Used only in error messages so we don't send the
+// user to the wrong file.
+func cfgFileForError() string {
+	if cfgFile != "" {
+		return cfgFile
+	}
+	return config.DefaultConfigPath
 }
 
 func init() {
