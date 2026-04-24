@@ -186,6 +186,24 @@ For monorepos with separate frontend and backend:
 
 ---
 
+### Post-Deploy Watchdog & Auto-Rollback
+
+After every zero-downtime deploy, fleetdeck can poll the live domain for a configurable window and automatically roll back if the new revision silently breaks a few minutes after the cutover — the most common production failure mode that health checks alone miss (OOM, upstream latency, slow migration deadlock).
+
+```bash
+# Watch for 5 minutes, roll back to the pre-deploy snapshot on failure
+fleetdeck deploy ./my-app \
+  --server prod --domain app.example.com \
+  --watch 5m --watch-rollback
+
+# Tune probing
+fleetdeck deploy ./my-app \
+  --server prod --domain app.example.com \
+  --watch 10m --watch-interval 15s --watch-threshold 5 --watch-status 200
+```
+
+With `--watch` unset (the default), deploy behavior is unchanged. Without `--watch-rollback` a failed watchdog only warns — you run `fleetdeck rollback` manually.
+
 ## Deployment Strategies
 
 ```bash
@@ -260,6 +278,16 @@ Each environment gets its own Docker Compose stack, domain, and configuration. P
 
 ## Health Monitoring
 
+Run the monitor as a systemd service so alerts survive reboots and process crashes:
+
+```bash
+sudo cp packaging/systemd/fleetdeck-monitor.service /etc/systemd/system/
+sudo systemctl enable --now fleetdeck-monitor
+journalctl -u fleetdeck-monitor -f
+```
+
+The shipped unit runs `fleetdeck monitor start --all`, which watches every registered project. Put provider webhooks in `/etc/fleetdeck/fleetdeck.env` (mode 0600) and `systemctl restart fleetdeck-monitor` to pick them up. See `packaging/systemd/README.md` for the full setup.
+
 ```bash
 # Continuous monitoring with Slack alerts
 fleetdeck monitor start myapp --interval 30s --slack https://hooks.slack.com/xxx
@@ -292,6 +320,9 @@ fleetdeck rollback myapp --latest
 
 # Schedule daily backups
 fleetdeck schedule enable myapp
+
+# Push a backup to off-server storage (S3, B2, R2, GCS, SFTP, ...)
+fleetdeck backup push myapp
 ```
 
 **Automatic snapshots** before every stop, restart, destroy, and restore. You can always go back, even after a restore.
@@ -299,6 +330,17 @@ fleetdeck schedule enable myapp
 **What gets backed up:** docker-compose.yml, .env, Dockerfile, PostgreSQL dumps (`pg_dump`), MySQL dumps (`mysqldump`), Docker volume archives, SHA256 manifest.
 
 **Retention:** configurable max count, max age (days), max total size (GB). The most recent backup of each type is never deleted.
+
+**Off-server backup (rclone driver):** add a `[backup.remote]` block to your `config.toml` and `fleetdeck backup push` will mirror backups to any of rclone's ~50 backends without requiring an object-store SDK:
+
+```toml
+[backup.remote]
+driver    = "rclone"        # currently the only driver
+target    = "b2:my-fleet-backups"  # any rclone remote:path
+auto_push = true            # optional — push automatically on backup create
+```
+
+Configure the rclone remote once with `rclone config` on the server. With `auto_push = true`, every backup is mirrored off-server synchronously; without it, operators run `fleetdeck backup push` (manually or via cron) to sync on their own schedule.
 
 ---
 
