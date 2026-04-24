@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -138,5 +139,110 @@ func TestTruncate(t *testing.T) {
 	big := truncate(string(make([]byte, 10000)), 100)
 	if len(big) <= 100 || len(big) > 200 {
 		t.Errorf("truncated size = %d, want just over 100", len(big))
+	}
+}
+
+// TestRunCreatesPreMigrationSnapshot pins the load-bearing behavior:
+// when SkipSnapshot is false (the default), Run MUST create a backup
+// record before invoking the command. Without this guarantee, the whole
+// point of fleetdeck migrate — "one command to rewind a bad migration"
+// — is defeated.
+func TestRunCreatesPreMigrationSnapshot(t *testing.T) {
+	r, proj := newTestRunner(t, func(ctx context.Context, projectPath, service, command string) ([]byte, error) {
+		return []byte("ok"), nil
+	})
+	r.Cfg.Backup.AutoSnapshot = true
+
+	// backup.CreateBackup reads docker-compose.yml and walks volumes;
+	// give it a benign project layout so the snapshot succeeds without
+	// a real docker daemon.
+	writeMinimalProject(t, proj.ProjectPath)
+
+	res, err := r.Run(context.Background(), proj, Options{
+		Command: "npm run migrate",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.SnapshotID == "" {
+		t.Fatal("expected a pre-migration snapshot ID, got empty")
+	}
+
+	// Confirm the snapshot row actually landed in the backups table —
+	// not just the migration history row.
+	backups, err := r.Database.ListBackupRecords(proj.ID, 0)
+	if err != nil {
+		t.Fatalf("ListBackupRecords: %v", err)
+	}
+	var found bool
+	for _, b := range backups {
+		if b.ID == res.SnapshotID && b.Trigger == "pre-migration" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a backup record with trigger=pre-migration and matching snapshot ID, got %d records", len(backups))
+	}
+
+	// And the migration row must point at the snapshot we just created.
+	mig, err := r.Database.ListAppMigrations(proj.ID, 0)
+	if err != nil {
+		t.Fatalf("ListAppMigrations: %v", err)
+	}
+	if len(mig) != 1 || mig[0].SnapshotID != res.SnapshotID {
+		t.Errorf("migration row SnapshotID = %q, want %q", mig[0].SnapshotID, res.SnapshotID)
+	}
+}
+
+// TestRunUsesServiceOverride verifies that a non-default --service
+// flag actually reaches the Exec stub. Regression pin: if the Options
+// plumbing breaks silently, the command would always target 'app' and
+// mealtime-style multi-service setups (backend + worker) would run
+// migrations against the wrong container.
+func TestRunUsesServiceOverride(t *testing.T) {
+	var sawService string
+	r, proj := newTestRunner(t, func(ctx context.Context, projectPath, service, command string) ([]byte, error) {
+		sawService = service
+		return nil, nil
+	})
+
+	if _, err := r.Run(context.Background(), proj, Options{
+		Command:      "rails db:migrate",
+		Service:      "backend",
+		SkipSnapshot: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if sawService != "backend" {
+		t.Errorf("Exec service = %q, want 'backend'", sawService)
+	}
+}
+
+// TestApplyDefaultsServiceFallsBackToApp pins the default that every
+// fleetdeck-generated profile relies on.
+func TestApplyDefaultsServiceFallsBackToApp(t *testing.T) {
+	got := applyDefaults(Options{})
+	if got.Service != "app" {
+		t.Errorf("default service = %q, want 'app'", got.Service)
+	}
+	if got.Timeout <= 0 {
+		t.Errorf("default timeout should be positive, got %s", got.Timeout)
+	}
+}
+
+// writeMinimalProject lays down the files backup.CreateBackup expects:
+// a docker-compose.yml (to satisfy parseComposeFile) and nothing else.
+// Volumes + databases lookup will produce zero components and return
+// successfully — exactly what we want for a test that only cares about
+// the manifest row landing in the DB.
+func writeMinimalProject(t *testing.T, dir string) {
+	t.Helper()
+	compose := `services:
+  app:
+    image: alpine:3
+`
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(compose), 0644); err != nil {
+		t.Fatalf("write compose: %v", err)
 	}
 }
