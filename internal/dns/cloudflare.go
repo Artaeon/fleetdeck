@@ -135,6 +135,14 @@ func (c *CloudflareProvider) findZoneID(domain string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Check the HTTP status first — a 5xx with an HTML error page would
+	// otherwise surface as a confusing 'decoding zone lookup response'
+	// error, sending the operator hunting for a JSON parsing bug when
+	// the real problem is a Cloudflare outage or a bad token.
+	if err := c.checkResponse(resp, "zone lookup"); err != nil {
+		return "", err
+	}
+
 	var apiResp cfAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return "", fmt.Errorf("decoding zone lookup response: %w", err)
@@ -162,6 +170,10 @@ func (c *CloudflareProvider) listZoneRecords(zoneID string) ([]Record, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp, "list DNS records"); err != nil {
+		return nil, err
+	}
 
 	var apiResp cfAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
