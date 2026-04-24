@@ -307,7 +307,9 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	close(s.metrics.stopCh)
+	// Stop() is idempotent, so a double-Shutdown from a signal handler
+	// + test cleanup no longer panics on close-of-closed-channel.
+	s.metrics.Stop()
 	return s.server.Shutdown(ctx)
 }
 

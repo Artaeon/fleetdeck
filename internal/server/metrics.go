@@ -23,8 +23,12 @@ type Metrics struct {
 	backupsTotal        atomic.Int64
 	startedAt           time.Time
 
-	// stopCh signals the cache refresh goroutine to exit.
-	stopCh chan struct{}
+	// stopCh signals the cache refresh goroutine to exit. Closed by
+	// Stop(), which is guarded by stopOnce so double-close does not
+	// panic — matters because Shutdown can be called from both a
+	// signal handler and a test cleanup in the same process.
+	stopCh   chan struct{}
+	stopOnce sync.Once
 
 	// Cached system metrics (refreshed periodically)
 	cacheMu          sync.RWMutex
@@ -52,6 +56,15 @@ func (m *Metrics) incErrors()             { m.httpRequestErrors.Add(1) }
 func (m *Metrics) incDeployments()        { m.deploymentsTotal.Add(1) }
 func (m *Metrics) incDeploymentFailures() { m.deploymentsFailures.Add(1) }
 func (m *Metrics) incBackups()            { m.backupsTotal.Add(1) }
+
+// Stop signals the cache-refresh goroutine (if any) to exit. Safe to
+// call multiple times and safe to call when startCacheRefresh was
+// never invoked — the sync.Once guards against both.
+func (m *Metrics) Stop() {
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+	})
+}
 
 // startCacheRefresh launches a background goroutine that refreshes cached
 // system metrics every 30 seconds, so handleMetrics never runs expensive
