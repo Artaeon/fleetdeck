@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
+	"github.com/fleetdeck/fleetdeck/internal/backup/remote"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -237,6 +241,82 @@ var backupDeleteCmd = &cobra.Command{
 	},
 }
 
+var backupPushCmd = &cobra.Command{
+	Use:   "push <project-name> [backup-id]",
+	Short: "Push a backup to the configured off-server remote",
+	Long: `Uploads a local backup to the remote configured under [backup.remote]
+in config.toml. Without a backup-id, pushes the most recent backup.
+
+Requires the 'rclone' binary on PATH and a remote pre-configured via
+'rclone config'. Example config.toml entry:
+
+  [backup.remote]
+  driver = "rclone"
+  target = "b2:my-fleet-backups"`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		d := openDB()
+		p, err := d.GetProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		driver, err := remote.Open(cfg.Backup.Remote)
+		if errors.Is(err, remote.ErrNoDriver) {
+			return fmt.Errorf("no backup remote configured; set [backup.remote] driver and target in %s", cfg.DBPath())
+		}
+		if err != nil {
+			return err
+		}
+
+		backups, err := d.ListBackupRecords(p.ID, 0)
+		if err != nil {
+			return err
+		}
+		if len(backups) == 0 {
+			return fmt.Errorf("no backups for %s; create one with 'fleetdeck backup create %s'", p.Name, p.Name)
+		}
+
+		var target *backup.Manifest
+		var record = backups[0] // default: most recent
+		var recordPath = backups[0].Path
+		if len(args) == 2 {
+			found := false
+			for _, b := range backups {
+				if strings.HasPrefix(b.ID, args[1]) {
+					record = b
+					recordPath = b.Path
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("backup %q not found for project %s", args[1], p.Name)
+			}
+		}
+		target, err = backup.ReadManifest(recordPath)
+		if err != nil {
+			return fmt.Errorf("reading manifest for backup %s: %w", record.ID[:minInt(12, len(record.ID))], err)
+		}
+		_ = target // manifest read validates integrity before we push
+
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+		defer cancel()
+
+		ui.Info("Pushing %s to %s...", record.ID[:minInt(12, len(record.ID))], driver.Name())
+		dest, err := driver.Push(ctx, recordPath, record.ID)
+		if err != nil {
+			audit.Log("backup.push", p.Name, err.Error(), false)
+			return fmt.Errorf("pushing backup: %w", err)
+		}
+
+		audit.Log("backup.push", p.Name, fmt.Sprintf("id=%s dest=%s", record.ID[:minInt(12, len(record.ID))], dest), true)
+		ui.Success("Pushed to %s", dest)
+		return nil
+	},
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -259,9 +339,12 @@ func init() {
 
 	backupDeleteCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
 
+	backupPushCmd.Flags().Duration("timeout", 30*time.Minute, "Upload timeout (large backups over slow links may need longer)")
+
 	backupCmd.AddCommand(backupCreateCmd)
 	backupCmd.AddCommand(backupListCmd)
 	backupCmd.AddCommand(backupRestoreCmd)
 	backupCmd.AddCommand(backupDeleteCmd)
+	backupCmd.AddCommand(backupPushCmd)
 	rootCmd.AddCommand(backupCmd)
 }
