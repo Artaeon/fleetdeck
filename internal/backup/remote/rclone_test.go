@@ -85,6 +85,47 @@ func TestDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestPushReturnsRemotePath exercises the happy path and pins the
+// return value — operators use the returned string as the "where did
+// my backup go" audit breadcrumb and we don't want that quietly
+// becoming an empty string after some future refactor.
+func TestPushReturnsRemotePath(t *testing.T) {
+	fakeRclone := writeFakeRclone(t, map[string]fakeResponse{
+		"copy": {}, // exit 0, no output
+	})
+
+	r := &Rclone{Target: "b2:fleet-backups", Binary: fakeRclone}
+	dest, err := r.Push(context.Background(), "/tmp/local-backup", "bk-abc")
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if dest != "b2:fleet-backups/bk-abc" {
+		t.Errorf("Push destination = %q, want 'b2:fleet-backups/bk-abc'", dest)
+	}
+}
+
+// TestPushSurfacesRcloneFailure asserts that a non-zero exit from
+// rclone is wrapped with enough context to diagnose from audit logs.
+// Without this, a failed push looks like a generic "exit status 1"
+// to the operator.
+func TestPushSurfacesRcloneFailure(t *testing.T) {
+	fakeRclone := writeFakeRclone(t, map[string]fakeResponse{
+		"copy": {stderr: "quota exceeded", exitCode: 3},
+	})
+
+	r := &Rclone{Target: "b2:fleet-backups", Binary: fakeRclone}
+	_, err := r.Push(context.Background(), "/tmp/local-backup", "bk-abc")
+	if err == nil {
+		t.Fatal("expected error for non-zero rclone exit")
+	}
+	if !strings.Contains(err.Error(), "quota exceeded") {
+		t.Errorf("error should mention rclone stderr, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "bk-abc") {
+		t.Errorf("error should mention the destination path, got: %v", err)
+	}
+}
+
 // --- fake rclone scaffolding ---
 
 type fakeResponse struct {
