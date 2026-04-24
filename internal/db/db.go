@@ -69,10 +69,34 @@ type Secret struct {
 }
 
 func Open(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	// DSN pragmas:
+	//   _journal_mode=WAL        — concurrent readers + single writer
+	//   _foreign_keys=on         — enforce FK constraints (off by default)
+	//   _busy_timeout=5000       — retry lock contention for up to 5 s
+	//                              before returning SQLITE_BUSY. Without
+	//                              this a webhook-triggered deploy running
+	//                              concurrently with a metrics refresh or
+	//                              a CLI `backup create` would surface as
+	//                              'database is locked' errors to the
+	//                              operator. 5 s is long enough to absorb
+	//                              real contention, short enough to fail
+	//                              loudly on a genuinely wedged write.
+	//   _txlock=immediate        — acquire write lock at BEGIN so two
+	//                              writers can't both READ, both try to
+	//                              upgrade, and deadlock.
+	dsn := path + "?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000&_txlock=immediate"
+	conn, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
+
+	// SQLite is a single-writer database; letting database/sql pool a
+	// large number of connections just multiplies lock contention. One
+	// write connection is the right answer — readers in WAL mode don't
+	// block each other or the writer, so a modest read pool is fine.
+	conn.SetMaxOpenConns(10)
+	conn.SetMaxIdleConns(4)
+	conn.SetConnMaxLifetime(time.Hour)
 
 	if err := conn.Ping(); err != nil {
 		return nil, err
