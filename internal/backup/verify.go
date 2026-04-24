@@ -71,8 +71,19 @@ func verifyComponent(backupPath string, comp ComponentInfo) VerifyResult {
 }
 
 // verifyConfigFile recomputes the SHA256 checksum and compares it to the
-// manifest value.
+// manifest value. A missing checksum in the manifest is treated as a
+// verification failure, not a silent pass — otherwise an attacker who
+// tampered with both a config file AND the manifest (removing the
+// Checksum field) would sail through integrity checks.
 func verifyConfigFile(path string, comp ComponentInfo) VerifyResult {
+	if comp.Checksum == "" {
+		return VerifyResult{
+			Component: comp,
+			Status:    VerifyFailed,
+			Error:     fmt.Errorf("manifest has no checksum for %s — cannot verify integrity", comp.Name),
+		}
+	}
+
 	checksum, err := fileSHA256(path)
 	if err != nil {
 		return VerifyResult{
@@ -82,7 +93,7 @@ func verifyConfigFile(path string, comp ComponentInfo) VerifyResult {
 		}
 	}
 
-	if comp.Checksum != "" && checksum != comp.Checksum {
+	if checksum != comp.Checksum {
 		return VerifyResult{
 			Component: comp,
 			Status:    VerifyFailed,

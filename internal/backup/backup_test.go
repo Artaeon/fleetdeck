@@ -711,9 +711,13 @@ func TestVerifyBackupConfigWithNoChecksum(t *testing.T) {
 		t.Fatalf("verify: %v", err)
 	}
 
-	// A config with no checksum should still pass (existence check only)
-	if HasFailures(results) {
-		t.Error("expected config with empty checksum to pass verification")
+	// A config component with no checksum MUST fail verification — silently
+	// accepting it would let an attacker who tampered with both the file and
+	// the manifest bypass integrity checks entirely. This test pins the
+	// strict behavior; any regression to "empty checksum means skip" should
+	// break here.
+	if !HasFailures(results) {
+		t.Error("config component with empty checksum should fail verification")
 	}
 }
 
