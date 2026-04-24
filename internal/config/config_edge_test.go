@@ -198,7 +198,7 @@ func TestEnvOverridesAllValues(t *testing.T) {
 [server]
 base_path = "/file/path"
 domain = "file.example.com"
-encryption_key = "file-encryption"
+encryption_key = "file-encryption-with-entropy"
 api_token = "file-token"
 webhook_secret = "file-secret"
 
@@ -220,7 +220,7 @@ slack_url = "https://file.slack.com"
 	envOverrides := map[string]string{
 		"FLEETDECK_API_TOKEN":          "env-token",
 		"FLEETDECK_WEBHOOK_SECRET":     "env-secret",
-		"FLEETDECK_ENCRYPTION_KEY":     "env-encryption",
+		"FLEETDECK_ENCRYPTION_KEY":     "env-encryption-with-entropy",
 		"FLEETDECK_BASE_PATH":          "/env/path",
 		"FLEETDECK_DOMAIN":             "env.example.com",
 		"FLEETDECK_BACKUP_PATH":        "/env/backups",
@@ -244,7 +244,7 @@ slack_url = "https://file.slack.com"
 	}{
 		{"Server.APIToken", cfg.Server.APIToken, "env-token"},
 		{"Server.WebhookSecret", cfg.Server.WebhookSecret, "env-secret"},
-		{"Server.EncryptionKey", cfg.Server.EncryptionKey, "env-encryption"},
+		{"Server.EncryptionKey", cfg.Server.EncryptionKey, "env-encryption-with-entropy"},
 		{"Server.BasePath", cfg.Server.BasePath, "/env/path"},
 		{"Server.Domain", cfg.Server.Domain, "env.example.com"},
 		{"Backup.BasePath", cfg.Backup.BasePath, "/env/backups"},
@@ -413,7 +413,7 @@ func TestConfigRoundTripPreservesAllFields(t *testing.T) {
 		Server: ServerConfig{
 			BasePath:      "/custom/base",
 			Domain:        "custom.example.com",
-			EncryptionKey: "custom-enc-key",
+			EncryptionKey: "custom-enc-key-with-entropy",
 			APIToken:      "custom-api-token",
 			WebhookSecret: "custom-webhook-secret",
 		},
@@ -454,12 +454,12 @@ func TestConfigRoundTripPreservesAllFields(t *testing.T) {
 			Threshold:  10,
 		},
 		DNS: DNSConfig{
-			Provider: "route53",
+			Provider: "cloudflare",
 			APIToken: "custom-dns-token",
 		},
 		Deploy: DeployConfig{
-			Strategy:       "blue-green",
-			DefaultProfile: "production",
+			Strategy:       "bluegreen",
+			DefaultProfile: "server",
 			Timeout:        "30m",
 		},
 	}

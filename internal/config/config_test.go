@@ -130,7 +130,7 @@ func TestLoadValidConfig(t *testing.T) {
 [server]
 base_path = "/srv/fleet"
 domain = "fleet.example.com"
-encryption_key = "secret-key-123"
+encryption_key = "secret-key-with-entropy-123"
 api_token = "token-abc"
 
 [traefik]
@@ -165,12 +165,12 @@ failure_threshold = 5
 webhook_url = "https://hooks.example.com/alert"
 
 [dns]
-provider = "route53"
+provider = "cloudflare"
 api_token = "dns-token-xyz"
 
 [deploy]
 strategy = "rolling"
-default_profile = "production"
+default_profile = "server"
 timeout = "10m"
 `
 
@@ -190,8 +190,8 @@ timeout = "10m"
 	if cfg.Server.Domain != "fleet.example.com" {
 		t.Errorf("expected domain fleet.example.com, got %s", cfg.Server.Domain)
 	}
-	if cfg.Server.EncryptionKey != "secret-key-123" {
-		t.Errorf("expected encryption key secret-key-123, got %s", cfg.Server.EncryptionKey)
+	if cfg.Server.EncryptionKey != "secret-key-with-entropy-123" {
+		t.Errorf("expected encryption key secret-key-with-entropy-123, got %s", cfg.Server.EncryptionKey)
 	}
 	if cfg.Server.APIToken != "token-abc" {
 		t.Errorf("expected api token token-abc, got %s", cfg.Server.APIToken)
@@ -267,8 +267,8 @@ timeout = "10m"
 	}
 
 	// DNS
-	if cfg.DNS.Provider != "route53" {
-		t.Errorf("expected DNS provider route53, got %s", cfg.DNS.Provider)
+	if cfg.DNS.Provider != "cloudflare" {
+		t.Errorf("expected DNS provider cloudflare, got %s", cfg.DNS.Provider)
 	}
 	if cfg.DNS.APIToken != "dns-token-xyz" {
 		t.Errorf("expected DNS token dns-token-xyz, got %s", cfg.DNS.APIToken)
@@ -278,8 +278,8 @@ timeout = "10m"
 	if cfg.Deploy.Strategy != "rolling" {
 		t.Errorf("expected deploy strategy rolling, got %s", cfg.Deploy.Strategy)
 	}
-	if cfg.Deploy.DefaultProfile != "production" {
-		t.Errorf("expected deploy profile production, got %s", cfg.Deploy.DefaultProfile)
+	if cfg.Deploy.DefaultProfile != "server" {
+		t.Errorf("expected deploy profile server, got %s", cfg.Deploy.DefaultProfile)
 	}
 	if cfg.Deploy.Timeout != "10m" {
 		t.Errorf("expected deploy timeout 10m, got %s", cfg.Deploy.Timeout)
@@ -358,8 +358,8 @@ func TestSaveAndLoad(t *testing.T) {
 	cfg.Audit.Enabled = false
 	cfg.Monitoring.Enabled = true
 	cfg.Monitoring.Interval = "45s"
-	cfg.DNS.Provider = "route53"
-	cfg.Deploy.Strategy = "blue-green"
+	cfg.DNS.Provider = "cloudflare"
+	cfg.Deploy.Strategy = "bluegreen"
 	cfg.Deploy.Timeout = "15m"
 
 	if err := cfg.Save(path); err != nil {
@@ -399,11 +399,11 @@ func TestSaveAndLoad(t *testing.T) {
 	if loaded.Monitoring.Interval != "45s" {
 		t.Errorf("expected monitoring interval 45s, got %s", loaded.Monitoring.Interval)
 	}
-	if loaded.DNS.Provider != "route53" {
-		t.Errorf("expected DNS provider route53, got %s", loaded.DNS.Provider)
+	if loaded.DNS.Provider != "cloudflare" {
+		t.Errorf("expected DNS provider cloudflare, got %s", loaded.DNS.Provider)
 	}
-	if loaded.Deploy.Strategy != "blue-green" {
-		t.Errorf("expected deploy strategy blue-green, got %s", loaded.Deploy.Strategy)
+	if loaded.Deploy.Strategy != "bluegreen" {
+		t.Errorf("expected deploy strategy bluegreen, got %s", loaded.Deploy.Strategy)
 	}
 	if loaded.Deploy.Timeout != "15m" {
 		t.Errorf("expected deploy timeout 15m, got %s", loaded.Deploy.Timeout)
@@ -458,7 +458,7 @@ func TestBackupPath(t *testing.T) {
 func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("FLEETDECK_API_TOKEN", "env-token-123")
 	t.Setenv("FLEETDECK_WEBHOOK_SECRET", "env-secret-456")
-	t.Setenv("FLEETDECK_ENCRYPTION_KEY", "env-key-789")
+	t.Setenv("FLEETDECK_ENCRYPTION_KEY", "env-key-with-entropy-789")
 	t.Setenv("FLEETDECK_BASE_PATH", "/custom/path")
 	t.Setenv("FLEETDECK_DOMAIN", "fleet.test.com")
 	t.Setenv("FLEETDECK_BACKUP_PATH", "/custom/backups")
@@ -477,8 +477,8 @@ func TestApplyEnvOverrides(t *testing.T) {
 	if cfg.Server.WebhookSecret != "env-secret-456" {
 		t.Errorf("WebhookSecret: got %q, want %q", cfg.Server.WebhookSecret, "env-secret-456")
 	}
-	if cfg.Server.EncryptionKey != "env-key-789" {
-		t.Errorf("EncryptionKey: got %q, want %q", cfg.Server.EncryptionKey, "env-key-789")
+	if cfg.Server.EncryptionKey != "env-key-with-entropy-789" {
+		t.Errorf("EncryptionKey: got %q, want %q", cfg.Server.EncryptionKey, "env-key-with-entropy-789")
 	}
 	if cfg.Server.BasePath != "/custom/path" {
 		t.Errorf("BasePath: got %q, want %q", cfg.Server.BasePath, "/custom/path")
@@ -515,8 +515,8 @@ func TestApplyEnvOverridesDoNotClearExisting(t *testing.T) {
 	cfg.Defaults.Template = "rails"
 	cfg.Audit.Enabled = true
 	cfg.Monitoring.Interval = "45s"
-	cfg.DNS.Provider = "route53"
-	cfg.Deploy.Strategy = "canary"
+	cfg.DNS.Provider = "cloudflare"
+	cfg.Deploy.Strategy = "bluegreen"
 
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("save failed: %v", err)
@@ -560,11 +560,11 @@ func TestApplyEnvOverridesDoNotClearExisting(t *testing.T) {
 	if loaded.Monitoring.Interval != "45s" {
 		t.Errorf("Monitoring.Interval should be preserved: got %q, want %q", loaded.Monitoring.Interval, "45s")
 	}
-	if loaded.DNS.Provider != "route53" {
-		t.Errorf("DNS.Provider should be preserved: got %q, want %q", loaded.DNS.Provider, "route53")
+	if loaded.DNS.Provider != "cloudflare" {
+		t.Errorf("DNS.Provider should be preserved: got %q, want %q", loaded.DNS.Provider, "cloudflare")
 	}
-	if loaded.Deploy.Strategy != "canary" {
-		t.Errorf("Deploy.Strategy should be preserved: got %q, want %q", loaded.Deploy.Strategy, "canary")
+	if loaded.Deploy.Strategy != "bluegreen" {
+		t.Errorf("Deploy.Strategy should be preserved: got %q, want %q", loaded.Deploy.Strategy, "bluegreen")
 	}
 }
 

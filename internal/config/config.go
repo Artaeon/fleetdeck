@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -172,6 +173,9 @@ func Load(path string) (*Config, error) {
 		if os.IsNotExist(err) {
 			applyEnvOverrides(cfg)
 			applyLocalBasePath(cfg)
+			if err := cfg.Validate(); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, err
@@ -185,7 +189,74 @@ func Load(path string) (*Config, error) {
 	// This allows keeping secrets out of config.toml entirely.
 	applyEnvOverrides(cfg)
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+// minEncryptionKeyChars is the floor we enforce on FLEETDECK_ENCRYPTION_KEY.
+// PBKDF2 derives a 32-byte AES key from any length input, so a short
+// passphrase technically works — but a 6-character key gives a dictionary
+// attacker maybe 10^11 guesses against a compromised DB copy, which is
+// well within reach. 16 chars of genuinely random material is the floor
+// where brute force stops being the easy path. Fail-loud-on-startup so
+// operators hit this at deploy time rather than after a breach.
+const minEncryptionKeyChars = 16
+
+// Validate returns an error for config values that would make runtime
+// fail weirdly. Keep this list focused on things that are either
+// security-critical or produce exotic failure modes — we'd rather users
+// start with sensible defaults than drown in validation errors.
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("nil config")
+	}
+
+	// Encryption key (only validated if one is set — an unset key
+	// is a legitimate local-dev config that just skips secret encryption).
+	if k := c.Server.EncryptionKey; k != "" && len(k) < minEncryptionKeyChars {
+		return fmt.Errorf("FLEETDECK_ENCRYPTION_KEY must be at least %d characters (got %d); generate one with `openssl rand -hex 32`",
+			minEncryptionKeyChars, len(k))
+	}
+
+	// Deploy strategy must be one of the known values; typos in
+	// config.toml otherwise surface as 'unknown strategy' at deploy
+	// time which is much later than first read.
+	switch c.Deploy.Strategy {
+	case "", "basic", "bluegreen", "rolling":
+	default:
+		return fmt.Errorf("invalid deploy.strategy %q (want basic|bluegreen|rolling)", c.Deploy.Strategy)
+	}
+
+	// Deploy default profile — same rationale. Empty is fine (handler
+	// falls back to detection); a wrong string is a typo.
+	switch c.Deploy.DefaultProfile {
+	case "", "bare", "server", "saas", "static", "worker", "fullstack":
+	default:
+		return fmt.Errorf("invalid deploy.default_profile %q (want bare|server|saas|static|worker|fullstack)", c.Deploy.DefaultProfile)
+	}
+
+	// DNS provider — we only implement cloudflare today; fail early
+	// if someone sets 'route53' in config.toml expecting it to work.
+	switch c.DNS.Provider {
+	case "", "cloudflare":
+	default:
+		return fmt.Errorf("invalid dns.provider %q (supported: cloudflare)", c.DNS.Provider)
+	}
+
+	// MaxConcurrentDeploys must be non-negative. Zero is the "use the
+	// default" sentinel; negative would panic channel creation.
+	if c.Server.MaxConcurrentDeploys < 0 {
+		return fmt.Errorf("server.max_concurrent_deploys must be >= 0, got %d", c.Server.MaxConcurrentDeploys)
+	}
+
+	// Backup retention counters — negative values are always a typo.
+	if c.Backup.MaxManualBackups < 0 || c.Backup.MaxSnapshots < 0 || c.Backup.MaxAgeDays < 0 || c.Backup.MaxTotalSizeGB < 0 {
+		return fmt.Errorf("backup retention fields must be >= 0")
+	}
+
+	return nil
 }
 
 // applyLocalBasePath detects when running locally (not on a server where

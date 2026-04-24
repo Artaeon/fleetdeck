@@ -109,7 +109,7 @@ func TestWorkflowConfigThenOverrideWithEnv(t *testing.T) {
 	tomlContent := `[server]
 base_path = "/file/base"
 domain = "file.example.com"
-encryption_key = "file-enc-key"
+encryption_key = "file-enc-key-with-entropy"
 api_token = "file-api-token"
 webhook_secret = "file-webhook-secret"
 
@@ -413,7 +413,7 @@ func TestWorkflowProductionConfig(t *testing.T) {
 		},
 		Deploy: DeployConfig{
 			Strategy:       "rolling",
-			DefaultProfile: "production",
+			DefaultProfile: "server",
 			Timeout:        "10m",
 		},
 	}
