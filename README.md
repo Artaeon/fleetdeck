@@ -204,6 +204,47 @@ fleetdeck deploy ./my-app \
 
 With `--watch` unset (the default), deploy behavior is unchanged. Without `--watch-rollback` a failed watchdog only warns — you run `fleetdeck rollback` manually.
 
+**Rollback scope (`--watch-rollback-mode`):**
+
+| Mode | Restores | Loses | Use for |
+|------|----------|-------|---------|
+| `full` (default) | config + volumes + DB dumps | none (rewinds fully) | stateless apps, landing pages |
+| `files` | config only | none — DB writes from the watch window survive | stateful apps, mealtime-style workloads |
+
+```bash
+# Stateful app: roll the config back, but keep user data written during the watch window
+fleetdeck deploy ./mealtime --domain mealtime.com \
+  --watch 5m --watch-rollback --watch-rollback-mode=files
+```
+
+### Database Migrations
+
+Fleetdeck wraps whatever migration tool your project already uses (`npm run migrate`, `rails db:migrate`, `prisma migrate deploy`, `flyway migrate`, …). It doesn't invent a migration format — it adds three guarantees on top of `docker compose exec`:
+
+1. **Snapshot before every run.** A pre-migration DB snapshot is taken automatically, so a botched migration is one command away from recovery.
+2. **Tracked history.** Every migration is recorded in fleetdeck's SQLite DB with command, status, duration, and the snapshot ID.
+3. **Single-command rollback.** `fleetdeck migrate rollback <project>` restores the snapshot from the most recent migration.
+
+```bash
+# Ad-hoc: run a migration, safely
+fleetdeck migrate run mealtime --command "npm run migrate"
+
+# Inspect the history — what ran, when, how long, which snapshot
+fleetdeck migrate history mealtime
+
+# Restore the pre-migration state of the last migration
+fleetdeck migrate rollback mealtime
+
+# Or wire migrations into deploy
+fleetdeck deploy ./mealtime --domain mealtime.com \
+  --migrate "npm run migrate" \
+  --watch 5m --watch-rollback --watch-rollback-mode=files
+```
+
+When `--migrate` is used with `deploy`, the pipeline is: **snapshot → build → up → migrate → watchdog**. A failing migration aborts the deploy before the watchdog runs; the pre-migration snapshot is waiting, and the operator sees the migration output inline.
+
+`--migrate` is currently supported for **local deploys only** (where fleetdeck runs on the target server). For remote deploys, SSH to the server and run `fleetdeck migrate run` there.
+
 ## Deployment Strategies
 
 ```bash
