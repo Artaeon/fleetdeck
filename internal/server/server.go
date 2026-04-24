@@ -138,6 +138,9 @@ func (w *statusResponseWriter) WriteHeader(code int) {
 }
 
 // requestLogger logs method, path, status, duration, and client IP for every request.
+// The request ID (attached by requestIDMiddleware earlier in the chain)
+// is included so a single log line can be correlated with a deployment
+// record or an error further downstream.
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -150,7 +153,9 @@ func requestLogger(next http.Handler) http.Handler {
 			ip = strings.TrimSpace(strings.Split(fwd, ",")[0])
 		}
 
-		log.Printf("HTTP %s %s %d %s %s", r.Method, r.URL.Path, sw.statusCode, duration, ip)
+		log.Printf("HTTP %s %s %d %s %s rid=%s",
+			r.Method, r.URL.Path, sw.statusCode, duration, ip,
+			requestIDFromContext(r.Context()))
 	})
 }
 
@@ -266,9 +271,15 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	})
 	handler := rateLimitMiddleware(s.rateLimiter, metricsMiddleware)
 
+	// Middleware order (outermost first):
+	//   requestIDMiddleware  — attach ID so every layer below can log it
+	//   requestLogger        — emit the final request line with the ID
+	//   securityHeaders      — set CSP/X-Frame-Options/etc before handler
+	//   rateLimitMiddleware  — reject 429 before any DB work
+	//   metricsMiddleware    — count requests + errors
 	s.server = &http.Server{
 		Addr:           addr,
-		Handler:        requestLogger(securityHeaders(handler)),
+		Handler:        requestIDMiddleware(requestLogger(securityHeaders(handler))),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    60 * time.Second,
