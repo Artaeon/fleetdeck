@@ -153,10 +153,19 @@ Examples:
 
 		// Step 2: Remote or local?
 		if server != "" {
-			return deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache, fresh)
+			if err := deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache, fresh); err != nil {
+				return err
+			}
+		} else {
+			if err := deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache); err != nil {
+				return err
+			}
 		}
 
-		return deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache)
+		// Post-deploy watchdog. Runs only when --watch > 0. If the watchdog
+		// declares the deploy unhealthy and --watch-rollback was set, the
+		// pre-deploy snapshot is restored here before this RunE returns.
+		return runPostDeployWatchdog(cmd.Context(), name, domain, readWatchOptions(cmd))
 	},
 }
 
