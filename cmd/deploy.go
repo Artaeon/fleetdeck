@@ -13,6 +13,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/detect"
 	"github.com/fleetdeck/fleetdeck/internal/generate"
+	"github.com/fleetdeck/fleetdeck/internal/migrate"
 	"github.com/fleetdeck/fleetdeck/internal/profiles"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
@@ -151,6 +152,14 @@ Examples:
 			ui.Success("Generated %s", g)
 		}
 
+		migrateCommand, _ := cmd.Flags().GetString("migrate")
+		if migrateCommand != "" && server != "" {
+			// Remote migration would need to tunnel docker compose exec
+			// over the SSH client; the local migrate package is not yet
+			// wired that way. Fail loudly rather than silently skipping.
+			return fmt.Errorf("--migrate is not yet supported for remote deploys; SSH to the server and run 'fleetdeck migrate run %s --command %q' after deploy", name, migrateCommand)
+		}
+
 		// Step 2: Remote or local?
 		if server != "" {
 			if err := deployRemote(cmd, absDir, name, domain, server, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache, fresh); err != nil {
@@ -160,6 +169,16 @@ Examples:
 			if err := deployLocal(cmd, absDir, name, domain, prof, strategyName, timeout, preDeployHook, postDeployHook, noCache); err != nil {
 				return err
 			}
+			// Local --migrate runs AFTER the new containers are up but
+			// BEFORE we declare the deploy done. A failing migration
+			// aborts the RunE, which means the watchdog below is not
+			// reached — operator sees the migration error and the
+			// pre-migration snapshot is available for immediate rollback.
+			if migrateCommand != "" {
+				if err := runDeployMigration(cmd, name, migrateCommand); err != nil {
+					return err
+				}
+			}
 		}
 
 		// Post-deploy watchdog. Runs only when --watch > 0. If the watchdog
@@ -167,6 +186,41 @@ Examples:
 		// pre-deploy snapshot is restored here before this RunE returns.
 		return runPostDeployWatchdog(cmd.Context(), name, domain, readWatchOptions(cmd))
 	},
+}
+
+// runDeployMigration executes the operator's migration command as part
+// of the deploy, reusing the full internal/migrate pipeline (snapshot +
+// tracked run). Extracted so local deploys can opt in without scattering
+// migrate-related flag plumbing through the existing deployLocal body.
+func runDeployMigration(cmd *cobra.Command, projectName, command string) error {
+	d := openDB()
+	p, err := d.GetProject(projectName)
+	if err != nil {
+		return fmt.Errorf("loading project for --migrate: %w", err)
+	}
+	ui.Info("Running deploy migration: %s", command)
+	runner := migrate.New(cfg, d)
+	res, err := runner.Run(cmd.Context(), p, migrate.Options{
+		Command: command,
+		Timeout: 10 * time.Minute,
+	})
+	if err != nil {
+		if res != nil && res.Output != "" {
+			fmt.Println(res.Output)
+		}
+		audit.Log("deploy.migrate", projectName, err.Error(), false)
+		if res != nil && res.SnapshotID != "" {
+			ui.Warn("Pre-migration snapshot: %s — restore with 'fleetdeck migrate rollback %s'",
+				shortID(res.SnapshotID), projectName)
+		}
+		return err
+	}
+	audit.Log("deploy.migrate", projectName,
+		fmt.Sprintf("id=%s snapshot=%s duration=%s",
+			shortID(res.MigrationID), shortID(res.SnapshotID), res.Duration.Round(time.Millisecond)),
+		true)
+	ui.Success("Migration succeeded in %s", res.Duration.Round(time.Millisecond))
+	return nil
 }
 
 func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string, noCache bool) error {
@@ -571,6 +625,7 @@ func init() {
 	deployCmd.Flags().String("post-deploy", "", "Command to run after deploy (e.g. \"npm run seed\")")
 	deployCmd.Flags().Bool("no-cache", false, "Pass --no-cache to docker compose build for clean rebuilds")
 	deployCmd.Flags().Bool("fresh", false, "Remove existing containers and volumes before deploying (docker compose down -v)")
+	deployCmd.Flags().String("migrate", "", "Run this command inside the app container after deploy (auto-snapshots DB first). Local deploys only.")
 	deployCmd.Flags().Duration("watch", 0, "After successful deploy, poll the domain for this long to verify it stays healthy (0 disables)")
 	deployCmd.Flags().Bool("watch-rollback", false, "If --watch detects an unhealthy deploy, automatically restore the pre-deploy snapshot")
 	deployCmd.Flags().Duration("watch-interval", 10*time.Second, "How often to probe during --watch")
