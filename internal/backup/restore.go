@@ -260,19 +260,21 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 			dbName = envVars["MYSQL_DB"]
 		}
 
-		passArg := ""
+		// Pass the password through MYSQL_PWD instead of '-p<password>' on
+		// argv. The CLI form is visible via `ps aux` to any local user for
+		// the duration of the restore; the env form is not.
+		mysqlCmd := "docker compose -f " + shellQuote(composePath) + " exec -T"
 		if password != "" {
-			passArg = "-p" + password
+			mysqlCmd += " -e MYSQL_PWD"
 		}
+		mysqlCmd += " " + shellQuote(serviceName) + " mysql -u root " + shellQuote(dbName)
 
-		mysqlArgs := []string{"docker", "compose", "-f", composePath, "exec", "-T", serviceName, "mysql", "-u", "root"}
-		if passArg != "" {
-			mysqlArgs = append(mysqlArgs, passArg)
-		}
-		mysqlArgs = append(mysqlArgs, dbName)
 		cmd := exec.Command("bash", "-c",
-			"gunzip -c "+shellQuote(dumpPath)+" | "+shellQuote(mysqlArgs...))
+			"gunzip -c "+shellQuote(dumpPath)+" | "+mysqlCmd)
 		cmd.Dir = projectPath
+		if password != "" {
+			cmd.Env = append(os.Environ(), "MYSQL_PWD="+password)
+		}
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("mysql restore: %s: %w", strings.TrimSpace(string(out)), err)
 		}
