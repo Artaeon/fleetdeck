@@ -9,9 +9,23 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/fleetdeck monitor start --all
-# Drop privileges — fleetdeck uses only /opt/fleetdeck which the user owns.
-User=fleetdeck
-Group=fleetdeck
+
+# fleetdeck doesn't create a shared service user by default — project-scoped
+# `fleetdeck-<name>` users are created per deployment. The monitor needs
+# read access to the SQLite database at /opt/fleetdeck/fleetdeck.db plus
+# outbound HTTP, so running as root is acceptable and avoids making the
+# operator create yet another account just to hold the state path.
+#
+# Operators who want to run as a dedicated non-root user can:
+#   sudo useradd --system --home-dir /opt/fleetdeck --no-create-home \
+#                --shell /usr/sbin/nologin fleetdeck
+#   sudo chown -R fleetdeck:fleetdeck /opt/fleetdeck /var/log/fleetdeck
+#   sudo systemctl edit fleetdeck-monitor
+# and add:
+#   [Service]
+#   User=fleetdeck
+#   Group=fleetdeck
+
 # Sensible defaults; override by dropping a unit override with
 # `systemctl edit fleetdeck-monitor`.
 Environment=HOME=/opt/fleetdeck
@@ -34,6 +48,10 @@ TimeoutStopSec=30s
 # Hardening — keep the blast radius small if the binary is ever
 # compromised. These are intentionally tight because monitor only
 # needs outbound HTTP and read access to /opt/fleetdeck.
+#
+# NOTE: MemoryDenyWriteExecute is NOT set because fleetdeck links
+# cgo (sqlite3) and some runtimes tripped the check on older kernels.
+# Re-enable under systemctl edit if your kernel behaves.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -45,7 +63,6 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 ReadWritePaths=/opt/fleetdeck /var/log/fleetdeck
