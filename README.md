@@ -588,7 +588,24 @@ fleetdeck deploy ./mealtime --domain new.mealtime.com --watch 5m
 
 If DNS isn't pointed yet, Let's Encrypt will reject the certificate request. Point DNS first, then deploy.
 
-### Recipe 6 — "Is my backup actually restorable?"
+### Recipe 6 — Set up a dead-man's switch for backups
+
+A broken backup schedule is a silent failure. The safest pattern is a
+cron that runs an audit and pings an uptime monitor only if the audit
+passes — if the ping doesn't arrive, the monitor alerts.
+
+```bash
+# /etc/cron.d/fleetdeck-backup-audit
+*/30 * * * * fleetdeck  fleetdeck backup audit --max-age 48h --quiet \
+                         && curl -fsS https://hc-ping.com/<your-uuid> >/dev/null
+```
+
+If any project has no backup or its most recent backup is older than
+`--max-age`, `audit` exits non-zero, the `&& curl` never runs, and
+healthchecks.io (or equivalent) fires an alert. Add a second monitor
+for the ping endpoint itself.
+
+### Recipe 7 — "Is my backup actually restorable?"
 
 ```bash
 # Run the verify command — checks all SHA256 checksums and gzip integrity
@@ -622,11 +639,27 @@ Don't skip items. Each one has saved someone's weekend at least once.
 
 - [ ] `fleetdeck server setup` on a fresh VPS (idempotent if re-run)
 - [ ] `[backup.remote]` configured with `auto_push = true` and a tested rclone remote
+- [ ] `fleetdeck backup audit --max-age 48h` wired into cron + an uptime monitor (dead man's switch for broken schedules)
 - [ ] Systemd unit `fleetdeck-monitor.service` enabled (`journalctl -u fleetdeck-monitor -f` shows probes)
 - [ ] External uptime monitor (Uptime Kuma, Pingdom) configured — fleetdeck's own monitor can't catch "the VPS is dead"
+- [ ] `FLEETDECK_ENCRYPTION_KEY` at least 16 chars of random material (`openssl rand -hex 32`)
 - [ ] First deploy uses `--watch 5m --watch-rollback` (use `--watch-rollback-mode=files` for stateful apps)
 - [ ] Backup **restore** rehearsed on a throwaway project — verify, don't hope
 - [ ] `v0.1.0` (or whatever release) pinned — don't `upgrade` the binary the same week you deploy
+
+### Production hardening reference
+
+| Concern | What fleetdeck does by default | How to tune |
+|---------|-------------------------------|-------------|
+| Deploy concurrency | Caps parallel deploys at 3 so a coordinated org push doesn't OOM the box | `[server] max_concurrent_deploys = 10` in config.toml |
+| Webhook retry storms | Dedupes GitHub redeliveries by `X-GitHub-Delivery` for 30 min | No knob — size chosen to outlast GitHub's retry window |
+| Stuck subprocess | Every `git pull`, `docker compose build/up/exec` runs with a per-step timeout | Timeouts live at the top of `internal/server/webhook.go` |
+| Graceful shutdown | `Shutdown()` cancels `shutdownCtx`, drains in-flight async deploys, then closes DB | Caller's context deadline caps the wait |
+| Rate-limit bypass | `X-Forwarded-For` only honored when peer is in `FLEETDECK_TRUST_PROXY_IPS` | Set to `127.0.0.1,::1` behind a local reverse proxy |
+| Secret permissions | `.env`, `.pem`, `.key`, `.p12`, `.pfx`, `.jks` forced to `0600` on upload regardless of source mode | Source list in `internal/remote/transfer.go` |
+| Audit log exposure | Log file created `0640`, directory `0750` — not world-readable | N/A; tighten with filesystem ACLs if needed |
+| Weak encryption key | `FLEETDECK_ENCRYPTION_KEY` under 16 chars rejected at startup | Error message points at `openssl rand -hex 32` |
+| Config typos | Invalid `strategy`/`profile`/`dns.provider` values rejected at Load | Sentinel values documented in the config reference |
 
 ---
 
