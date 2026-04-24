@@ -278,6 +278,86 @@ var backupDeleteCmd = &cobra.Command{
 	},
 }
 
+var backupAuditCmd = &cobra.Command{
+	Use:   "audit",
+	Short: "Report projects whose most recent backup is older than --max-age",
+	Long: `Lists every registered project alongside the age of its most recent
+backup. Exits non-zero when any project has no backup at all, or when
+its most recent backup is older than --max-age — suitable for a cron
+that pings an uptime monitor ("dead man's switch") if backups silently
+stop being taken.
+
+Use 'fleetdeck backup audit --max-age 48h --quiet' in a monitor.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		maxAge, _ := cmd.Flags().GetDuration("max-age")
+		quiet, _ := cmd.Flags().GetBool("quiet")
+
+		d := openDB()
+		projects, err := d.ListProjects()
+		if err != nil {
+			return err
+		}
+		if len(projects) == 0 {
+			if !quiet {
+				ui.Info("No projects registered.")
+			}
+			return nil
+		}
+
+		now := time.Now()
+		headers := []string{"PROJECT", "LAST BACKUP", "AGE", "STATUS"}
+		var rows [][]string
+		stale := 0
+
+		for _, p := range projects {
+			backups, err := d.ListBackupRecords(p.ID, 1)
+			if err != nil {
+				rows = append(rows, []string{p.Name, "error", "-", "DB error"})
+				stale++
+				continue
+			}
+			if len(backups) == 0 {
+				rows = append(rows, []string{p.Name, "none", "-", "MISSING"})
+				stale++
+				continue
+			}
+			last := backups[0]
+			age := now.Sub(last.CreatedAt)
+			status := "ok"
+			if age > maxAge {
+				status = "STALE"
+				stale++
+			}
+			rows = append(rows, []string{
+				p.Name,
+				last.CreatedAt.Format("2006-01-02 15:04"),
+				age.Round(time.Minute).String(),
+				status,
+			})
+		}
+
+		if !quiet {
+			ui.Table(headers, rows)
+			fmt.Println()
+		}
+
+		if stale > 0 {
+			if !quiet {
+				ui.Error("%d project(s) have stale or missing backups (threshold: %s)",
+					stale, maxAge)
+			}
+			// Non-zero exit so cron/uptime monitors can fire an alert
+			// without having to parse the table output.
+			os.Exit(1)
+		}
+		if !quiet {
+			ui.Success("All %d project(s) have backups newer than %s",
+				len(projects), maxAge)
+		}
+		return nil
+	},
+}
+
 var backupPushCmd = &cobra.Command{
 	Use:   "push <project-name> [backup-id]",
 	Short: "Push a backup to the configured off-server remote",
@@ -391,10 +471,14 @@ func init() {
 
 	backupPushCmd.Flags().Duration("timeout", 30*time.Minute, "Upload timeout (large backups over slow links may need longer)")
 
+	backupAuditCmd.Flags().Duration("max-age", 48*time.Hour, "Maximum acceptable age for the most recent backup")
+	backupAuditCmd.Flags().Bool("quiet", false, "Suppress output; only set exit code")
+
 	backupCmd.AddCommand(backupCreateCmd)
 	backupCmd.AddCommand(backupListCmd)
 	backupCmd.AddCommand(backupRestoreCmd)
 	backupCmd.AddCommand(backupDeleteCmd)
 	backupCmd.AddCommand(backupPushCmd)
+	backupCmd.AddCommand(backupAuditCmd)
 	rootCmd.AddCommand(backupCmd)
 }
