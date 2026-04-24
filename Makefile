@@ -1,5 +1,7 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X github.com/fleetdeck/fleetdeck/cmd.Version=$(VERSION)"
+VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT    ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILDDATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS   := -ldflags "-X github.com/fleetdeck/fleetdeck/cmd.Version=$(VERSION) -X github.com/fleetdeck/fleetdeck/cmd.Commit=$(COMMIT) -X github.com/fleetdeck/fleetdeck/cmd.BuildDate=$(BUILDDATE)"
 GO ?= $(shell which go 2>/dev/null || echo "$(HOME)/go-sdk/go/bin/go")
 
 .PHONY: build install clean test test-race lint vet release

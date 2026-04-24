@@ -5,12 +5,49 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var Version = "dev"
+// Version, Commit, and BuildDate are normally injected at build time via
+// -ldflags (see Makefile and .goreleaser.yaml). When the binary is built
+// without those flags — for example via `go install` — we fall back to
+// Go's embedded build info so the version command still reports something
+// meaningful instead of the literal string "dev".
+var (
+	Version   = ""
+	Commit    = ""
+	BuildDate = ""
+)
+
+func init() {
+	if Version == "" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			Version = info.Main.Version
+		}
+	}
+	if Commit == "" || BuildDate == "" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, s := range info.Settings {
+				switch s.Key {
+				case "vcs.revision":
+					if Commit == "" && s.Value != "" {
+						Commit = s.Value
+					}
+				case "vcs.time":
+					if BuildDate == "" && s.Value != "" {
+						BuildDate = s.Value
+					}
+				}
+			}
+		}
+	}
+	if Version == "" {
+		Version = "dev"
+	}
+}
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
@@ -64,6 +101,16 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version of FleetDeck",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("fleetdeck %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+		if Commit != "" {
+			commit := Commit
+			if len(commit) > 12 {
+				commit = commit[:12]
+			}
+			fmt.Printf("  commit: %s\n", commit)
+		}
+		if BuildDate != "" {
+			fmt.Printf("  built:  %s\n", BuildDate)
+		}
 	},
 }
 
