@@ -43,13 +43,23 @@ func Init(path string) error {
 	}
 	logPath = path
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	// 0750 on the directory and 0640 on the file so local non-root users
+	// cannot enumerate deploys, project names, and operator activity. A
+	// world-readable audit trail is a recon tool; keep it to root + adm.
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return fmt.Errorf("creating audit log directory: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 	if err != nil {
 		return fmt.Errorf("opening audit log: %w", err)
+	}
+	// os.OpenFile honors umask, so explicitly chmod after creation to make
+	// sure the mode sticks even if the process was started with umask 022.
+	if err := os.Chmod(path, 0640); err != nil {
+		// Non-fatal — the log is still writable, just possibly world-readable.
+		// Logging to stderr here would recurse; swallow and move on.
+		_ = err
 	}
 	logFile = f
 	return nil
@@ -118,11 +128,13 @@ func rotate() {
 	// Rotate current file to .1
 	os.Rename(logPath, logPath+".1")
 
-	// Open a fresh log file
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Open a fresh log file — match Init's 0640 so rotation does not widen
+	// permissions on the live file.
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 	if err != nil {
 		return
 	}
+	_ = os.Chmod(logPath, 0640)
 	logFile = f
 }
 
