@@ -3,6 +3,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -67,24 +68,42 @@ func (r *Rclone) Push(ctx context.Context, localPath, backupID string) (string, 
 	return dest, nil
 }
 
-// List implements Driver by running `rclone lsd` against the configured
+// List implements Driver by running `rclone lsjson` against the configured
 // target and returning the directory names (each backup is stored as its
 // own directory named after the backup ID).
+//
+// rclone lsjson emits a single JSON array (compact or pretty-printed
+// depending on version), so we decode the whole document rather than
+// splitting by line — line-by-line parsing silently returned nothing
+// in the first cut of this driver.
 func (r *Rclone) List(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, r.Binary, "lsjson", r.Target)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("rclone lsjson %s: %w (%s)", r.Target, err, strings.TrimSpace(stderr.String()))
+		// A missing target directory is an empty listing, not an error —
+		// the operator may be calling List before any push has happened.
+		errMsg := stderr.String()
+		if strings.Contains(errMsg, "directory not found") ||
+			strings.Contains(errMsg, "not found") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("rclone lsjson %s: %w (%s)", r.Target, err, strings.TrimSpace(errMsg))
 	}
-	// Parse a minimal subset of rclone lsjson output to avoid pulling in
-	// a struct tag just for two fields.
+
+	var entries []struct {
+		Name  string `json:"Name"`
+		IsDir bool   `json:"IsDir"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &entries); err != nil {
+		return nil, fmt.Errorf("parsing rclone lsjson output: %w", err)
+	}
+
 	var ids []string
-	for _, line := range strings.Split(stdout.String(), "\n") {
-		name := extractLsjsonName(line)
-		if name != "" {
-			ids = append(ids, name)
+	for _, e := range entries {
+		if e.IsDir && e.Name != "" {
+			ids = append(ids, e.Name)
 		}
 	}
 	return ids, nil
@@ -109,33 +128,3 @@ func (r *Rclone) Delete(ctx context.Context, backupID string) error {
 	return nil
 }
 
-// extractLsjsonName pulls the Name field out of a single rclone lsjson
-// line without importing encoding/json for one field. Lines look like:
-//
-//	[
-//	{"Path":"abc","Name":"abc","Size":-1,"MimeType":"inode/directory","ModTime":"...","IsDir":true},
-//	...
-//	]
-//
-// We skip non-object lines (`[`, `]`) and non-directory entries.
-func extractLsjsonName(line string) string {
-	line = strings.TrimSpace(line)
-	line = strings.TrimSuffix(line, ",")
-	if !strings.HasPrefix(line, "{") {
-		return ""
-	}
-	if !strings.Contains(line, `"IsDir":true`) {
-		return ""
-	}
-	const key = `"Name":"`
-	i := strings.Index(line, key)
-	if i < 0 {
-		return ""
-	}
-	rest := line[i+len(key):]
-	j := strings.Index(rest, `"`)
-	if j < 0 {
-		return ""
-	}
-	return rest[:j]
-}
