@@ -95,8 +95,11 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		commitSHA = commitSHA[:12]
 	}
 
-	// Start async deployment
-	go s.runDeployment(project, payload.After, commitSHA)
+	// Start async deployment, tracked via asyncJobs so Shutdown waits
+	// for it before closing the DB handle.
+	p := project
+	sha := payload.After
+	s.goAsyncJob(func() { s.runDeployment(p, sha, commitSHA) })
 
 	writeJSON(w, map[string]string{
 		"status":      "deploying",
@@ -118,7 +121,8 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.runDeployment(p, "", "manual")
+	proj := p
+	s.goAsyncJob(func() { s.runDeployment(proj, "", "manual") })
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }

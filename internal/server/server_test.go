@@ -21,12 +21,22 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	// t.Cleanup runs LIFO, so this close runs LAST — after the drain
+	// cleanup below has waited for any webhook-triggered async
+	// deployments to finish writing. Without the drain, those writes
+	// would race with DB.Close and surface as 'sql: database is
+	// closed' in the test log (and, in production, as a broken
+	// deployment record).
 	t.Cleanup(func() { database.Close() })
 
 	cfg := config.DefaultConfig()
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	t.Cleanup(func() {
+		srv.metrics.Stop()
+		srv.asyncJobs.Wait()
+	})
 	return srv, database
 }
 
@@ -45,6 +55,13 @@ func setupAuthTestServer(t *testing.T) (*Server, *db.DB) {
 	cfg.Server.APIToken = "test-secret-token"
 
 	srv := New(cfg, database, ":0")
+	// Drain async jobs before the DB.Close cleanup above runs (LIFO):
+	// stop the metrics ticker and wait for any webhook/manual-deploy
+	// goroutines to finish writing.
+	t.Cleanup(func() {
+		srv.metrics.Stop()
+		srv.asyncJobs.Wait()
+	})
 	return srv, database
 }
 

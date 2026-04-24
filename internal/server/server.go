@@ -44,6 +44,25 @@ type Server struct {
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
 	metrics       *Metrics
+
+	// asyncJobs tracks long-running goroutines (webhook deployments,
+	// manual deploys) so Shutdown can wait for them to finish before
+	// the DB handle is closed. Without this, an async deploy triggered
+	// by a webhook races the shutdown and ends up writing 'sql:
+	// database is closed' into the deployment log.
+	asyncJobs sync.WaitGroup
+}
+
+// goAsyncJob runs fn in a goroutine tracked by s.asyncJobs so that
+// Shutdown can wait for it. All fire-and-forget goroutines that touch
+// the DB MUST go through this helper — a stray `go s.foo()` escapes
+// the shutdown barrier and reintroduces the 'database is closed' race.
+func (s *Server) goAsyncJob(fn func()) {
+	s.asyncJobs.Add(1)
+	go func() {
+		defer s.asyncJobs.Done()
+		fn()
+	}()
 }
 
 // GenerateAPIToken creates a random 32-byte hex token for dashboard auth.
@@ -310,7 +329,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Stop() is idempotent, so a double-Shutdown from a signal handler
 	// + test cleanup no longer panics on close-of-closed-channel.
 	s.metrics.Stop()
-	return s.server.Shutdown(ctx)
+
+	// Stop accepting new connections first, then wait for in-flight
+	// async jobs (webhook deployments, manual deploys) to drain so
+	// they don't race with the DB handle being closed after Shutdown
+	// returns. Honor the caller's context deadline for both.
+	err := s.server.Shutdown(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		s.asyncJobs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// Caller's deadline hit before jobs finished — return whatever
+		// s.server.Shutdown produced and let the caller decide whether
+		// to force exit. We intentionally don't wrap the error: the
+		// async-job leak is a symptom of the caller giving up, not a
+		// new failure mode.
+	}
+	return err
 }
 
 // handleHealthz is an unauthenticated health check for load balancers and

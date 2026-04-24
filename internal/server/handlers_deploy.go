@@ -27,7 +27,9 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	// Ignore decode errors -- fields are all optional
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
 
-	go s.runDeployment(p, "", "api-trigger")
+	// Tracked so Shutdown drains before closing the DB handle.
+	proj := p
+	s.goAsyncJob(func() { s.runDeployment(proj, "", "api-trigger") })
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }
