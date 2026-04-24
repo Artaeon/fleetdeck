@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
+	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/detect"
 	"github.com/fleetdeck/fleetdeck/internal/generate"
@@ -18,6 +19,35 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// deployWatchOptions bundles the post-deploy watchdog flags so they can
+// be shared between the local and remote deploy paths without a
+// five-arg signature addition per path.
+type deployWatchOptions struct {
+	watch         time.Duration
+	rollback      bool
+	interval      time.Duration
+	threshold     int
+	expectedCode  int
+}
+
+// readWatchOptions extracts the --watch family of flags from the deploy
+// command. Zero values disable the post-deploy observation entirely so
+// callers that don't ask for a watchdog see no behavior change.
+func readWatchOptions(cmd *cobra.Command) deployWatchOptions {
+	watch, _ := cmd.Flags().GetDuration("watch")
+	rollback, _ := cmd.Flags().GetBool("watch-rollback")
+	interval, _ := cmd.Flags().GetDuration("watch-interval")
+	threshold, _ := cmd.Flags().GetInt("watch-threshold")
+	expected, _ := cmd.Flags().GetInt("watch-status")
+	return deployWatchOptions{
+		watch:        watch,
+		rollback:     rollback,
+		interval:     interval,
+		threshold:    threshold,
+		expectedCode: expected,
+	}
+}
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy [directory]",
@@ -490,6 +520,84 @@ func init() {
 	deployCmd.Flags().String("post-deploy", "", "Command to run after deploy (e.g. \"npm run seed\")")
 	deployCmd.Flags().Bool("no-cache", false, "Pass --no-cache to docker compose build for clean rebuilds")
 	deployCmd.Flags().Bool("fresh", false, "Remove existing containers and volumes before deploying (docker compose down -v)")
+	deployCmd.Flags().Duration("watch", 0, "After successful deploy, poll the domain for this long to verify it stays healthy (0 disables)")
+	deployCmd.Flags().Bool("watch-rollback", false, "If --watch detects an unhealthy deploy, automatically restore the pre-deploy snapshot")
+	deployCmd.Flags().Duration("watch-interval", 10*time.Second, "How often to probe during --watch")
+	deployCmd.Flags().Int("watch-threshold", 3, "Consecutive failed probes before --watch declares the deploy bad")
+	deployCmd.Flags().Int("watch-status", 200, "Expected HTTP status code during --watch probes")
 
 	rootCmd.AddCommand(deployCmd)
+}
+
+// runPostDeployWatchdog observes the deployed domain for opts.watch. If it
+// declares the deploy unhealthy and opts.rollback is set, the most recent
+// pre-deploy snapshot is restored to undo the broken deployment. Returns
+// an error only when the rollback itself fails — an unhealthy verdict
+// without rollback is reported to the operator but does not error.
+func runPostDeployWatchdog(ctx context.Context, projectName, domain string, opts deployWatchOptions) error {
+	if opts.watch <= 0 {
+		return nil
+	}
+	ui.Info("Watching https://%s for %s (threshold: %d consecutive failures)...",
+		domain, opts.watch.Round(time.Second), opts.threshold)
+
+	watchCtx, cancel := context.WithTimeout(ctx, opts.watch+30*time.Second)
+	defer cancel()
+
+	res := deploy.Observe(watchCtx, deploy.WatchdogConfig{
+		URL:              fmt.Sprintf("https://%s", domain),
+		Duration:         opts.watch,
+		Interval:         opts.interval,
+		FailureThreshold: opts.threshold,
+		ExpectedStatus:   opts.expectedCode,
+	})
+
+	if res.Healthy {
+		ui.Success("Post-deploy watch: %d probes, no threshold breach", res.Probes)
+		audit.Log("deploy.watch", projectName, fmt.Sprintf("healthy probes=%d", res.Probes), true)
+		return nil
+	}
+
+	ui.Error("Post-deploy watch: %d consecutive failures (last status: %d, last error: %q)",
+		res.ConsecutiveFailures, res.LastStatus, res.LastError)
+	audit.Log("deploy.watch", projectName, fmt.Sprintf("unhealthy status=%d err=%q", res.LastStatus, res.LastError), false)
+
+	if !opts.rollback {
+		ui.Warn("Run 'fleetdeck rollback %s' to restore the pre-deploy snapshot.", projectName)
+		return nil
+	}
+
+	ui.Info("Auto-rollback: restoring pre-deploy snapshot of %s...", projectName)
+	return rollbackToPreDeploySnapshot(projectName)
+}
+
+// rollbackToPreDeploySnapshot finds the most recent backup whose trigger
+// is "pre-deploy" and restores it. Returns an error if no such snapshot
+// exists or the restore itself fails.
+func rollbackToPreDeploySnapshot(projectName string) error {
+	d := openDB()
+	p, err := d.GetProject(projectName)
+	if err != nil {
+		return fmt.Errorf("loading project: %w", err)
+	}
+	backups, err := d.ListBackupRecords(p.ID, 0)
+	if err != nil {
+		return fmt.Errorf("listing backups: %w", err)
+	}
+	for _, b := range backups {
+		if b.Trigger != "pre-deploy" {
+			continue
+		}
+		if err := backup.RestoreBackup(b.Path, p.ProjectPath, backup.RestoreOptions{}); err != nil {
+			audit.Log("deploy.watch.rollback", projectName, err.Error(), false)
+			return fmt.Errorf("restoring snapshot %s: %w", b.ID[:minInt(12, len(b.ID))], err)
+		}
+		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
+			ui.Warn("Could not update project status: %v", err)
+		}
+		audit.Log("deploy.watch.rollback", projectName, fmt.Sprintf("restored=%s", b.ID[:minInt(12, len(b.ID))]), true)
+		ui.Success("Rolled back to pre-deploy snapshot %s", b.ID[:minInt(12, len(b.ID))])
+		return nil
+	}
+	return fmt.Errorf("no pre-deploy snapshot found to roll back to")
 }
