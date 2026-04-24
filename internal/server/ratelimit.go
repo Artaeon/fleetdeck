@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -81,11 +82,30 @@ func rateLimitMiddleware(limiter *ipLimiter, next http.Handler) http.Handler {
 	})
 }
 
-// clientIP extracts the client IP address from the request, stripping the port.
+// clientIP extracts the client IP for rate limiting. It trusts
+// X-Forwarded-For ONLY when the immediate TCP peer (RemoteAddr) is
+// listed in FLEETDECK_TRUST_PROXY_IPS; otherwise XFF is ignored.
+//
+// The previous behaviour always trusted XFF, which made the rate
+// limiter trivial to bypass: anyone could rotate the header per
+// request and present as a new "IP" each time, eating through the
+// per-IP bucket indefinitely. Rate limiting is a denial-of-service
+// defence, so this is load-bearing rather than cosmetic.
+//
+// Typical deployments that DO sit behind nginx/Caddy/Traefik on
+// localhost set FLEETDECK_TRUST_PROXY_IPS=127.0.0.1,::1 and continue
+// to get real client IPs. Bare Traefik-only setups keep the default
+// (ignore XFF) because Traefik talks to the backend over a docker
+// network and the backend should just trust the peer.
 func clientIP(r *http.Request) string {
-	// Use X-Forwarded-For if present (common behind reverse proxies).
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first (leftmost) IP, which is the original client.
+	remote, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remote = r.RemoteAddr
+	}
+
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" && isTrustedProxy(remote) {
+		// Take the leftmost IP — the original client as recorded by the
+		// first trusted proxy in the chain.
 		for j := 0; j < len(xff); j++ {
 			if xff[j] == ',' {
 				return strings.TrimSpace(xff[:j])
@@ -94,10 +114,24 @@ func clientIP(r *http.Request) string {
 		return strings.TrimSpace(xff)
 	}
 
-	// Fall back to RemoteAddr.
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	return remote
+}
+
+// isTrustedProxy returns true if the immediate TCP peer is listed in
+// the FLEETDECK_TRUST_PROXY_IPS environment variable (comma-separated).
+// Parsed fresh each call because the rate limit path is hot enough to
+// matter only in bursts, and caching the list adds sync complexity
+// without measurable benefit for realistic deployments (a handful of
+// proxy IPs).
+func isTrustedProxy(peer string) bool {
+	raw := os.Getenv("FLEETDECK_TRUST_PROXY_IPS")
+	if raw == "" {
+		return false
 	}
-	return ip
+	for _, entry := range strings.Split(raw, ",") {
+		if strings.TrimSpace(entry) == peer {
+			return true
+		}
+	}
+	return false
 }

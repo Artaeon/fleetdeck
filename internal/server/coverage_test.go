@@ -213,6 +213,8 @@ func TestClientIPFromRemoteAddr(t *testing.T) {
 }
 
 func TestClientIPFromXForwardedFor(t *testing.T) {
+	// With the immediate peer explicitly trusted, XFF is honored.
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
@@ -224,6 +226,7 @@ func TestClientIPFromXForwardedFor(t *testing.T) {
 }
 
 func TestClientIPFromXForwardedForSingleIP(t *testing.T) {
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "203.0.113.50")
@@ -231,6 +234,22 @@ func TestClientIPFromXForwardedForSingleIP(t *testing.T) {
 	got := clientIP(r)
 	if got != "203.0.113.50" {
 		t.Errorf("expected 203.0.113.50, got %s", got)
+	}
+}
+
+// TestClientIPIgnoresXForwardedForFromUntrustedPeer pins the new security
+// behavior: XFF must NOT be honored when the TCP peer is not in the
+// trust list. Without this guarantee, rate limiting is trivially
+// bypassable by rotating the header per request.
+func TestClientIPIgnoresXForwardedForFromUntrustedPeer(t *testing.T) {
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "")
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "203.0.113.99:54321" // direct client, not a proxy
+	r.Header.Set("X-Forwarded-For", "10.0.0.1") // attacker-supplied
+
+	got := clientIP(r)
+	if got != "203.0.113.99" {
+		t.Errorf("untrusted peer with XFF should fall back to RemoteAddr, got %s", got)
 	}
 }
 

@@ -664,6 +664,10 @@ func TestCountContainersNoDocker(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
+	// With 127.0.0.1 in the trust list, the middleware honors XFF just
+	// like a real nginx -> fleetdeck setup.
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
+
 	il := &ipLimiter{
 		limiters: make(map[string]*visitorLimiter),
 		rate:     rate.Limit(1),
@@ -709,11 +713,51 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	}
 }
 
+// TestRateLimitMiddlewareRejectsSpoofedXForwardedFor pins the attack-mode
+// behaviour: when the TCP peer is NOT in the trust list, XFF must be
+// ignored so an attacker cannot rotate the header to escape the bucket.
+func TestRateLimitMiddlewareRejectsSpoofedXForwardedFor(t *testing.T) {
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "") // no trusted proxies
+
+	il := &ipLimiter{
+		limiters: make(map[string]*visitorLimiter),
+		rate:     rate.Limit(1),
+		burst:    1,
+	}
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := rateLimitMiddleware(il, backend)
+
+	// Attacker sends two requests from the same TCP peer but rotates
+	// the XFF header on each. With trust disabled, the peer IP is what
+	// the limiter sees, so the second request is rate-limited even
+	// though the attacker tried to pose as a different client.
+	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	req1.RemoteAddr = "203.0.113.99:1111"
+	req1.Header.Set("X-Forwarded-For", "10.0.0.1")
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Errorf("first request: expected 200, got %d", w1.Code)
+	}
+
+	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	req2.RemoteAddr = "203.0.113.99:2222"
+	req2.Header.Set("X-Forwarded-For", "10.0.0.2") // rotated — shouldn't help
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Errorf("spoofed XFF should not bypass limit, got %d", w2.Code)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // clientIP edge cases
 // ---------------------------------------------------------------------------
 
 func TestClientIPXForwardedForWithSpaces(t *testing.T) {
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "  10.0.0.1  ,  10.0.0.2  ")
