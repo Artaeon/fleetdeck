@@ -503,6 +503,133 @@ Each project gets its own Linux user, SSH keys, Docker network, and backup sched
 
 ---
 
+## Operational Runbook
+
+Concrete recipes for the scenarios you'll actually hit in production. Each entry assumes fleetdeck is installed on the server and you're running these commands there (either directly via SSH or inside a CI job that SSHes in).
+
+### Recipe 1 — A migration broke production
+
+Symptom: `fleetdeck migrate run` or `deploy --migrate` reported failure; the DB is in an intermediate state.
+
+```bash
+# 1. See what ran
+fleetdeck migrate history mealtime
+
+# 2. Roll back the DB to the pre-migration snapshot
+fleetdeck migrate rollback mealtime
+
+# 3. Confirm the app is serving the old schema + old code
+curl -I https://mealtime.com
+```
+
+The pre-migration snapshot was taken *before* the migration command even started, so restore brings back both the DB and the config files. You're left running the previous release; re-deploy to roll forward once the migration is fixed.
+
+### Recipe 2 — A deploy silently broke things after cutover
+
+Symptom: the deploy succeeded, containers came up healthy, but 10 minutes in the app started throwing 5xx.
+
+```bash
+# If you deployed with --watch --watch-rollback, nothing to do —
+# the watchdog already restored the pre-deploy snapshot and the
+# domain is back on the previous release.
+
+# If you didn't opt into auto-rollback:
+fleetdeck rollback mealtime --latest
+```
+
+For next time: always deploy `mealtime` with `--watch 5m --watch-rollback --watch-rollback-mode=files` so user writes from the watch window survive.
+
+### Recipe 3 — The VPS is gone, restore from offsite backup
+
+Symptom: DigitalOcean/Hetzner/whoever lost the disk. You have `[backup.remote]` configured and backups have been mirrored to B2 / R2 / S3.
+
+```bash
+# On a fresh server:
+fleetdeck server setup root@new-vps --domain example.com --email you@example.com
+
+# Pull the offsite copy of the most recent backup (using rclone directly —
+# fleetdeck intentionally leaves this step manual so you confirm the
+# source before writing to disk)
+rclone copy b2:my-fleet-backups/<backup-id> /opt/fleetdeck/backups/mealtime/<backup-id>
+
+# Rehydrate the project record (the SQLite DB is gone, so fleetdeck
+# doesn't know about this backup yet)
+fleetdeck create mealtime --domain mealtime.com --profile server --import-backup /opt/fleetdeck/backups/mealtime/<backup-id>
+
+# Or, if `create --import-backup` isn't wired yet, restore manually:
+fleetdeck backup restore mealtime <backup-id>
+```
+
+**Before you need this:** test it once end-to-end on a throwaway VPS. A backup you haven't restored is a hope, not a backup.
+
+### Recipe 4 — Rotate the Cloudflare API token (or other secret)
+
+```bash
+# Update the env file that systemd reads
+sudo $EDITOR /etc/fleetdeck/fleetdeck.env
+# edit FLEETDECK_DNS_TOKEN=...
+
+# Restart the daemons so they pick up the new value
+sudo systemctl restart fleetdeck-monitor
+
+# Active CLI sessions keep their old env; restart your shell or
+# re-export the var before running 'fleetdeck dns ...'
+```
+
+Environment-file changes do NOT propagate to already-running processes.
+
+### Recipe 5 — Add a new domain to an existing project
+
+```bash
+# Update the project's docker compose labels (Traefik Host rule)
+# Then re-deploy — Traefik picks up the new host and requests the cert
+fleetdeck deploy ./mealtime --domain new.mealtime.com --watch 5m
+```
+
+If DNS isn't pointed yet, Let's Encrypt will reject the certificate request. Point DNS first, then deploy.
+
+### Recipe 6 — "Is my backup actually restorable?"
+
+```bash
+# Run the verify command — checks all SHA256 checksums and gzip integrity
+fleetdeck backup verify mealtime <backup-id>
+
+# For real confidence, do a restore on a throwaway project:
+fleetdeck create mealtime-restore-test --domain scratch.example.com --profile server
+fleetdeck backup restore mealtime-restore-test <backup-id>
+```
+
+Do this at least once per quarter. Verified backups are the only kind that count.
+
+### Configuration at a glance
+
+| Env var | Purpose |
+|---------|---------|
+| `FLEETDECK_ENCRYPTION_KEY` | AES key passphrase for encrypted secrets column |
+| `FLEETDECK_API_TOKEN` | Bearer token for the dashboard / HTTP API |
+| `FLEETDECK_WEBHOOK_SECRET` | HMAC secret for GitHub push webhooks |
+| `FLEETDECK_DNS_TOKEN` | Cloudflare API token |
+| `FLEETDECK_MONITORING_SLACK` / `FLEETDECK_MONITORING_WEBHOOK` | Alert destinations |
+| `FLEETDECK_TRUST_PROXY_IPS` | Comma-separated list of proxy IPs whose `X-Forwarded-For` is honored for rate limiting |
+| `FLEETDECK_SSH_PASSPHRASE` | Passphrase for an encrypted SSH key used by `deploy --server` |
+| `FLEETDECK_BASE_PATH` | Override `/opt/fleetdeck` (e.g. for local/dev use) |
+
+All are also settable in `/etc/fleetdeck/config.toml`. Env vars win when both are set.
+
+### Deployment checklist for a new production project
+
+Don't skip items. Each one has saved someone's weekend at least once.
+
+- [ ] `fleetdeck server setup` on a fresh VPS (idempotent if re-run)
+- [ ] `[backup.remote]` configured with `auto_push = true` and a tested rclone remote
+- [ ] Systemd unit `fleetdeck-monitor.service` enabled (`journalctl -u fleetdeck-monitor -f` shows probes)
+- [ ] External uptime monitor (Uptime Kuma, Pingdom) configured — fleetdeck's own monitor can't catch "the VPS is dead"
+- [ ] First deploy uses `--watch 5m --watch-rollback` (use `--watch-rollback-mode=files` for stateful apps)
+- [ ] Backup **restore** rehearsed on a throwaway project — verify, don't hope
+- [ ] `v0.1.0` (or whatever release) pinned — don't `upgrade` the binary the same week you deploy
+
+---
+
 ## Documentation
 
 ### Complete Command Reference
