@@ -113,14 +113,22 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
 
-	dumpArgs := []string{"docker", "exec", containerName, "mysqldump", "-u", "root"}
+	// Pass the password through the environment rather than argv. `docker exec
+	// -e MYSQL_PWD` without an `=value` tells docker to forward the variable
+	// from the parent process, so the password never appears in `ps aux` or
+	// in the Docker API call's CLI form. The previous `-p<password>` argv was
+	// visible to every local user via /proc during the dump.
+	dumpCmd := "docker exec"
 	if password != "" {
-		dumpArgs = append(dumpArgs, "-p"+password)
+		dumpCmd += " -e MYSQL_PWD"
 	}
-	dumpArgs = append(dumpArgs, dbName)
+	dumpCmd += " " + shellQuote(containerName) + " mysqldump -u root " + shellQuote(dbName) +
+		" | gzip > " + shellQuote(dumpFile)
 
-	cmd := exec.Command("bash", "-c",
-		shellQuote(dumpArgs...)+" | gzip > "+shellQuote(dumpFile))
+	cmd := exec.Command("bash", "-c", dumpCmd)
+	if password != "" {
+		cmd.Env = append(os.Environ(), "MYSQL_PWD="+password)
+	}
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("mysqldump failed for %s: %s: %w", containerName, strings.TrimSpace(string(out)), err)
