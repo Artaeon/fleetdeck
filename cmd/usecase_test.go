@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,7 +89,9 @@ func TestUseCaseDeployProjectNameFromDir(t *testing.T) {
 }
 
 // TestUseCaseMonitorMultipleArgs verifies that the monitor start command
-// accepts MinimumNArgs(1) -- it should work with 1, 2, or 3 project names.
+// accepts any number of project names. 0 args is valid at the cobra layer
+// because --all is an alternative way to supply targets; RunE is responsible
+// for rejecting the (no args && no --all) case.
 func TestUseCaseMonitorMultipleArgs(t *testing.T) {
 	monCmd := findSubcommand(rootCmd, "monitor")
 	if monCmd == nil {
@@ -100,24 +103,14 @@ func TestUseCaseMonitorMultipleArgs(t *testing.T) {
 		t.Fatal("monitor start subcommand not found")
 	}
 
-	// 0 args should fail.
-	if err := startCmd.Args(startCmd, []string{}); err == nil {
-		t.Error("monitor start with 0 args should fail")
-	}
-
-	// 1 arg should pass.
-	if err := startCmd.Args(startCmd, []string{"myapp"}); err != nil {
-		t.Errorf("monitor start with 1 arg should pass, got: %v", err)
-	}
-
-	// 2 args should pass.
-	if err := startCmd.Args(startCmd, []string{"myapp", "api"}); err != nil {
-		t.Errorf("monitor start with 2 args should pass, got: %v", err)
-	}
-
-	// 3 args should pass.
-	if err := startCmd.Args(startCmd, []string{"myapp", "api", "blog"}); err != nil {
-		t.Errorf("monitor start with 3 args should pass, got: %v", err)
+	for _, n := range []int{0, 1, 2, 3} {
+		args := make([]string, n)
+		for i := range args {
+			args[i] = fmt.Sprintf("proj%d", i)
+		}
+		if err := startCmd.Args(startCmd, args); err != nil {
+			t.Errorf("monitor start with %d args should pass at cobra layer, got: %v", n, err)
+		}
 	}
 }
 
