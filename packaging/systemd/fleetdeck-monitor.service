@@ -1,0 +1,59 @@
+[Unit]
+Description=FleetDeck health monitor
+Documentation=https://github.com/fleetdeck/fleetdeck
+# Wait for the network to be online so the first check doesn't fail
+# on an unresolved DNS name.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fleetdeck monitor start --all
+# Drop privileges — fleetdeck uses only /opt/fleetdeck which the user owns.
+User=fleetdeck
+Group=fleetdeck
+# Sensible defaults; override by dropping a unit override with
+# `systemctl edit fleetdeck-monitor`.
+Environment=HOME=/opt/fleetdeck
+# Pull secrets (FLEETDECK_MONITORING_SLACK, FLEETDECK_ENCRYPTION_KEY, etc.)
+# from an env file that is NOT world-readable. The dash prefix makes
+# systemd ignore a missing file so a minimal install still starts.
+EnvironmentFile=-/etc/fleetdeck/fleetdeck.env
+
+# Restart on any exit, including the Go runtime panicking or SIGKILL
+# from an OOM. Back off so a broken config doesn't spin.
+Restart=always
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+# Clean shutdown: monitor traps SIGTERM and flushes state to disk.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Hardening — keep the blast radius small if the binary is ever
+# compromised. These are intentionally tight because monitor only
+# needs outbound HTTP and read access to /opt/fleetdeck.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/fleetdeck /var/log/fleetdeck
+
+# Journald captures stdout/stderr; tag for easy filtering.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fleetdeck-monitor
+
+[Install]
+WantedBy=multi-user.target
