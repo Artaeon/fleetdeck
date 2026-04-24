@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -96,10 +97,12 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start async deployment, tracked via asyncJobs so Shutdown waits
-	// for it before closing the DB handle.
+	// for it before closing the DB handle. The context is the server's
+	// shutdownCtx; runDeployment doesn't consume it directly yet, but
+	// future work (exec.CommandContext on git/docker) picks it up here.
 	p := project
 	sha := payload.After
-	s.goAsyncJob(func() { s.runDeployment(p, sha, commitSHA) })
+	s.goAsyncJob(func(context.Context) { s.runDeployment(p, sha, commitSHA) })
 
 	writeJSON(w, map[string]string{
 		"status":      "deploying",
@@ -122,7 +125,7 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proj := p
-	s.goAsyncJob(func() { s.runDeployment(proj, "", "manual") })
+	s.goAsyncJob(func(context.Context) { s.runDeployment(proj, "", "manual") })
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }

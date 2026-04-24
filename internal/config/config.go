@@ -31,6 +31,12 @@ type ServerConfig struct {
 	EncryptionKey string `toml:"encryption_key"`
 	APIToken      string `toml:"api_token"`
 	WebhookSecret string `toml:"webhook_secret"`
+
+	// MaxConcurrentDeploys caps how many deploys the HTTP server will
+	// run in parallel (webhook-triggered or dashboard-triggered). Zero
+	// means "use the default" (3) — intentionally modest so a 2-4 GB
+	// VPS doesn't page out under a coordinated 20-repo push.
+	MaxConcurrentDeploys int `toml:"max_concurrent_deploys"`
 }
 
 type TraefikConfig struct {

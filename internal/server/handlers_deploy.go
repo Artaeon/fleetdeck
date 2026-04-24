@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -29,7 +30,7 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 
 	// Tracked so Shutdown drains before closing the DB handle.
 	proj := p
-	s.goAsyncJob(func() { s.runDeployment(proj, "", "api-trigger") })
+	s.goAsyncJob(func(context.Context) { s.runDeployment(proj, "", "api-trigger") })
 
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }

@@ -51,17 +51,45 @@ type Server struct {
 	// by a webhook races the shutdown and ends up writing 'sql:
 	// database is closed' into the deployment log.
 	asyncJobs sync.WaitGroup
+
+	// deploySem caps the number of concurrent deploys so a burst of
+	// 20 webhooks (GitHub coordinated org push) does not spawn 20
+	// parallel docker-compose builds and OOM the VPS. Size is taken
+	// from cfg.Server.MaxConcurrentDeploys (default 3), chosen so a
+	// modest 2–4 GB VPS can handle a small fleet without paging.
+	//
+	// Excess deploys queue on the channel rather than erroring — a
+	// webhook caller cannot easily retry, so we'd rather delay by a
+	// few minutes than drop the push entirely.
+	deploySem chan struct{}
+	// shutdownCtx is cancelled when Shutdown starts. goAsyncJob
+	// observes it so in-flight jobs can react to SIGTERM and drop
+	// their work cleanly instead of being killed mid-op.
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // goAsyncJob runs fn in a goroutine tracked by s.asyncJobs so that
 // Shutdown can wait for it. All fire-and-forget goroutines that touch
 // the DB MUST go through this helper — a stray `go s.foo()` escapes
 // the shutdown barrier and reintroduces the 'database is closed' race.
-func (s *Server) goAsyncJob(fn func()) {
+//
+// The function is invoked with s.shutdownCtx so long-running ops can
+// honor cancellation; it also acquires a slot on the deploy semaphore
+// before fn runs so at most N deploys execute concurrently.
+func (s *Server) goAsyncJob(fn func(ctx context.Context)) {
 	s.asyncJobs.Add(1)
 	go func() {
 		defer s.asyncJobs.Done()
-		fn()
+		// Block on semaphore — respects shutdownCtx so a SIGTERM during
+		// queue-wait drops the queued job rather than running it.
+		select {
+		case s.deploySem <- struct{}{}:
+		case <-s.shutdownCtx.Done():
+			return
+		}
+		defer func() { <-s.deploySem }()
+		fn(s.shutdownCtx)
 	}()
 }
 
@@ -122,13 +150,22 @@ func requestLogger(next http.Handler) http.Handler {
 }
 
 func New(cfg *config.Config, database *db.DB, addr string) *Server {
+	maxDeploys := cfg.Server.MaxConcurrentDeploys
+	if maxDeploys <= 0 {
+		maxDeploys = 3
+	}
+
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 	s := &Server{
-		cfg:           cfg,
-		db:            database,
-		webhookSecret: cfg.Server.WebhookSecret,
-		apiToken:      cfg.Server.APIToken,
-		rateLimiter:   newIPLimiter(rate.Limit(10), 20),
-		metrics:       newMetrics(),
+		cfg:            cfg,
+		db:             database,
+		webhookSecret:  cfg.Server.WebhookSecret,
+		apiToken:       cfg.Server.APIToken,
+		rateLimiter:    newIPLimiter(rate.Limit(10), 20),
+		metrics:        newMetrics(),
+		deploySem:      make(chan struct{}, maxDeploys),
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
 	}
 
 	s.metrics.startCacheRefresh(s)
@@ -326,6 +363,13 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Cancel the server-wide shutdownCtx first so queued deploys on
+	// the semaphore drop out without running, and so any operation
+	// that honors this context can short-circuit.
+	if s.shutdownCancel != nil {
+		s.shutdownCancel()
+	}
+
 	// Stop() is idempotent, so a double-Shutdown from a signal handler
 	// + test cleanup no longer panics on close-of-closed-channel.
 	s.metrics.Stop()
