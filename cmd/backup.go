@@ -12,6 +12,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/backup/remote"
+	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -56,8 +57,43 @@ var backupCreateCmd = &cobra.Command{
 		ui.Success("Backup created: %s", record.ID[:12])
 		ui.Info("Size: %s", backup.FormatSize(record.SizeBytes))
 		ui.Info("Path: %s", record.Path)
+
+		// Auto-push to off-server storage if the operator opted in via
+		// [backup.remote] auto_push = true. We run this synchronously and
+		// report failures as warnings rather than hard errors — the local
+		// backup succeeded, which is still useful.
+		if cfg.Backup.Remote.AutoPush {
+			if err := autoPushBackup(cmd.Context(), p.Name, record); err != nil {
+				ui.Warn("Auto-push failed: %v", err)
+				ui.Warn("Run 'fleetdeck backup push %s %s' to retry.", p.Name, record.ID[:12])
+				audit.Log("backup.push.auto", p.Name, err.Error(), false)
+			}
+		}
 		return nil
 	},
+}
+
+// autoPushBackup uploads the freshly-created backup to the configured
+// remote. Extracted so future call sites (scheduled snapshots, deploy-time
+// safety backups) can opt in without duplicating driver handling.
+func autoPushBackup(ctx context.Context, projectName string, record *db.BackupRecord) error {
+	driver, err := remote.Open(cfg.Backup.Remote)
+	if errors.Is(err, remote.ErrNoDriver) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	ui.Info("Pushing backup to %s...", driver.Name())
+	dest, err := driver.Push(ctx, record.Path, record.ID)
+	if err != nil {
+		return err
+	}
+	audit.Log("backup.push.auto", projectName, fmt.Sprintf("id=%s dest=%s", record.ID[:minInt(12, len(record.ID))], dest), true)
+	ui.Success("Pushed to %s", dest)
+	return nil
 }
 
 var backupListCmd = &cobra.Command{
