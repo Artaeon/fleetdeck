@@ -62,6 +62,11 @@ type Server struct {
 	// webhook caller cannot easily retry, so we'd rather delay by a
 	// few minutes than drop the push entirely.
 	deploySem chan struct{}
+
+	// webhookDedup remembers GitHub X-GitHub-Delivery UUIDs for a
+	// bounded window so redeliveries from GitHub's at-least-once
+	// retry policy don't trigger parallel deploys of the same commit.
+	webhookDedup *webhookDedup
 	// shutdownCtx is cancelled when Shutdown starts. goAsyncJob
 	// observes it so in-flight jobs can react to SIGTERM and drop
 	// their work cleanly instead of being killed mid-op.
@@ -164,6 +169,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		rateLimiter:    newIPLimiter(rate.Limit(10), 20),
 		metrics:        newMetrics(),
 		deploySem:      make(chan struct{}, maxDeploys),
+		webhookDedup:   newWebhookDedup(30 * time.Minute),
 		shutdownCtx:    shutdownCtx,
 		shutdownCancel: shutdownCancel,
 	}

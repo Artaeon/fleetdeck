@@ -69,6 +69,19 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Dedupe redeliveries by X-GitHub-Delivery. GitHub retries webhooks
+	// when our response times out, which is routine for multi-minute
+	// deploys — without this check we'd start a second parallel deploy
+	// of the same commit every 10 seconds until the first one finished.
+	if deliveryID := r.Header.Get("X-GitHub-Delivery"); s.webhookDedup != nil && s.webhookDedup.seenRecently(deliveryID) {
+		writeJSON(w, map[string]string{
+			"status":   "ignored",
+			"reason":   "duplicate delivery",
+			"delivery": deliveryID,
+		})
+		return
+	}
+
 	var payload githubPushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON payload")
