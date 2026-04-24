@@ -49,12 +49,35 @@ type DefaultsConfig struct {
 }
 
 type BackupConfig struct {
-	BasePath         string `toml:"base_path"`
-	MaxManualBackups int    `toml:"max_manual_backups"`
-	MaxSnapshots     int    `toml:"max_snapshots"`
-	MaxAgeDays       int    `toml:"max_age_days"`
-	MaxTotalSizeGB   int    `toml:"max_total_size_gb"`
-	AutoSnapshot     bool   `toml:"auto_snapshot"`
+	BasePath         string             `toml:"base_path"`
+	MaxManualBackups int                `toml:"max_manual_backups"`
+	MaxSnapshots     int                `toml:"max_snapshots"`
+	MaxAgeDays       int                `toml:"max_age_days"`
+	MaxTotalSizeGB   int                `toml:"max_total_size_gb"`
+	AutoSnapshot     bool               `toml:"auto_snapshot"`
+	Remote           BackupRemoteConfig `toml:"remote"`
+}
+
+// BackupRemoteConfig describes an off-server destination where completed
+// backups should be mirrored. Local backups remain the source of truth;
+// the remote is a disaster-recovery copy in case the server is lost.
+type BackupRemoteConfig struct {
+	// Driver picks the upload backend:
+	//   ""       — no remote configured (default, local-only).
+	//   "rclone" — shells out to `rclone`, which supports S3, B2, GCS,
+	//              SFTP, WebDAV, and ~50 other backends via rclone's own
+	//              config. See `man rclone config`.
+	Driver string `toml:"driver"`
+
+	// Target is the destination passed to the driver. For rclone this is
+	// the `<remote>:<path>` form, e.g. "b2:my-fleet-backups" or
+	// "r2:backups/production".
+	Target string `toml:"target"`
+
+	// AutoPush controls whether `fleetdeck backup create` pushes the new
+	// backup to the remote synchronously before returning. Disabled by
+	// default so a slow remote never extends deploy duration unexpectedly.
+	AutoPush bool `toml:"auto_push"`
 }
 
 type DiscoveryConfig struct {
