@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -88,7 +89,17 @@ func (m *Metrics) startCacheRefresh(s *Server) {
 
 // refreshCache collects all expensive system metrics and stores them under
 // cacheMu so that handleMetrics can read them cheaply.
+//
+// The whole refresh is bounded by a 10 s deadline — long enough for a
+// healthy box, short enough that a slow DB query or a hung docker
+// daemon doesn't stall the 30 s ticker and starve /metrics scrapes.
+// Partial results are stored: if the DB query works but the docker
+// `ps` call hangs, Prometheus still sees fresh project counts, just
+// with traefikUp stuck at its last value.
 func (m *Metrics) refreshCache(s *Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	projects, _ := s.db.ListProjects()
 	var running, stopped, totalContainers int
 	for _, p := range projects {
@@ -100,14 +111,24 @@ func (m *Metrics) refreshCache(s *Server) {
 		}
 		_, cnt := countContainers(p.ProjectPath)
 		totalContainers += cnt
+		// Bail early if the outer budget is blown — prevents us from
+		// walking 100 projects while the ticker fires again.
+		if ctx.Err() != nil {
+			log.Printf("metrics: timed out during project scan after %d projects", running+stopped)
+			break
+		}
 	}
 
 	memTotal, memAvail := parseMemInfo()
 	diskTotal, diskUsed := parseDiskUsage(s.cfg.Server.BasePath)
 
 	traefikUp := 0
-	if out, err := exec.Command("docker", "ps", "--filter", "name=traefik", "--format", "{{.Status}}").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-		traefikUp = 1
+	if ctx.Err() == nil {
+		// exec.CommandContext so a hung docker daemon propagates the
+		// timeout instead of pinning the refresh goroutine.
+		if out, err := exec.CommandContext(ctx, "docker", "ps", "--filter", "name=traefik", "--format", "{{.Status}}").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+			traefikUp = 1
+		}
 	}
 
 	m.cacheMu.Lock()
