@@ -258,6 +258,21 @@ func (db *DB) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// app_migrations tracks application-level schema changes run via
+		// 'fleetdeck migrate' or 'deploy --migrate'. Distinct from the
+		// schema migrations above — those shape fleetdeck's own DB;
+		// app_migrations records migrations run INSIDE the project's
+		// container (e.g. 'npm run migrate', 'rails db:migrate').
+		`CREATE TABLE IF NOT EXISTS app_migrations (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			command TEXT NOT NULL,
+			snapshot_id TEXT,
+			status TEXT NOT NULL DEFAULT 'running',
+			output TEXT,
+			started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			finished_at DATETIME
+		)`,
 	}
 
 	for _, m := range migrations {
