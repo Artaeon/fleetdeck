@@ -694,9 +694,17 @@ Don't skip items. Each one has saved someone's weekend at least once.
 | `fleetdeck monitor check <name>` | Single health check (exits non-zero if unhealthy) |
 | **Backup** | |
 | `fleetdeck backup create / list / restore` | Full backup and restore |
+| `fleetdeck backup push <name>` | Mirror backup to the rclone remote configured under `[backup.remote]` |
+| `fleetdeck backup audit --max-age 48h` | Dead-man's-switch: exit non-zero if any project has stale or missing backups |
 | `fleetdeck rollback <name>` | Quick rollback to any snapshot |
 | `fleetdeck snapshot <name>` | Quick snapshot |
 | `fleetdeck schedule enable / disable / list` | Scheduled backups via systemd |
+| **Migrations** | |
+| `fleetdeck migrate run <name> --command "..."` | Snapshot-then-run: tracked app-level migration |
+| `fleetdeck migrate history <name>` | List past migrations with status, duration, snapshot ID |
+| `fleetdeck migrate rollback <name>` | Restore the snapshot from the most recent migration |
+| **Retention** | |
+| `fleetdeck prune deployments --keep 50` | Trim old deployment rows from the SQLite database |
 | **CI/CD** | |
 | `fleetdeck setup-cd <name>` | Register project for auto-deploy from GitHub |
 | **Volumes** | |
