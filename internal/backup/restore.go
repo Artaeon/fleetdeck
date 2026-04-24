@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
@@ -70,11 +71,19 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 
 	step := 0
 
-	// Stop running containers (AFTER verification above confirmed backup is valid)
+	// Stop running containers (AFTER verification above confirmed backup is valid).
+	// Surface the stop failure as a warning but continue — forcing a hard abort
+	// here would strand the operator with a half-stopped project and no way to
+	// finish the restore without manual docker work. The project may already
+	// be in a broken state (which is why they're restoring).
 	step++
 	ui.Step(step, totalSteps, "Stopping project containers...")
-	_ = project.ComposeDown(projectPath)
-	ui.Success("Containers stopped")
+	if err := project.ComposeDown(projectPath); err != nil {
+		ui.Warn("Could not stop containers cleanly: %v", err)
+		ui.Warn("Continuing restore — files may race with in-flight writes.")
+	} else {
+		ui.Success("Containers stopped")
+	}
 
 	// Restore config files
 	if restoreAll || opts.FilesOnly {
@@ -207,9 +216,17 @@ func restoreBindMount(archivePath, projectPath string) error {
 	return nil
 }
 
+// startDBContainer brings up the named DB service via docker compose and
+// waits for the container to start accepting exec calls. Returns an error
+// on timeout or startup failure so the caller doesn't silently proceed to
+// import a dump into a container that never came up.
 func startDBContainer(projectPath, componentName string) error {
 	// Extract service name from component name like "postgres (PostgreSQL)"
-	serviceName := strings.Fields(componentName)[0]
+	parts := strings.Fields(componentName)
+	if len(parts) == 0 {
+		return fmt.Errorf("invalid DB component name %q", componentName)
+	}
+	serviceName := parts[0]
 
 	cmd := exec.Command("docker", "compose", "up", "-d", serviceName)
 	cmd.Dir = projectPath
@@ -217,17 +234,24 @@ func startDBContainer(projectPath, componentName string) error {
 		return fmt.Errorf("starting %s: %s: %w", serviceName, strings.TrimSpace(string(out)), err)
 	}
 
-	// Wait for it to be healthy
-	waitCmd := exec.Command("docker", "compose", "exec", serviceName, "true")
-	waitCmd.Dir = projectPath
-	for i := 0; i < 30; i++ {
-		if err := waitCmd.Run(); err == nil {
+	// Poll up to 60 s with a 2 s backoff. Previously the loop had no sleep,
+	// which meant 30 failed docker-exec attempts completed in a few ms and
+	// the function returned nil unconditionally — so a DB that never started
+	// would silently fail the dump import a moment later with a confusing
+	// error about the database being unreachable.
+	const (
+		attempts = 30
+		backoff  = 2 * time.Second
+	)
+	for i := 0; i < attempts; i++ {
+		wait := exec.Command("docker", "compose", "exec", "-T", serviceName, "true")
+		wait.Dir = projectPath
+		if err := wait.Run(); err == nil {
 			return nil
 		}
-		waitCmd = exec.Command("docker", "compose", "exec", serviceName, "true")
-		waitCmd.Dir = projectPath
+		time.Sleep(backoff)
 	}
-	return nil
+	return fmt.Errorf("timed out waiting for %s to start (%d attempts, %s each)", serviceName, attempts, backoff)
 }
 
 func restoreDatabase(dumpPath, projectPath, componentName string) error {
