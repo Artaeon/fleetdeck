@@ -19,7 +19,7 @@ func (c *Client) Upload(localPath, remotePath string) error {
 		return fmt.Errorf("stat local file: %w", err)
 	}
 
-	return c.UploadBytes(data, remotePath, info.Mode())
+	return c.UploadBytes(data, remotePath, hardenSensitiveMode(remotePath, info.Mode()))
 }
 
 func (c *Client) UploadBytes(data []byte, remotePath string, mode os.FileMode) error {
@@ -134,8 +134,33 @@ func (c *Client) UploadDir(localDir, remoteDir string) error {
 			fmt.Printf("  uploaded %d files...\n", fileCount)
 		}
 
-		return c.UploadBytes(data, remotePath, info.Mode())
+		return c.UploadBytes(data, remotePath, hardenSensitiveMode(remotePath, info.Mode()))
 	})
+}
+
+// hardenSensitiveMode narrows the upload permissions for files that are
+// commonly treated as secrets regardless of how permissive they happen
+// to be on the operator's laptop. A .env file sitting at 0644 locally
+// should not land on the server 0644 just because chmod was never run.
+//
+// We match on the basename rather than the full path so the rule
+// triggers consistently whether the upload comes from UploadDir (walking
+// a project tree) or a direct Upload call.
+func hardenSensitiveMode(remotePath string, mode os.FileMode) os.FileMode {
+	base := strings.ToLower(filepath.Base(remotePath))
+	// Exact .env names (covers .env, .env.local, .env.production, …).
+	if base == ".env" || strings.HasPrefix(base, ".env.") {
+		return 0600
+	}
+	// Private key material — match common extensions operators put in
+	// project directories when rolling their own TLS or signing keys.
+	sensitiveExt := []string{".pem", ".key", ".p12", ".pfx", ".jks"}
+	for _, ext := range sensitiveExt {
+		if strings.HasSuffix(base, ext) {
+			return 0600
+		}
+	}
+	return mode.Perm()
 }
 
 // shellQuote wraps s in single quotes for safe use in a shell command.
