@@ -380,16 +380,58 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	var remoteDeployCmd string
 	switch strategyName {
 	case "bluegreen":
-		// Bring up new set under temporary project name, then swap
+		// Bring up the new set under a temporary compose project name,
+		// then poll its 'app' service for readiness before tearing down
+		// the old set. If readiness never converges, abort the swap and
+		// leave the old containers serving traffic.
+		//
+		// Previously this path was `up -d && sleep 5 && swap`, which
+		// (a) treated a fixed sleep as a health check, and (b) tore down
+		// the old project before verifying anything — leaving a window
+		// with no containers at all if the new image booted slowly.
+		//
+		// The readiness check runs `docker compose -p <new> ps` and looks
+		// for a container whose health is "healthy" OR whose state is
+		// "running" without a healthcheck defined. 60 attempts * 2 s =
+		// 120 s ceiling.
 		newProject := name + "-new"
 		remoteDeployCmd = fmt.Sprintf(
-			"cd %s && "+
-				"docker compose -p %s up -d --pull always && "+
-				"sleep 5 && "+
-				"docker compose down && "+
-				"docker compose -p %s down --remove-orphans && "+
-				"docker compose up -d --pull always",
-			quotedPath, newProject, newProject,
+			"set -e\n"+
+				"cd %s\n"+
+				"docker compose -p %s up -d --pull always\n"+
+				"echo 'Waiting for new containers to become healthy...'\n"+
+				"ready=0\n"+
+				"for i in $(seq 1 60); do\n"+
+				"  status=$(docker compose -p %s ps --format '{{.Health}}|{{.State}}' 2>/dev/null || true)\n"+
+				"  if [ -z \"$status\" ]; then\n"+
+				"    sleep 2; continue\n"+
+				"  fi\n"+
+				"  if echo \"$status\" | grep -q 'unhealthy'; then\n"+
+				"    echo 'A new container is unhealthy — aborting swap.'\n"+
+				"    docker compose -p %s logs --tail=50 || true\n"+
+				"    docker compose -p %s down --remove-orphans || true\n"+
+				"    exit 11\n"+
+				"  fi\n"+
+				"  bad=$(echo \"$status\" | awk -F'|' '{print $2}' | grep -v -E '^(running|healthy)$' || true)\n"+
+				"  healthy=$(echo \"$status\" | awk -F'|' '$1==\"healthy\" || ($1==\"\" && $2==\"running\") {print}')\n"+
+				"  total=$(echo \"$status\" | wc -l)\n"+
+				"  ok=$(echo \"$healthy\" | wc -l)\n"+
+				"  if [ -z \"$bad\" ] && [ \"$total\" = \"$ok\" ]; then\n"+
+				"    ready=1; break\n"+
+				"  fi\n"+
+				"  sleep 2\n"+
+				"done\n"+
+				"if [ \"$ready\" != 1 ]; then\n"+
+				"  echo 'New containers did not become healthy within 120s — aborting swap.'\n"+
+				"  docker compose -p %s logs --tail=50 || true\n"+
+				"  docker compose -p %s down --remove-orphans || true\n"+
+				"  exit 12\n"+
+				"fi\n"+
+				"# Cutover: stop old, promote new to primary project name.\n"+
+				"docker compose down\n"+
+				"docker compose -p %s down --remove-orphans\n"+
+				"docker compose up -d --pull always\n",
+			quotedPath, newProject, newProject, newProject, newProject, newProject, newProject, newProject,
 		)
 	case "rolling":
 		// Pull first, then restart each service one at a time
