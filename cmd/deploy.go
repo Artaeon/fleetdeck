@@ -25,11 +25,12 @@ import (
 // be shared between the local and remote deploy paths without a
 // five-arg signature addition per path.
 type deployWatchOptions struct {
-	watch         time.Duration
-	rollback      bool
-	interval      time.Duration
-	threshold     int
-	expectedCode  int
+	watch        time.Duration
+	rollback     bool
+	rollbackMode string // "full" | "files" — see runPostDeployWatchdog
+	interval     time.Duration
+	threshold    int
+	expectedCode int
 }
 
 // readWatchOptions extracts the --watch family of flags from the deploy
@@ -38,12 +39,14 @@ type deployWatchOptions struct {
 func readWatchOptions(cmd *cobra.Command) deployWatchOptions {
 	watch, _ := cmd.Flags().GetDuration("watch")
 	rollback, _ := cmd.Flags().GetBool("watch-rollback")
+	rollbackMode, _ := cmd.Flags().GetString("watch-rollback-mode")
 	interval, _ := cmd.Flags().GetDuration("watch-interval")
 	threshold, _ := cmd.Flags().GetInt("watch-threshold")
 	expected, _ := cmd.Flags().GetInt("watch-status")
 	return deployWatchOptions{
 		watch:        watch,
 		rollback:     rollback,
+		rollbackMode: rollbackMode,
 		interval:     interval,
 		threshold:    threshold,
 		expectedCode: expected,
@@ -628,6 +631,7 @@ func init() {
 	deployCmd.Flags().String("migrate", "", "Run this command inside the app container after deploy (auto-snapshots DB first). Local deploys only.")
 	deployCmd.Flags().Duration("watch", 0, "After successful deploy, poll the domain for this long to verify it stays healthy (0 disables)")
 	deployCmd.Flags().Bool("watch-rollback", false, "If --watch detects an unhealthy deploy, automatically restore the pre-deploy snapshot")
+	deployCmd.Flags().String("watch-rollback-mode", "full", "Auto-rollback scope: 'full' (config+volumes+DB) or 'files' (config only, preserves user data written during watch window)")
 	deployCmd.Flags().Duration("watch-interval", 10*time.Second, "How often to probe during --watch")
 	deployCmd.Flags().Int("watch-threshold", 3, "Consecutive failed probes before --watch declares the deploy bad")
 	deployCmd.Flags().Int("watch-status", 200, "Expected HTTP status code during --watch probes")
@@ -673,14 +677,31 @@ func runPostDeployWatchdog(ctx context.Context, projectName, domain string, opts
 		return nil
 	}
 
-	ui.Info("Auto-rollback: restoring pre-deploy snapshot of %s...", projectName)
-	return rollbackToPreDeploySnapshot(projectName)
+	ui.Info("Auto-rollback (mode=%s): restoring pre-deploy snapshot of %s...", opts.rollbackMode, projectName)
+	return rollbackToPreDeploySnapshot(projectName, opts.rollbackMode)
 }
 
 // rollbackToPreDeploySnapshot finds the most recent backup whose trigger
-// is "pre-deploy" and restores it. Returns an error if no such snapshot
-// exists or the restore itself fails.
-func rollbackToPreDeploySnapshot(projectName string) error {
+// is "pre-deploy" and restores it, respecting the scope requested by
+// mode:
+//
+//	"full"  — restore config files + volumes + database dumps. The safe
+//	          default for stateless apps and landing pages where a
+//	          silent rollback is cheaper than any data that accrued in
+//	          the N-minute watch window.
+//	"files" — restore only config files (docker-compose.yml, .env,
+//	          Dockerfile). Volumes and database dumps are LEFT ALONE so
+//	          user data written during the watch window is preserved.
+//	          Use this for stateful apps (mealtime etc.) where data
+//	          loss from the watch window is worse than running the old
+//	          code against the new schema for a few minutes.
+//
+// Returns an error if no such snapshot exists or the restore fails.
+func rollbackToPreDeploySnapshot(projectName, mode string) error {
+	if mode == "" {
+		mode = "full"
+	}
+
 	d := openDB()
 	p, err := d.GetProject(projectName)
 	if err != nil {
@@ -690,19 +711,31 @@ func rollbackToPreDeploySnapshot(projectName string) error {
 	if err != nil {
 		return fmt.Errorf("listing backups: %w", err)
 	}
+
+	var restoreOpts backup.RestoreOptions
+	switch mode {
+	case "full":
+		restoreOpts = backup.RestoreOptions{} // default = restore everything
+	case "files":
+		restoreOpts = backup.RestoreOptions{FilesOnly: true}
+	default:
+		return fmt.Errorf("invalid --watch-rollback-mode %q (want full|files)", mode)
+	}
+
 	for _, b := range backups {
 		if b.Trigger != "pre-deploy" {
 			continue
 		}
-		if err := backup.RestoreBackup(b.Path, p.ProjectPath, backup.RestoreOptions{}); err != nil {
+		if err := backup.RestoreBackup(b.Path, p.ProjectPath, restoreOpts); err != nil {
 			audit.Log("deploy.watch.rollback", projectName, err.Error(), false)
 			return fmt.Errorf("restoring snapshot %s: %w", b.ID[:minInt(12, len(b.ID))], err)
 		}
 		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
 			ui.Warn("Could not update project status: %v", err)
 		}
-		audit.Log("deploy.watch.rollback", projectName, fmt.Sprintf("restored=%s", b.ID[:minInt(12, len(b.ID))]), true)
-		ui.Success("Rolled back to pre-deploy snapshot %s", b.ID[:minInt(12, len(b.ID))])
+		audit.Log("deploy.watch.rollback", projectName,
+			fmt.Sprintf("restored=%s mode=%s", b.ID[:minInt(12, len(b.ID))], mode), true)
+		ui.Success("Rolled back to pre-deploy snapshot %s (mode=%s)", b.ID[:minInt(12, len(b.ID))], mode)
 		return nil
 	}
 	return fmt.Errorf("no pre-deploy snapshot found to roll back to")
