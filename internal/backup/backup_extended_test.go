@@ -1542,12 +1542,13 @@ func TestRestoreBackupVolumeNamedVolumeDockerFails(t *testing.T) {
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	os.WriteFile(filepath.Join(backupDir, "manifest.json"), data, 0644)
 
-	// VolumesOnly + NoStart to avoid docker compose up/down
+	// VolumesOnly + NoStart to avoid docker compose up/down. The named-volume
+	// restore cannot succeed here (no usable docker / not a real tar), and a
+	// failed component must now surface as an error rather than being swallowed
+	// and reported as a successful restore.
 	err := RestoreBackup(backupDir, projectDir, RestoreOptions{VolumesOnly: true, NoStart: true})
-	if err != nil {
-		// Docker failure in named volume restore is a warning, not fatal
-		// The restore continues
-		t.Fatalf("RestoreBackup should not fail fatally: %v", err)
+	if err == nil {
+		t.Fatal("expected RestoreBackup to fail when a volume component cannot be restored")
 	}
 }
 
@@ -1577,11 +1578,12 @@ func TestRestoreBackupDBDockerFails(t *testing.T) {
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	os.WriteFile(filepath.Join(backupDir, "manifest.json"), data, 0644)
 
-	// DBOnly + NoStart
+	// DBOnly + NoStart. The DB container cannot start / the dump cannot be
+	// imported here, and that failure must now surface as an error rather than
+	// being swallowed and reported as a successful restore.
 	err := RestoreBackup(backupDir, projectDir, RestoreOptions{DBOnly: true, NoStart: true})
-	if err != nil {
-		// Docker failures in DB restore are warnings, not fatal
-		t.Fatalf("RestoreBackup should not fail fatally: %v", err)
+	if err == nil {
+		t.Fatal("expected RestoreBackup to fail when a database component cannot be restored")
 	}
 }
 
