@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -59,10 +64,9 @@ var upgradeCmd = &cobra.Command{
 		arch := runtime.GOARCH
 		platform := runtime.GOOS
 
-		downloadURL := fmt.Sprintf(
-			"https://github.com/fleetdeck/fleetdeck/releases/latest/download/fleetdeck-%s-%s",
-			platform, arch,
-		)
+		binName := fmt.Sprintf("fleetdeck-%s-%s", platform, arch)
+		baseURL := "https://github.com/fleetdeck/fleetdeck/releases/latest/download"
+		downloadURL := baseURL + "/" + binName
 
 		ui.Info("Downloading from %s...", downloadURL)
 
@@ -80,6 +84,17 @@ var upgradeCmd = &cobra.Command{
 			return fmt.Errorf("downloading update: %w", err)
 		}
 
+		// Verify the download against the published checksums before trusting it
+		// enough to overwrite the running binary. Without this, a MITM, DNS
+		// hijack, or a tampered release asset could hand us an arbitrary binary
+		// to execute — typically as root on a deploy host.
+		ui.Info("Verifying checksum...")
+		if err := verifyChecksum(tmpPath, binName, baseURL+"/checksums.txt"); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("checksum verification failed: %w", err)
+		}
+		ui.Success("Checksum verified")
+
 		if err := os.Chmod(tmpPath, 0755); err != nil {
 			os.Remove(tmpPath)
 			return fmt.Errorf("setting permissions: %w", err)
@@ -94,6 +109,56 @@ var upgradeCmd = &cobra.Command{
 		ui.Info("Restart any running FleetDeck processes to use the new version.")
 		return nil
 	},
+}
+
+// verifyChecksum downloads the release checksums manifest, looks up the SHA256
+// recorded for binName, and confirms the file at path hashes to that value.
+// It returns an error if the manifest can't be fetched, has no entry for
+// binName, or the hashes don't match.
+func verifyChecksum(path, binName, checksumURL string) error {
+	manifest, err := exec.Command("curl", "-fsSL", checksumURL).Output()
+	if err != nil {
+		return fmt.Errorf("downloading %s: %w", checksumURL, err)
+	}
+	want, err := checksumFor(string(manifest), binName)
+	if err != nil {
+		return err
+	}
+	got, err := sha256File(path)
+	if err != nil {
+		return fmt.Errorf("hashing downloaded binary: %w", err)
+	}
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", binName, want, got)
+	}
+	return nil
+}
+
+// checksumFor parses a `sha256  filename` checksums manifest (as produced by
+// goreleaser) and returns the checksum recorded for filename.
+func checksumFor(manifest, filename string) (string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(manifest))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 2 && fields[1] == filename {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("no checksum entry for %q in checksums.txt", filename)
+}
+
+// sha256File returns the lowercase hex SHA256 of the file at path.
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 var versionCmd = &cobra.Command{

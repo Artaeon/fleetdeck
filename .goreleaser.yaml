@@ -32,6 +32,11 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+  # Include the raw binaries served to `fleetdeck upgrade` so the command can
+  # verify its download against checksums.txt (see extra_files below).
+  extra_files:
+    - glob: dist/fleetdeck-linux-amd64
+    - glob: dist/fleetdeck-linux-arm64
 
 changelog:
   sort: asc
