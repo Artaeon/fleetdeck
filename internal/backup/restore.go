@@ -71,6 +71,13 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 
 	step := 0
 
+	// Component restore failures are collected rather than ignored: previously
+	// every per-component failure was warned and skipped, then RestoreBackup
+	// returned nil, so a restore that failed to import the DB or extract a
+	// volume reported success and the app was started against partial/empty
+	// data. We now abort (and do NOT start the project) if anything failed.
+	var failures []string
+
 	// Stop running containers (AFTER verification above confirmed backup is valid).
 	// Surface the stop failure as a warning but continue — forcing a hard abort
 	// here would strand the operator with a half-stopped project and no way to
@@ -104,11 +111,13 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 
 			if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 				ui.Warn("Could not create dir for %s: %v", comp.Name, err)
+				failures = append(failures, fmt.Sprintf("config %s: %v", comp.Name, err))
 				continue
 			}
 
 			if _, _, err := copyFileWithChecksum(src, dst); err != nil {
 				ui.Warn("Could not restore %s: %v", comp.Name, err)
+				failures = append(failures, fmt.Sprintf("config %s: %v", comp.Name, err))
 				continue
 			}
 			configCount++
@@ -137,6 +146,7 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 				if volName != "" {
 					if err := restoreNamedVolume(archivePath, volName); err != nil {
 						ui.Warn("Could not restore named volume %s: %v", volName, err)
+						failures = append(failures, fmt.Sprintf("volume %s: %v", volName, err))
 						continue
 					}
 				}
@@ -144,6 +154,7 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 				// Bind mount — extract to project path
 				if err := restoreBindMount(archivePath, projectPath); err != nil {
 					ui.Warn("Could not restore volume %s: %v", comp.Name, err)
+					failures = append(failures, fmt.Sprintf("volume %s: %v", comp.Name, err))
 					continue
 				}
 			}
@@ -166,11 +177,13 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 			// Need to start just the database container first
 			if err := startDBContainer(projectPath, comp.Name); err != nil {
 				ui.Warn("Could not start database container: %v", err)
+				failures = append(failures, fmt.Sprintf("database %s (start): %v", comp.Name, err))
 				continue
 			}
 
 			if err := restoreDatabase(dumpPath, projectPath, comp.Name); err != nil {
 				ui.Warn("Could not restore database %s: %v", comp.Name, err)
+				failures = append(failures, fmt.Sprintf("database %s: %v", comp.Name, err))
 				continue
 			}
 			dbCount++
@@ -178,6 +191,18 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 		if dbCount > 0 {
 			ui.Success("Restored %d databases", dbCount)
 		}
+	}
+
+	// If any component failed to restore, do NOT start the project — running it
+	// against a partially-restored state (e.g. an empty database) is worse than
+	// leaving it stopped — and report the failure so the operator knows the
+	// restore is not trustworthy.
+	if len(failures) > 0 {
+		ui.Error("Restore incomplete — %d component(s) failed:", len(failures))
+		for _, f := range failures {
+			ui.Error("  - %s", f)
+		}
+		return fmt.Errorf("restore incomplete: %d component(s) failed; project not started to avoid running against partially-restored data", len(failures))
 	}
 
 	// Start the project
@@ -197,11 +222,25 @@ func restoreNamedVolume(archivePath, volumeName string) error {
 	archiveDir := filepath.Dir(archivePath)
 	archiveFile := filepath.Base(archivePath)
 
+	// Extract into a staging dir FIRST so a failed or corrupt archive leaves the
+	// existing volume data untouched. The previous implementation ran
+	// `rm -rf /data/* && tar xzf`, which wiped the volume *before* extracting —
+	// if the extract then failed (corrupt archive, out of space) the volume was
+	// left empty and the data was gone. `set -e` aborts before the destructive
+	// clear on any earlier failure; the clear uses `find -mindepth 1` so it also
+	// removes dotfiles, giving a clean replace rather than a merge.
+	script := "set -e; " +
+		"rm -rf /data/.restore.tmp; mkdir -p /data/.restore.tmp; " +
+		"tar xzf /backup/" + shellQuote(archiveFile) + " -C /data/.restore.tmp; " +
+		"find /data -mindepth 1 -maxdepth 1 -not -name .restore.tmp -exec rm -rf {} +; " +
+		"cp -a /data/.restore.tmp/. /data/; " +
+		"rm -rf /data/.restore.tmp"
+
 	cmd := exec.Command("docker", "run", "--rm",
 		"-v", volumeName+":/data",
 		"-v", archiveDir+":/backup:ro",
 		"alpine",
-		"sh", "-c", "rm -rf /data/* && tar xzf /backup/"+shellQuote(archiveFile)+" -C /data")
+		"sh", "-c", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("restore: %s: %w", strings.TrimSpace(string(out)), err)
 	}
