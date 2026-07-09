@@ -130,7 +130,30 @@ func Open(path string) (*DB, error) {
 		log.Printf("WARNING: database backup on startup failed: %v", err)
 	}
 
+	// The database (and its WAL/SHM siblings) holds deployment logs and, unless
+	// encryption is configured, project secrets. SQLite creates it under the
+	// process umask (typically 0644 — world-readable), so tighten it to 0600 so
+	// other local users can't read it.
+	restrictDBPermissions(path)
+
 	return db, nil
+}
+
+// restrictDBPermissions best-effort restricts the SQLite database file and its
+// WAL/SHM sidecars to owner-only (0600). Failures are logged but non-fatal, and
+// the in-memory database has no file to protect.
+func restrictDBPermissions(path string) {
+	if path == "" || path == ":memory:" {
+		return
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if _, err := os.Stat(p); err != nil {
+			continue // sidecar may not exist yet
+		}
+		if err := os.Chmod(p, 0600); err != nil {
+			log.Printf("WARNING: could not restrict permissions on %s: %v", p, err)
+		}
+	}
 }
 
 // Ping verifies the database connection is alive.

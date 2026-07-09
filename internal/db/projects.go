@@ -114,6 +114,13 @@ func (db *DB) DeleteProject(name string) error {
 	if _, err := tx.Exec(`DELETE FROM backups WHERE project_id = ?`, id); err != nil {
 		return err
 	}
+	// app_migrations references projects(id) without ON DELETE CASCADE, and the
+	// connection enforces foreign keys, so it must be cleared explicitly too —
+	// otherwise deleting any project that has ever run a migration fails with a
+	// FOREIGN KEY constraint error.
+	if _, err := tx.Exec(`DELETE FROM app_migrations WHERE project_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, id); err != nil {
 		return err
 	}
