@@ -14,6 +14,30 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/config"
 )
 
+// putFakeDockerOnPath writes an executable `docker` stub into a temp dir and
+// prepends that dir to PATH for the duration of the test (t.Setenv restores it
+// afterwards). The stub's stdout/exit behaviour is supplied by the caller, so
+// tests can simulate a working dump, a failing dump, or a truncated dump
+// without needing a real Docker daemon.
+func putFakeDockerOnPath(t *testing.T, scriptBody string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "docker")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake docker: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// withFakeDocker installs a docker stub that emits a multi-KB SQL-like payload
+// so that `docker exec ... pg_dump/mysqldump ... | gzip > file` produces a
+// realistically-sized dump and succeeds. This lets the dump happy-path tests
+// verify a genuine successful dump deterministically, regardless of whether a
+// real Docker daemon is present on the host.
+func withFakeDocker(t *testing.T) {
+	putFakeDockerOnPath(t, "i=0\nwhile [ $i -lt 400 ]; do\n  echo \"INSERT INTO t VALUES ($i, 'row-$i-payload-abcdefghijklmnop');\"\n  i=$((i+1))\ndone\n")
+}
+
 // ---------------------------------------------------------------------------
 // CreateBackup — full flow with mock project data
 // ---------------------------------------------------------------------------
@@ -566,9 +590,7 @@ func TestBackupDatabasesPostgresProducesComponent(t *testing.T) {
 `), 0644)
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte("POSTGRES_USER=myuser\nPOSTGRES_DB=mydb\n"), 0644)
 
-	// The bash pipeline "docker exec ... | gzip > file" creates a gzip file
-	// even when docker is not available (gzip runs in the pipeline independently).
-	// So the function produces a component with an empty/near-empty dump.
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	components, err := BackupDatabases(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupDatabases should not return error: %v", err)
@@ -597,6 +619,7 @@ func TestBackupDatabasesMySQLProducesComponent(t *testing.T) {
 `), 0644)
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte("MYSQL_ROOT_PASSWORD=secret\nMYSQL_DATABASE=mydb\n"), 0644)
 
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	components, err := BackupDatabases(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupDatabases should not return error: %v", err)
@@ -620,6 +643,7 @@ func TestBackupDatabasesMariaDBProducesComponent(t *testing.T) {
 `), 0644)
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte("MYSQL_ROOT_PASSWORD=secret\nMYSQL_DATABASE=mydb\n"), 0644)
 
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	components, err := BackupDatabases(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupDatabases should not return error: %v", err)
@@ -665,11 +689,11 @@ func TestBackupDatabasesPostgresDefaults(t *testing.T) {
 	// No POSTGRES_USER or POSTGRES_DB — should default to "postgres"
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte(""), 0644)
 
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	components, err := BackupDatabases(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupDatabases should not return error: %v", err)
 	}
-	// The bash pipeline creates a gzip file even without docker
 	if len(components) != 1 {
 		t.Fatalf("expected 1 component, got %d", len(components))
 	}
@@ -702,11 +726,11 @@ func TestBackupDatabasesContainerNameFallback(t *testing.T) {
 `), 0644)
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte(""), 0644)
 
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	components, err := BackupDatabases(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupDatabases: %v", err)
 	}
-	// The bash pipeline creates a gzip file even without docker
 	// The container_name fallback is exercised (projectDirBase-db-1)
 	if len(components) != 1 {
 		t.Fatalf("expected 1 component, got %d", len(components))
@@ -1341,15 +1365,14 @@ func TestCreateThenReadManifest(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDumpPostgresCreatesFile(t *testing.T) {
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	dbDir := t.TempDir()
 	envVars := map[string]string{
 		"POSTGRES_USER": "testuser",
 		"POSTGRES_DB":   "testdb",
 	}
 
-	// The bash pipeline "docker exec ... | gzip > file" creates a gzip file
-	// even when docker is not available (gzip runs independently in pipeline).
-	comp, err := dumpPostgres("nonexistent-container", "postgres", envVars, dbDir)
+	comp, err := dumpPostgres("fake-container", "postgres", envVars, dbDir)
 	if err != nil {
 		t.Fatalf("dumpPostgres: %v", err)
 	}
@@ -1369,10 +1392,11 @@ func TestDumpPostgresCreatesFile(t *testing.T) {
 }
 
 func TestDumpPostgresDefaultUser(t *testing.T) {
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	dbDir := t.TempDir()
 	envVars := map[string]string{} // no user or db set
 
-	comp, err := dumpPostgres("nonexistent-container", "postgres", envVars, dbDir)
+	comp, err := dumpPostgres("fake-container", "postgres", envVars, dbDir)
 	if err != nil {
 		t.Fatalf("dumpPostgres: %v", err)
 	}
@@ -1382,14 +1406,49 @@ func TestDumpPostgresDefaultUser(t *testing.T) {
 	}
 }
 
+// TestDumpPostgresFailsWhenDockerFails locks in the fix for the silent
+// empty-backup bug: when the dump command fails, `set -o pipefail` must make the
+// whole pipeline fail rather than letting gzip write a valid empty archive and
+// report success.
+func TestDumpPostgresFailsWhenDockerFails(t *testing.T) {
+	putFakeDockerOnPath(t, "echo 'boom' >&2\nexit 1\n") // docker exits non-zero
+	dbDir := t.TempDir()
+	comp, err := dumpPostgres("fake-container", "postgres", map[string]string{"POSTGRES_DB": "d"}, dbDir)
+	if err == nil {
+		t.Fatal("expected an error when the dump command fails (pipefail), got nil")
+	}
+	if comp != nil {
+		t.Error("expected nil component on dump failure")
+	}
+}
+
+// TestDumpPostgresRejectsTruncatedDump verifies the minimum-size guard: a dump
+// command that succeeds but produces almost no output (a near-empty gzip) is
+// treated as a failure rather than a valid backup.
+func TestDumpPostgresRejectsTruncatedDump(t *testing.T) {
+	putFakeDockerOnPath(t, "printf x\n") // one byte -> gzip well under the threshold
+	dbDir := t.TempDir()
+	comp, err := dumpPostgres("fake-container", "postgres", map[string]string{"POSTGRES_DB": "d"}, dbDir)
+	if err == nil {
+		t.Fatal("expected an error for a suspiciously small dump, got nil")
+	}
+	if comp != nil {
+		t.Error("expected nil component for a truncated dump")
+	}
+	if _, statErr := os.Stat(filepath.Join(dbDir, "postgres.sql.gz")); statErr == nil {
+		t.Error("expected the truncated dump file to be removed")
+	}
+}
+
 func TestDumpMySQLCreatesFile(t *testing.T) {
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	dbDir := t.TempDir()
 	envVars := map[string]string{
 		"MYSQL_ROOT_PASSWORD": "secret",
 		"MYSQL_DATABASE":      "testdb",
 	}
 
-	comp, err := dumpMySQL("nonexistent-container", "mysql", envVars, dbDir)
+	comp, err := dumpMySQL("fake-container", "mysql", envVars, dbDir)
 	if err != nil {
 		t.Fatalf("dumpMySQL: %v", err)
 	}
@@ -1402,12 +1461,13 @@ func TestDumpMySQLCreatesFile(t *testing.T) {
 }
 
 func TestDumpMySQLNoPassword(t *testing.T) {
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	dbDir := t.TempDir()
 	envVars := map[string]string{
 		"MYSQL_DATABASE": "testdb",
 	}
 
-	comp, err := dumpMySQL("nonexistent-container", "mysql", envVars, dbDir)
+	comp, err := dumpMySQL("fake-container", "mysql", envVars, dbDir)
 	if err != nil {
 		t.Fatalf("dumpMySQL: %v", err)
 	}
@@ -1432,13 +1492,14 @@ func TestDumpMySQLNoDBName(t *testing.T) {
 }
 
 func TestDumpMySQLFallbackDBName(t *testing.T) {
+	withFakeDocker(t) // stub docker so the dump succeeds with real bytes
 	dbDir := t.TempDir()
 	envVars := map[string]string{
 		"MYSQL_ROOT_PASSWORD": "secret",
 		"MYSQL_DB":            "fallbackdb", // uses MYSQL_DB instead of MYSQL_DATABASE
 	}
 
-	comp, err := dumpMySQL("nonexistent-container", "mysql", envVars, dbDir)
+	comp, err := dumpMySQL("fake-container", "mysql", envVars, dbDir)
 	if err != nil {
 		// If there's an error, it should NOT be "no MySQL database name found"
 		if strings.Contains(err.Error(), "no MySQL database name") {
