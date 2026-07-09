@@ -157,6 +157,15 @@ func TestComposePSErrorWrapping(t *testing.T) {
 	}
 }
 
+func TestCountContainersESurfacesError(t *testing.T) {
+	// A query that cannot run must return an error rather than a silent (0, 0),
+	// so callers like `sync --fix` don't mistake it for a stopped project.
+	_, _, err := CountContainersE("/nonexistent/path/that/does/not/exist")
+	if err == nil {
+		t.Fatal("expected an error when the docker query cannot run")
+	}
+}
+
 func TestContainerStatusJSON(t *testing.T) {
 	// Test that ContainerStatus can be populated from docker compose ps JSON.
 	// This tests the JSON parsing logic indirectly.

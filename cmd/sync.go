@@ -55,8 +55,15 @@ catch manual changes that happened outside of FleetDeck.`,
 				continue
 			}
 
-			// Check actual container state
-			running, total := project.CountContainers(p.ProjectPath)
+			// Check actual container state. A failed docker query is NOT
+			// evidence the project is stopped — flipping the DB to "stopped"
+			// here (especially with --fix) would manufacture a false outage in
+			// the dashboard, metrics, and alerts. Skip the project instead.
+			running, total, err := project.CountContainersE(p.ProjectPath)
+			if err != nil {
+				ui.Warn("Could not determine container state for %s: %v — skipping", p.Name, err)
+				continue
+			}
 			actualStatus := "stopped"
 			if running > 0 {
 				actualStatus = "running"
