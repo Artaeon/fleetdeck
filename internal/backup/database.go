@@ -11,6 +11,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// minValidDumpBytes is the smallest a real gzipped database dump can plausibly
+// be. An empty-input gzip stream is only ~20-30 bytes, so any dump below this
+// threshold is treated as a failed dump rather than a valid (empty) backup.
+const minValidDumpBytes = 100
+
 type composeFile struct {
 	Services map[string]composeService `yaml:"services"`
 }
@@ -80,8 +85,14 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
 
+	// `set -o pipefail` is essential: without it, `pg_dump ... | gzip > file`
+	// returns gzip's exit status, so a failing pg_dump (wrong container, auth
+	// error, mid-stream failure) still lets gzip write a valid but EMPTY archive
+	// and the command reports success — a silent empty backup that later passes
+	// verification. pipefail makes the pipeline fail if pg_dump fails.
 	cmd := exec.Command("bash", "-c",
-		shellQuote("docker", "exec", containerName, "pg_dump", "-U", user, dbName)+
+		"set -o pipefail; "+
+			shellQuote("docker", "exec", containerName, "pg_dump", "-U", user, dbName)+
 			" | gzip > "+shellQuote(dumpFile))
 
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -91,6 +102,13 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 	info, err := os.Stat(dumpFile)
 	if err != nil {
 		return nil, err
+	}
+	// Defence in depth against the empty-dump case even if pipefail is bypassed:
+	// a real gzipped SQL dump is far larger than an empty-input gzip stream
+	// (~20-30 bytes). Treat a suspiciously small file as a failed dump.
+	if info.Size() < minValidDumpBytes {
+		os.Remove(dumpFile)
+		return nil, fmt.Errorf("pg_dump for %s produced a suspiciously small dump (%d bytes); treating as failure", containerName, info.Size())
 	}
 
 	return &ComponentInfo{
@@ -118,11 +136,16 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 	// from the parent process, so the password never appears in `ps aux` or
 	// in the Docker API call's CLI form. The previous `-p<password>` argv was
 	// visible to every local user via /proc during the dump.
-	dumpCmd := "docker exec"
+	// `set -o pipefail` so a failing mysqldump fails the whole pipeline instead
+	// of gzip masking it with a valid empty archive (see dumpPostgres). The
+	// --single-transaction flag takes a consistent InnoDB snapshot so the dump
+	// is coherent even while the database is being written; --routines and
+	// --triggers ensure stored programs are captured too.
+	dumpCmd := "set -o pipefail; docker exec"
 	if password != "" {
 		dumpCmd += " -e MYSQL_PWD"
 	}
-	dumpCmd += " " + shellQuote(containerName) + " mysqldump -u root " + shellQuote(dbName) +
+	dumpCmd += " " + shellQuote(containerName) + " mysqldump --single-transaction --routines --triggers -u root " + shellQuote(dbName) +
 		" | gzip > " + shellQuote(dumpFile)
 
 	cmd := exec.Command("bash", "-c", dumpCmd)
@@ -137,6 +160,10 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 	info, err := os.Stat(dumpFile)
 	if err != nil {
 		return nil, err
+	}
+	if info.Size() < minValidDumpBytes {
+		os.Remove(dumpFile)
+		return nil, fmt.Errorf("mysqldump for %s produced a suspiciously small dump (%d bytes); treating as failure", containerName, info.Size())
 	}
 
 	return &ComponentInfo{
