@@ -92,10 +92,15 @@ func ComposePS(projectPath string) ([]ContainerStatus, error) {
 	return containers, nil
 }
 
-func CountContainers(projectPath string) (running, total int) {
+// CountContainersE reports how many of a project's containers are running and
+// how many exist, surfacing the underlying docker error. Callers that must not
+// treat a failed query as "stopped" (e.g. `sync --fix`) should use this: a
+// docker daemon that is down or busy returns an error here, which is different
+// from a project that genuinely has zero running containers.
+func CountContainersE(projectPath string) (running, total int, err error) {
 	containers, err := ComposePS(projectPath)
 	if err != nil {
-		return 0, 0
+		return 0, 0, err
 	}
 	total = len(containers)
 	for _, c := range containers {
@@ -103,5 +108,10 @@ func CountContainers(projectPath string) (running, total int) {
 			running++
 		}
 	}
+	return running, total, nil
+}
+
+func CountContainers(projectPath string) (running, total int) {
+	running, total, _ = CountContainersE(projectPath)
 	return
 }
