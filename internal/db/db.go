@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -16,7 +17,8 @@ import (
 
 type DB struct {
 	conn          *sql.DB
-	encryptionKey []byte // optional 32-byte AES-256 key for secret encryption
+	encryptionKey []byte    // optional 32-byte AES-256 key for secret encryption
+	plaintextWarn sync.Once // warn once if a secret is stored without a key
 }
 
 // SetEncryptionKey configures an AES-256 key for encrypting secret values

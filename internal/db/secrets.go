@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"log"
 
 	"github.com/fleetdeck/fleetdeck/internal/crypto"
 	"github.com/google/uuid"
@@ -101,9 +102,15 @@ func (db *DB) DeleteSecret(projectID, key string) error {
 
 // encryptValue encrypts a plaintext value if an encryption key is set.
 // Returns the value with an "enc:" prefix and base64-encoded ciphertext.
-// If no key is set, returns the value unchanged.
+// If no key is set, the value is stored in plaintext and the operator is
+// warned once — storing DB passwords and API tokens unencrypted is a real
+// exposure if the SQLite file is ever read.
 func (db *DB) encryptValue(value string) (string, error) {
 	if len(db.encryptionKey) == 0 {
+		db.plaintextWarn.Do(func() {
+			log.Printf("WARNING: no encryption key configured — secrets are stored in PLAINTEXT. " +
+				"Set FLEETDECK_ENCRYPTION_KEY (e.g. `openssl rand -hex 32`) to encrypt them at rest.")
+		})
 		return value, nil
 	}
 
