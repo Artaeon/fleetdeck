@@ -11,6 +11,7 @@ import (
 )
 
 var ErrJobInProgress = errors.New("release job is already in progress")
+var ErrTargetBusy = errors.New("release target already has a job in progress")
 
 type ReservationState string
 
