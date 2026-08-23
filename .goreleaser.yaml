@@ -1,11 +1,7 @@
 version: 2
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
-  - id: fleetdeck
+  - id: fleetdeck-amd64
     main: .
     binary: fleetdeck
     env:
@@ -14,6 +10,20 @@ builds:
       - linux
     goarch:
       - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/fleetdeck/fleetdeck/cmd.Version={{.Version}}
+      - -X github.com/fleetdeck/fleetdeck/cmd.Commit={{.Commit}}
+      - -X github.com/fleetdeck/fleetdeck/cmd.BuildDate={{.Date}}
+  - id: fleetdeck-arm64
+    main: .
+    binary: fleetdeck
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
+    goos:
+      - linux
+    goarch:
       - arm64
     ldflags:
       - -s -w
@@ -23,20 +33,37 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    ids:
+      - fleetdeck-amd64
+      - fleetdeck-arm64
+    formats:
+      - tar.gz
     name_template: "fleetdeck_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE*
       - README*
       - INSTALL*
+  - id: raw
+    ids:
+      - fleetdeck-amd64
+      - fleetdeck-arm64
+    formats:
+      - binary
+    name_template: "fleetdeck-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
-  # Include the raw binaries served to `fleetdeck upgrade` so the command can
-  # verify its download against checksums.txt (see extra_files below).
-  extra_files:
-    - glob: dist/fleetdeck-linux-amd64
-    - glob: dist/fleetdeck-linux-arm64
+
+signs:
+  - id: checksum-keyless
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
 
 changelog:
   sort: asc
@@ -47,14 +74,6 @@ changelog:
       - "^ci:"
 
 release:
-  github:
-    owner: fleetdeck
-    name: fleetdeck
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
-
-# Also upload raw binaries for fleetdeck upgrade command
-extra_files:
-  - glob: dist/fleetdeck-linux-amd64
-  - glob: dist/fleetdeck-linux-arm64
