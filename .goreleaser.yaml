@@ -15,6 +15,7 @@ builds:
       - -X github.com/fleetdeck/fleetdeck/cmd.Version={{.Version}}
       - -X github.com/fleetdeck/fleetdeck/cmd.Commit={{.Commit}}
       - -X github.com/fleetdeck/fleetdeck/cmd.BuildDate={{.Date}}
+      - -X github.com/fleetdeck/fleetdeck/cmd.ReleaseRepository={{ .Env.GITHUB_REPOSITORY }}
   - id: fleetdeck-arm64
     main: .
     binary: fleetdeck
@@ -30,6 +31,7 @@ builds:
       - -X github.com/fleetdeck/fleetdeck/cmd.Version={{.Version}}
       - -X github.com/fleetdeck/fleetdeck/cmd.Commit={{.Commit}}
       - -X github.com/fleetdeck/fleetdeck/cmd.BuildDate={{.Date}}
+      - -X github.com/fleetdeck/fleetdeck/cmd.ReleaseRepository={{ .Env.GITHUB_REPOSITORY }}
 
 archives:
   - id: default
