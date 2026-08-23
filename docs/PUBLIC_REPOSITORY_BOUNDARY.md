@@ -51,3 +51,6 @@ FleetDeck may implement a generic signed release or deployment-job contract
 that Mealtime also uses. The public contract must not embed Mealtime tenant
 names, domains, server fingerprints, credentials or rollout policy. Those are
 private Fleet Manager inputs supplied at runtime.
+
+The current product-neutral contract and its fail-closed execution boundary are
+documented in [RELEASE_JOBS.md](RELEASE_JOBS.md).
