@@ -1,0 +1,4 @@
+title = "FleetDeck public repository secret policy"
+
+[extend]
+useDefault = true

@@ -56,3 +56,10 @@ FleetDeck implements defense in depth across multiple layers:
 4. Enable scheduled backups (`fleetdeck schedule enable`)
 5. Keep FleetDeck updated (`fleetdeck upgrade`)
 6. Use `--insecure` only for initial server setup -- subsequent connections verify host keys automatically
+
+## Public Repository Boundary
+
+FleetDeck's source is public. Operator and customer configuration must remain
+outside Git even when it is encrypted. See
+[`docs/PUBLIC_REPOSITORY_BOUNDARY.md`](docs/PUBLIC_REPOSITORY_BOUNDARY.md) for
+the allowed content, local secret-scan gate and reviewed fixture policy.
