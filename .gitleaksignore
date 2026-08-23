@@ -1,0 +1,15 @@
+# Reviewed synthetic fixtures already present in public history. Each entry is
+# scoped to one exact commit, file, rule and line. New findings remain fatal.
+8fda9dd8945471935505bda833399f78a0271dc9:internal/config/config_test.go:generic-api-key:133
+8fda9dd8945471935505bda833399f78a0271dc9:internal/config/config_test.go:generic-api-key:461
+8fda9dd8945471935505bda833399f78a0271dc9:internal/config/config_test.go:generic-api-key:481
+ac16090b7e3daeb18df30060ec79abbb35d1540d:cmd/sshkeys_test.go:private-key:15
+ac16090b7e3daeb18df30060ec79abbb35d1540d:cmd/sshkeys_test.go:private-key:132
+ac16090b7e3daeb18df30060ec79abbb35d1540d:cmd/sshkeys_test.go:private-key:185
+dd8398b3449c8d7b42208c4b65e8aafd097e4044:internal/detect/envfiles_test.go:stripe-access-token:122
+dd8398b3449c8d7b42208c4b65e8aafd097e4044:internal/detect/envfiles_test.go:stripe-access-token:143
+94ddb5b90e05a1ea2299d34c8372af58a6b0e79e:internal/environments/workflow_test.go:generic-api-key:270
+94ddb5b90e05a1ea2299d34c8372af58a6b0e79e:internal/environments/workflow_test.go:generic-api-key:296
+94ddb5b90e05a1ea2299d34c8372af58a6b0e79e:internal/environments/workflow_test.go:generic-api-key:326
+137cfcc0395f197c243d5aaee21d7450e55cb18a:internal/config/workflow_test.go:generic-api-key:372
+d910d056475aebe89dca0cf296fe017258afe8d9:internal/project/ssh_test.go:private-key:50
