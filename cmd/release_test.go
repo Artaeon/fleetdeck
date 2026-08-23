@@ -2,10 +2,23 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/fleetdeck/fleetdeck/internal/releasejob"
 )
+
+type releaseExecutorStub struct {
+	result releasejob.Result
+	err    error
+}
+
+func (s releaseExecutorStub) Execute(context.Context, releasejob.Request) (releasejob.Result, error) {
+	return s.result, s.err
+}
 
 const validReleaseJob = `{
   "schema_version": 1,
@@ -52,5 +65,53 @@ func TestValidateReleaseJobRejectsCommandInjectionField(t *testing.T) {
 	malicious := strings.Replace(validReleaseJob, `"job_id":`, `"command":"echo unsafe", "job_id":`, 1)
 	if err := validateReleaseJob(strings.NewReader(malicious), &bytes.Buffer{}); err == nil {
 		t.Fatal("unknown command field unexpectedly accepted")
+	}
+}
+
+func TestApplyReleaseJobWritesMachineReadableSuccess(t *testing.T) {
+	var output bytes.Buffer
+	result := releasejob.Result{
+		SchemaVersion: 1,
+		JobID:         "job-example",
+		ReleaseID:     "release-example",
+		TargetID:      "target-example",
+		Status:        "succeeded",
+	}
+	request, got, err := applyReleaseJob(
+		context.Background(),
+		strings.NewReader(validReleaseJob),
+		&output,
+		releaseExecutorStub{result: result},
+	)
+	if err != nil || got.Status != "succeeded" || request.Target.ID != "target-example" {
+		t.Fatalf("request=%+v result=%+v err=%v", request, got, err)
+	}
+	if !strings.Contains(output.String(), `"status":"succeeded"`) {
+		t.Fatalf("machine result = %s", output.String())
+	}
+}
+
+func TestApplyReleaseJobWritesBoundedFailureEvidence(t *testing.T) {
+	var output bytes.Buffer
+	result := releasejob.Result{
+		SchemaVersion: 1,
+		JobID:         "job-example",
+		ReleaseID:     "release-example",
+		TargetID:      "target-example",
+		Status:        "failed",
+		FailedStep:    "health",
+		ErrorCode:     "HEALTH_FAILED",
+	}
+	_, got, err := applyReleaseJob(
+		context.Background(),
+		strings.NewReader(validReleaseJob),
+		&output,
+		releaseExecutorStub{result: result, err: errors.New("bounded failure")},
+	)
+	if err == nil || got.ErrorCode != "HEALTH_FAILED" {
+		t.Fatalf("result=%+v err=%v", got, err)
+	}
+	if strings.Contains(output.String(), "bounded failure") || !strings.Contains(output.String(), "HEALTH_FAILED") {
+		t.Fatalf("unsafe or missing failure output: %s", output.String())
 	}
 }
