@@ -22,10 +22,13 @@ import (
 // Go's embedded build info so the version command still reports something
 // meaningful instead of the literal string "dev".
 var (
-	Version   = ""
-	Commit    = ""
-	BuildDate = ""
+	Version           = ""
+	Commit            = ""
+	BuildDate         = ""
+	ReleaseRepository = ""
 )
+
+const defaultReleaseRepository = "fleetdeck/fleetdeck"
 
 func init() {
 	if Version == "" {
@@ -65,7 +68,10 @@ var upgradeCmd = &cobra.Command{
 		platform := runtime.GOOS
 
 		binName := fmt.Sprintf("fleetdeck-%s-%s", platform, arch)
-		baseURL := "https://github.com/fleetdeck/fleetdeck/releases/latest/download"
+		baseURL, err := releaseBaseURL(ReleaseRepository)
+		if err != nil {
+			return err
+		}
 		downloadURL := baseURL + "/" + binName
 
 		ui.Info("Downloading from %s...", downloadURL)
@@ -109,6 +115,33 @@ var upgradeCmd = &cobra.Command{
 		ui.Info("Restart any running FleetDeck processes to use the new version.")
 		return nil
 	},
+}
+
+func releaseBaseURL(repository string) (string, error) {
+	if repository == "" {
+		repository = defaultReleaseRepository
+	}
+
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 || !validGitHubRepositoryPart(parts[0]) || !validGitHubRepositoryPart(parts[1]) {
+		return "", fmt.Errorf("invalid release repository %q", repository)
+	}
+
+	return "https://github.com/" + repository + "/releases/latest/download", nil
+}
+
+func validGitHubRepositoryPart(value string) bool {
+	if value == "" || value == "." || value == ".." {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // verifyChecksum downloads the release checksums manifest, looks up the SHA256
