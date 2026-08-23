@@ -58,6 +58,25 @@ func TestReleaseJobReservationIsIdempotentAndRejectsCollisions(t *testing.T) {
 	}
 }
 
+func TestReleaseJobReservationSerializesEachTarget(t *testing.T) {
+	database := openReleaseJobDB(t)
+	ctx := context.Background()
+	first := releaseJobRequest()
+	firstHash, _ := releasejob.RequestSHA256(first)
+	if _, err := database.Reserve(ctx, first, firstHash, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	second := releaseJobRequest()
+	second.JobID = "job-2"
+	second.IdempotencyKey = "release-2.target-1.attempt-1"
+	second.ReleaseID = "release-2"
+	secondHash, _ := releasejob.RequestSHA256(second)
+	if _, err := database.Reserve(ctx, second, secondHash, time.Now().UTC()); err != releasejob.ErrTargetBusy {
+		t.Fatalf("second target reservation error = %v", err)
+	}
+}
+
 func TestReleaseJobSuccessAtomicallyAdvancesCurrentReleaseAndReplays(t *testing.T) {
 	database := openReleaseJobDB(t)
 	ctx := context.Background()

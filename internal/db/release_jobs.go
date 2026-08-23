@@ -57,6 +57,18 @@ func (db *DB) Reserve(
 		return releasejob.Reservation{}, err
 	}
 
+	var activeJobID string
+	err = tx.QueryRowContext(ctx,
+		`SELECT job_id FROM release_jobs WHERE target_id = ? AND status = 'running' LIMIT 1`,
+		request.Target.ID,
+	).Scan(&activeJobID)
+	if err == nil {
+		return releasejob.Reservation{}, releasejob.ErrTargetBusy
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return releasejob.Reservation{}, err
+	}
+
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO release_jobs (
 			idempotency_key, job_id, release_id, manifest_digest, target_id,
