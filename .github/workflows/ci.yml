@@ -86,9 +86,9 @@ jobs:
         run: |
           ssh-keygen -t ed25519 -f /tmp/testkey -N '' -q
           docker run -d --name sshd \
-            -p 2222:22 \
-            -e SSH_ENABLE_ROOT=true \
-            -e AUTHORIZED_KEYS="$(cat /tmp/testkey.pub)" \
+            -p 2222:2222 \
+            -e USER_NAME=fleetdeck \
+            -e PUBLIC_KEY="$(cat /tmp/testkey.pub)" \
             linuxserver/openssh-server@sha256:96b9a4d3b5106746d08d43a6911650d4d21f7d5c7f2ac9660e792bdb5e63157c
           # Wait for SSH to be ready
           for _ in $(seq 1 30); do
@@ -103,5 +103,5 @@ jobs:
           FLEETDECK_INTEGRATION: "true"
           SSH_TEST_HOST: localhost
           SSH_TEST_PORT: "2222"
-          SSH_TEST_USER: root
+          SSH_TEST_USER: fleetdeck
           SSH_TEST_KEY: /tmp/testkey
