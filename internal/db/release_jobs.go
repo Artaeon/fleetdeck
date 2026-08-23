@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/releasejob"
@@ -113,6 +114,12 @@ func (db *DB) CompleteSuccess(
 	result releasejob.Result,
 	manifestDigest string,
 ) error {
+	if result.Status != "succeeded" || result.FinishedAt == nil {
+		return errors.New("successful release completion requires a finished succeeded result")
+	}
+	if !strings.HasPrefix(manifestDigest, "sha256:") || len(manifestDigest) != 71 {
+		return errors.New("successful release completion requires a sha256 manifest digest")
+	}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return err
@@ -150,6 +157,9 @@ func (db *DB) CompleteSuccess(
 }
 
 func (db *DB) CompleteFailure(ctx context.Context, result releasejob.Result) error {
+	if result.Status != "failed" || result.FinishedAt == nil || result.ErrorCode == "" {
+		return errors.New("failed release completion requires a finished failed result and error code")
+	}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return err

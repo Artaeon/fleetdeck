@@ -141,8 +141,28 @@ func TestReleaseJobCompletionIsCompareAndSet(t *testing.T) {
 	missing := releasejob.Result{
 		SchemaVersion: 1, JobID: "missing", IdempotencyKey: "missing",
 		ReleaseID: "release-1", TargetID: "target-1", Status: "failed", FinishedAt: &finished,
+		ErrorCode: "MISSING_JOB",
 	}
 	if err := database.CompleteFailure(context.Background(), missing); err == nil || !strings.Contains(err.Error(), "compare-and-set") {
 		t.Fatalf("missing completion error = %v", err)
+	}
+}
+
+func TestReleaseJobCompletionRejectsContradictoryResults(t *testing.T) {
+	database := openReleaseJobDB(t)
+	finished := time.Now().UTC()
+	invalidSuccess := releasejob.Result{
+		JobID: "job-1", IdempotencyKey: "key-1", ReleaseID: "release-1",
+		TargetID: "target-1", Status: "failed", FinishedAt: &finished,
+	}
+	if err := database.CompleteSuccess(context.Background(), invalidSuccess, "sha256:"+strings.Repeat("1", 64)); err == nil {
+		t.Fatal("failed result accepted as successful completion")
+	}
+	invalidFailure := releasejob.Result{
+		JobID: "job-1", IdempotencyKey: "key-1", ReleaseID: "release-1",
+		TargetID: "target-1", Status: "failed", FinishedAt: &finished,
+	}
+	if err := database.CompleteFailure(context.Background(), invalidFailure); err == nil {
+		t.Fatal("failed result without error code accepted")
 	}
 }
