@@ -20,6 +20,10 @@ archives plus raw binaries, records every artifact in `checksums.txt`, signs the
 checksum file without a long-lived signing key and attests every recorded
 artifact through GitHub's OIDC-backed provenance service.
 
+The repository identity is embedded in the released binaries. The `upgrade`
+command therefore reads updates from the repository that built that binary;
+builds without release metadata safely fall back to the upstream project.
+
 ## Consumer verification
 
 Download the required artifact together with `checksums.txt` and
