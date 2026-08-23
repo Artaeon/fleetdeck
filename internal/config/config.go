@@ -2,8 +2,11 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -19,6 +22,7 @@ type Config struct {
 	Monitoring MonitoringConfig `toml:"monitoring"`
 	DNS        DNSConfig        `toml:"dns"`
 	Deploy     DeployConfig     `toml:"deploy"`
+	Release    ReleaseConfig    `toml:"release"`
 }
 
 type AuditConfig struct {
@@ -110,6 +114,27 @@ type DeployConfig struct {
 	Strategy       string `toml:"strategy"`
 	DefaultProfile string `toml:"default_profile"`
 	Timeout        string `toml:"timeout"`
+}
+
+// ReleaseConfig is an operator-owned allowlist for bounded release jobs. Job
+// requests can select one of these IDs but cannot provide paths, commands or
+// health URLs themselves. Production remains independently disabled until an
+// operator explicitly enables it after validating their backup provider.
+type ReleaseConfig struct {
+	Enabled         bool                           `toml:"enabled"`
+	AllowProduction bool                           `toml:"allow_production"`
+	Targets         map[string]ReleaseTargetConfig `toml:"targets"`
+}
+
+type ReleaseTargetConfig struct {
+	Project          string   `toml:"project"`
+	Environment      string   `toml:"environment"`
+	Profile          string   `toml:"profile"`
+	ComposeFile      string   `toml:"compose_file"`
+	MigrationService string   `toml:"migration_service"`
+	MigrationArgs    []string `toml:"migration_args"`
+	HealthProfile    string   `toml:"health_profile"`
+	HealthURLs       []string `toml:"health_urls"`
 }
 
 const DefaultConfigPath = "/etc/fleetdeck/config.toml"
@@ -256,6 +281,66 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("backup retention fields must be >= 0")
 	}
 
+	if err := validateReleaseConfig(c.Release); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var releaseIdentifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+
+func validateReleaseConfig(release ReleaseConfig) error {
+	if !release.Enabled {
+		return nil
+	}
+	if len(release.Targets) == 0 {
+		return fmt.Errorf("release.enabled requires at least one allowlisted target")
+	}
+	for id, target := range release.Targets {
+		if !releaseIdentifierPattern.MatchString(id) {
+			return fmt.Errorf("release target id %q is invalid", id)
+		}
+		for name, value := range map[string]string{
+			"project": target.Project, "profile": target.Profile, "health_profile": target.HealthProfile,
+		} {
+			if !releaseIdentifierPattern.MatchString(value) {
+				return fmt.Errorf("release.targets.%s.%s is invalid", id, name)
+			}
+		}
+		if target.Environment != "staging" && target.Environment != "production" {
+			return fmt.Errorf("release.targets.%s.environment must be staging or production", id)
+		}
+		if target.Environment == "production" && !release.AllowProduction {
+			return fmt.Errorf("release target %s is production but release.allow_production is false", id)
+		}
+		if target.ComposeFile == "" || filepath.IsAbs(target.ComposeFile) || filepath.Base(target.ComposeFile) != target.ComposeFile {
+			return fmt.Errorf("release.targets.%s.compose_file must be a single relative filename", id)
+		}
+		if len(target.HealthURLs) == 0 || len(target.HealthURLs) > 16 {
+			return fmt.Errorf("release.targets.%s.health_urls must contain between 1 and 16 URLs", id)
+		}
+		for _, rawURL := range target.HealthURLs {
+			parsed, err := url.Parse(rawURL)
+			if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				return fmt.Errorf("release.targets.%s.health_urls contains an invalid URL", id)
+			}
+			if target.Environment == "production" && parsed.Scheme != "https" {
+				return fmt.Errorf("release.targets.%s production health URLs must use https", id)
+			}
+		}
+		if (target.MigrationService == "") != (len(target.MigrationArgs) == 0) {
+			return fmt.Errorf("release.targets.%s migration service and args must be configured together", id)
+		}
+		if target.MigrationService != "" && !releaseIdentifierPattern.MatchString(target.MigrationService) {
+			return fmt.Errorf("release.targets.%s.migration_service is invalid", id)
+		}
+		for _, arg := range target.MigrationArgs {
+			if arg == "" || strings.ContainsRune(arg, '\x00') || len(arg) > 512 {
+				return fmt.Errorf("release.targets.%s.migration_args contains an invalid argument", id)
+			}
+		}
+	}
 	return nil
 }
 
