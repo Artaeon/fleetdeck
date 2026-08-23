@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -20,6 +22,9 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Install keyless signing support
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+
       - name: Install cross-compilation dependencies
         run: |
           sudo apt-get update
@@ -28,19 +33,14 @@ jobs:
       - name: Run tests
         run: go test -race ./...
 
-      - name: Build raw binaries for upgrade command
-        run: |
-          mkdir -p dist
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X github.com/fleetdeck/fleetdeck/cmd.Version=${GITHUB_REF_NAME#v}" \
-            -o dist/fleetdeck-linux-amd64 .
-          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build \
-            -ldflags "-s -w -X github.com/fleetdeck/fleetdeck/cmd.Version=${GITHUB_REF_NAME#v}" \
-            -o dist/fleetdeck-linux-arm64 .
-
       - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
-          version: "~> v2"
+          version: "v2.17.1"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attest published release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: ./dist/checksums.txt
