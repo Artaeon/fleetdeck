@@ -65,3 +65,43 @@ func TestVerifyChecksumMismatch(t *testing.T) {
 		t.Fatal("expected a checksum mismatch error, got nil")
 	}
 }
+
+func TestReleaseBaseURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		repository string
+		want       string
+		wantError  bool
+	}{
+		{
+			name:       "compiled repository",
+			repository: "Artaeon/fleetdeck",
+			want:       "https://github.com/Artaeon/fleetdeck/releases/latest/download",
+		},
+		{
+			name: "upstream fallback",
+			want: "https://github.com/fleetdeck/fleetdeck/releases/latest/download",
+		},
+		{name: "path traversal", repository: "Artaeon/../fleetdeck", wantError: true},
+		{name: "url injection", repository: "Artaeon/fleetdeck?raw=1", wantError: true},
+		{name: "missing owner", repository: "fleetdeck", wantError: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := releaseBaseURL(test.repository)
+			if test.wantError {
+				if err == nil {
+					t.Fatalf("expected error, got URL %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("releaseBaseURL: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("expected %q, got %q", test.want, got)
+			}
+		})
+	}
+}
