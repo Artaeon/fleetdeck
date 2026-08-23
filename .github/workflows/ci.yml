@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   release-config:
-    name: release config
+    name: release dry run
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -25,10 +25,24 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.25"
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
       - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           version: "v2.17.1"
-          args: check
+          args: release --snapshot --clean --skip=sign
+      - name: Verify release inventory
+        run: |
+          test -s dist/checksums.txt
+          test -s dist/artifacts.json
+          jq -e '[.[] | select(.type == "Archive")] | length == 2' \
+            dist/artifacts.json >/dev/null
+          jq -e '[.[] | select(.type == "Binary" and (.name == "fleetdeck-linux-amd64" or .name == "fleetdeck-linux-arm64"))] | length == 2' \
+            dist/artifacts.json >/dev/null
+          jq -e '[.[] | select(.type == "Checksum" and .name == "checksums.txt")] | length == 1' \
+            dist/artifacts.json >/dev/null
 
   secret-scan:
     name: Public history contains no secrets
