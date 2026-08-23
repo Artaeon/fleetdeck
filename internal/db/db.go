@@ -28,29 +28,29 @@ func (db *DB) SetEncryptionKey(key []byte) {
 }
 
 type Project struct {
-	ID          string
-	Name        string
-	Domain      string
-	GitHubRepo  string
-	LinuxUser   string
-	ProjectPath string
-	Template    string
-	Status      string
-	Source      string // "created", "imported", "discovered"
+	ID             string
+	Name           string
+	Domain         string
+	GitHubRepo     string
+	LinuxUser      string
+	ProjectPath    string
+	Template       string
+	Status         string
+	Source         string // "created", "imported", "discovered"
 	ServerID       string // optional: links to a registered server
 	BranchMappings string // JSON: {"main":"production","develop":"staging"}
 	CreatedAt      time.Time
-	UpdatedAt   time.Time
+	UpdatedAt      time.Time
 }
 
 type BackupRecord struct {
-	ID          string
-	ProjectID   string
-	Type        string // "manual", "snapshot", "scheduled"
-	Trigger     string // "user", "pre-stop", "pre-restart", "pre-destroy"
-	Path        string
-	SizeBytes   int64
-	CreatedAt   time.Time
+	ID        string
+	ProjectID string
+	Type      string // "manual", "snapshot", "scheduled"
+	Trigger   string // "user", "pre-stop", "pre-restart", "pre-destroy"
+	Path      string
+	SizeBytes int64
+	CreatedAt time.Time
 }
 
 type Deployment struct {
@@ -322,6 +322,28 @@ func (db *DB) migrate() error {
 			started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			finished_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS release_jobs (
+			idempotency_key TEXT PRIMARY KEY,
+			job_id TEXT UNIQUE NOT NULL,
+			release_id TEXT NOT NULL,
+			manifest_digest TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			environment TEXT NOT NULL,
+			request_sha256 TEXT NOT NULL,
+			request_json TEXT NOT NULL,
+			status TEXT NOT NULL,
+			result_json TEXT,
+			started_at DATETIME NOT NULL,
+			finished_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS release_targets (
+			target_id TEXT PRIMARY KEY,
+			current_release_id TEXT NOT NULL,
+			manifest_digest TEXT NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_release_jobs_target_started
+			ON release_jobs(target_id, started_at DESC)`,
 	}
 
 	for _, m := range migrations {
@@ -342,4 +364,3 @@ func (db *DB) migrate() error {
 
 	return nil
 }
-
