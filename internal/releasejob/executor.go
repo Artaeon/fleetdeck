@@ -62,6 +62,7 @@ type ApplyEvidence struct {
 type HealthEvidence struct {
 	Profile      string `json:"profile"`
 	ChecksPassed int    `json:"checks_passed"`
+	Attempts     int    `json:"attempts,omitempty"`
 }
 
 type JobStore interface {

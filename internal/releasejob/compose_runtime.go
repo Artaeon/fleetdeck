@@ -39,6 +39,7 @@ type ComposeRuntime struct {
 	projects ProjectStore
 	commands CommandRunner
 	http     HTTPDoer
+	wait     func(context.Context, time.Duration) error
 }
 
 type OSCommandRunner struct{}
@@ -68,6 +69,18 @@ func NewComposeRuntime(cfg *config.Config, projects ProjectStore) *ComposeRuntim
 				return http.ErrUseLastResponse
 			},
 		},
+		wait: waitForHealthRetry,
+	}
+}
+
+func waitForHealthRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -204,25 +217,57 @@ func (r *ComposeRuntime) VerifyHealth(ctx context.Context, request Request) (Hea
 	if err != nil {
 		return HealthEvidence{}, err
 	}
+	policy, err := target.policy.HealthReadinessPolicy()
+	if err != nil {
+		return HealthEvidence{}, fmt.Errorf("invalid configured health readiness policy: %w", err)
+	}
+	healthContext, cancel := context.WithTimeout(ctx, policy.Timeout)
+	defer cancel()
+
+	evidence := HealthEvidence{Profile: request.HealthProfile}
+	var lastErr error
+	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		evidence.Attempts = attempt
+		evidence.ChecksPassed, lastErr = r.verifyHealthAttempt(healthContext, target.policy.HealthURLs)
+		if lastErr == nil {
+			return evidence, nil
+		}
+		if healthContext.Err() != nil {
+			return evidence, fmt.Errorf("configured health readiness ended after %d attempt(s): %w", attempt, healthContext.Err())
+		}
+		if attempt == policy.MaxAttempts {
+			break
+		}
+		if err := r.wait(healthContext, policy.RetryInterval); err != nil {
+			return evidence, fmt.Errorf("configured health readiness ended after %d attempt(s): %w", attempt, err)
+		}
+	}
+	return evidence, fmt.Errorf("configured health checks did not become ready after %d attempt(s): %w", evidence.Attempts, lastErr)
+}
+
+func (r *ComposeRuntime) verifyHealthAttempt(ctx context.Context, healthURLs []string) (int, error) {
 	passed := 0
-	for _, healthURL := range target.policy.HealthURLs {
+	for _, healthURL := range healthURLs {
 		httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 		if err != nil {
-			return HealthEvidence{}, err
+			return passed, err
 		}
 		httpRequest.Header.Set("user-agent", "fleetdeck-release-health/1")
 		response, err := r.http.Do(httpRequest)
 		if err != nil {
-			return HealthEvidence{}, errors.New("configured health check request failed")
+			if ctx.Err() != nil {
+				return passed, ctx.Err()
+			}
+			return passed, errors.New("configured health check request failed")
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 		response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return HealthEvidence{}, fmt.Errorf("configured health check returned HTTP %d", response.StatusCode)
+			return passed, fmt.Errorf("configured health check returned HTTP %d", response.StatusCode)
 		}
 		passed++
 	}
-	return HealthEvidence{Profile: request.HealthProfile, ChecksPassed: passed}, nil
+	return passed, nil
 }
 
 func composeArgs(target resolvedTarget) []string {
