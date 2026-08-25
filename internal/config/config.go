@@ -1,12 +1,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -127,14 +129,65 @@ type ReleaseConfig struct {
 }
 
 type ReleaseTargetConfig struct {
-	Project          string   `toml:"project"`
-	Environment      string   `toml:"environment"`
-	Profile          string   `toml:"profile"`
-	ComposeFile      string   `toml:"compose_file"`
-	MigrationService string   `toml:"migration_service"`
-	MigrationArgs    []string `toml:"migration_args"`
-	HealthProfile    string   `toml:"health_profile"`
-	HealthURLs       []string `toml:"health_urls"`
+	Project             string   `toml:"project"`
+	Environment         string   `toml:"environment"`
+	Profile             string   `toml:"profile"`
+	ComposeFile         string   `toml:"compose_file"`
+	MigrationService    string   `toml:"migration_service"`
+	MigrationArgs       []string `toml:"migration_args"`
+	HealthProfile       string   `toml:"health_profile"`
+	HealthURLs          []string `toml:"health_urls"`
+	HealthMaxAttempts   int      `toml:"health_max_attempts"`
+	HealthRetryInterval string   `toml:"health_retry_interval"`
+	HealthTimeout       string   `toml:"health_timeout"`
+}
+
+// ReleaseHealthPolicy is the normalized, operator-owned readiness window for
+// one allowlisted release target.
+type ReleaseHealthPolicy struct {
+	MaxAttempts   int
+	RetryInterval time.Duration
+	Timeout       time.Duration
+}
+
+// HealthReadinessPolicy validates and normalizes the optional target settings.
+// Omitting them preserves the original single health-check attempt.
+func (target ReleaseTargetConfig) HealthReadinessPolicy() (ReleaseHealthPolicy, error) {
+	maxAttempts := target.HealthMaxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = 1
+	}
+	if maxAttempts < 1 || maxAttempts > 60 {
+		return ReleaseHealthPolicy{}, errors.New("health_max_attempts must be between 1 and 60, or 0 for the single-attempt default")
+	}
+	retryInterval, err := releaseDuration(
+		target.HealthRetryInterval,
+		2*time.Second,
+		100*time.Millisecond,
+		30*time.Second,
+		"health_retry_interval",
+	)
+	if err != nil {
+		return ReleaseHealthPolicy{}, err
+	}
+	timeout, err := releaseDuration(
+		target.HealthTimeout,
+		10*time.Second,
+		1*time.Second,
+		10*time.Minute,
+		"health_timeout",
+	)
+	if err != nil {
+		return ReleaseHealthPolicy{}, err
+	}
+	if maxAttempts > 1 && retryInterval >= timeout {
+		return ReleaseHealthPolicy{}, errors.New("health_retry_interval must be shorter than health_timeout")
+	}
+	return ReleaseHealthPolicy{
+		MaxAttempts:   maxAttempts,
+		RetryInterval: retryInterval,
+		Timeout:       timeout,
+	}, nil
 }
 
 const DefaultConfigPath = "/etc/fleetdeck/config.toml"
@@ -329,6 +382,9 @@ func validateReleaseConfig(release ReleaseConfig) error {
 				return fmt.Errorf("release.targets.%s production health URLs must use https", id)
 			}
 		}
+		if _, err := target.HealthReadinessPolicy(); err != nil {
+			return fmt.Errorf("release.targets.%s.%w", id, err)
+		}
 		if (target.MigrationService == "") != (len(target.MigrationArgs) == 0) {
 			return fmt.Errorf("release.targets.%s migration service and args must be configured together", id)
 		}
@@ -342,6 +398,17 @@ func validateReleaseConfig(release ReleaseConfig) error {
 		}
 	}
 	return nil
+}
+
+func releaseDuration(raw string, fallback, minimum, maximum time.Duration, name string) (time.Duration, error) {
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, fmt.Errorf("%s must be a duration between %s and %s", name, minimum, maximum)
+	}
+	return parsed, nil
 }
 
 // applyLocalBasePath detects when running locally (not on a server where
