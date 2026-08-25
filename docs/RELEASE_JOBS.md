@@ -11,6 +11,8 @@ already made its rollout decision. It is not a general remote-shell API.
 - Every image uses `registry/repository@sha256:...`; tags are rejected.
 - Target, environment, profile, Compose filename, migration arguments and
   health URLs are selected from the operator-owned FleetDeck configuration.
+- Health retries are bounded independently by an attempt limit and an overall
+  timeout; cancellation interrupts both requests and retry waits.
 - Identical idempotency keys replay the stored result without side effects.
 - Reusing a key with different content is rejected.
 - Only one release job may run on a target at a time.
@@ -46,7 +48,31 @@ migration_service = "api"
 migration_args = ["app", "migrate", "apply"]
 health_profile = "http-standard"
 health_urls = ["https://staging.example.com/health"]
+health_max_attempts = 30
+health_retry_interval = "2s"
+health_timeout = "120s"
 ```
+
+All configured URLs must return a 2xx response in the same attempt. A failed
+request or non-2xx response retries the complete configured set. The result
+records how many attempts were used, while response bodies and network details
+remain outside the immutable job result.
+
+The readiness bounds are deliberately finite:
+
+- `health_max_attempts`: 1–60; omitted or `0` preserves the original single
+  immediate attempt;
+- `health_retry_interval`: 100 ms–30 s; omitted defaults to 2 s;
+- `health_timeout`: 1 s–10 min for the complete health stage; omitted defaults
+  to 10 s;
+- when more than one attempt is configured, the retry interval must be shorter
+  than the overall timeout.
+
+The maximum-attempt limit can end the stage before the timeout. Conversely,
+the overall timeout can cancel an in-flight request or wait before all attempts
+are used. Exhaustion remains fail-closed with `HEALTH_FAILED`; a later retry
+must use a new job ID and idempotency key unless it is an exact replay of an
+already stored result.
 
 `allow_production` is a second, independent switch. Enabling it does not make
 the built-in Compose adapter production-capable; a production-grade adapter
