@@ -1,6 +1,7 @@
 package health
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -35,12 +36,28 @@ type composePSEntry struct {
 func CheckProject(projectPath string) (*HealthReport, error) {
 	cmd := exec.Command("docker", "compose", "ps", "--format", "json")
 	cmd.Dir = projectPath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("docker compose ps: %s: %w", strings.TrimSpace(string(out)), err)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	return healthReportFromComposeOutput(stdout.Bytes(), stderr.Bytes(), err)
+}
+
+func healthReportFromComposeOutput(stdout, stderr []byte, runErr error) (*HealthReport, error) {
+	if runErr != nil {
+		detail := strings.TrimSpace(string(stderr))
+		if detail == "" {
+			detail = strings.TrimSpace(string(stdout))
+		}
+		if detail == "" {
+			return nil, fmt.Errorf("docker compose ps: %w", runErr)
+		}
+		return nil, fmt.Errorf("docker compose ps: %s: %w", detail, runErr)
 	}
 
-	return ParseHealthReport(string(out))
+	return ParseHealthReport(string(stdout))
 }
 
 // ParseHealthReport builds a HealthReport from raw docker compose ps JSON

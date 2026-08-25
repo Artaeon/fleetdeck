@@ -1,6 +1,8 @@
 package health
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +19,30 @@ const sampleRestartingNDJSON = `{"Name":"myapp-web-1","State":"restarting","Stat
 
 const sampleExitedNDJSON = `{"Name":"myapp-web-1","State":"exited","Status":"Exited (1) 30 seconds ago","Health":""}
 {"Name":"myapp-db-1","State":"running","Status":"Up 2 minutes","Health":""}`
+
+func TestHealthReportFromComposeOutput_IgnoresSuccessfulStderrWarnings(t *testing.T) {
+	report, err := healthReportFromComposeOutput(
+		[]byte(sampleHealthyNDJSON),
+		[]byte(`time="2026-08-25T23:46:35Z" level=warning msg="A variable is not set"`),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !report.Healthy || len(report.Services) != 2 {
+		t.Fatalf("expected the JSON stdout to remain healthy, got %#v", report)
+	}
+}
+
+func TestHealthReportFromComposeOutput_ReportsFailedStderr(t *testing.T) {
+	_, err := healthReportFromComposeOutput(nil, []byte("compose failed"), errors.New("exit status 1"))
+	if err == nil {
+		t.Fatal("expected command failure")
+	}
+	if !strings.Contains(err.Error(), "compose failed") {
+		t.Fatalf("expected stderr detail, got %v", err)
+	}
+}
 
 // JSON array format (newer compose versions).
 const sampleHealthyArray = `[
