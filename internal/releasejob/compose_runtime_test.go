@@ -2,12 +2,14 @@ package releasejob
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/config"
 )
@@ -36,6 +38,30 @@ type httpStub struct{ status int }
 
 func (h httpStub) Do(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: h.status, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+}
+
+type httpSequenceStub struct {
+	statuses []int
+	calls    int
+}
+
+func (h *httpSequenceStub) Do(*http.Request) (*http.Response, error) {
+	index := h.calls
+	h.calls++
+	if index >= len(h.statuses) {
+		index = len(h.statuses) - 1
+	}
+	return &http.Response{
+		StatusCode: h.statuses[index],
+		Body:       io.NopCloser(strings.NewReader("ok")),
+	}, nil
+}
+
+type blockingHTTPStub struct{}
+
+func (blockingHTTPStub) Do(request *http.Request) (*http.Response, error) {
+	<-request.Context().Done()
+	return nil, request.Context().Err()
 }
 
 func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunnerStub, string) {
@@ -147,12 +173,117 @@ func TestComposeRuntimeRejectsPolicyMismatchAndUnknownServices(t *testing.T) {
 func TestComposeRuntimeHealthIsBoundedToConfiguredURLs(t *testing.T) {
 	runtime, request, _, _ := composeRuntimeHarness(t)
 	evidence, err := runtime.VerifyHealth(context.Background(), request)
-	if err != nil || evidence.Profile != "http-standard" || evidence.ChecksPassed != 1 {
+	if err != nil || evidence.Profile != "http-standard" || evidence.ChecksPassed != 1 || evidence.Attempts != 1 {
 		t.Fatalf("evidence=%+v err=%v", evidence, err)
 	}
 	runtime.http = httpStub{status: 503}
 	if _, err := runtime.VerifyHealth(context.Background(), request); err == nil || !strings.Contains(err.Error(), "HTTP 503") {
 		t.Fatalf("health error = %v", err)
+	}
+}
+
+func TestComposeRuntimeHealthRetriesUntilEveryConfiguredURLIsReady(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	target := runtime.config.Release.Targets[request.Target.ID]
+	target.HealthURLs = []string{
+		"https://api.staging.example.com/health",
+		"https://web.staging.example.com/health",
+	}
+	target.HealthMaxAttempts = 3
+	target.HealthRetryInterval = "100ms"
+	target.HealthTimeout = "2s"
+	runtime.config.Release.Targets[request.Target.ID] = target
+	responses := &httpSequenceStub{statuses: []int{200, 503, 200, 200}}
+	runtime.http = responses
+	waits := 0
+	runtime.wait = func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}
+
+	evidence, err := runtime.VerifyHealth(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Attempts != 2 || evidence.ChecksPassed != 2 || responses.calls != 4 || waits != 1 {
+		t.Fatalf("evidence=%+v calls=%d waits=%d", evidence, responses.calls, waits)
+	}
+}
+
+func TestComposeRuntimeHealthFailsAfterConfiguredAttempts(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	target := runtime.config.Release.Targets[request.Target.ID]
+	target.HealthMaxAttempts = 3
+	target.HealthRetryInterval = "100ms"
+	target.HealthTimeout = "2s"
+	runtime.config.Release.Targets[request.Target.ID] = target
+	responses := &httpSequenceStub{statuses: []int{503}}
+	runtime.http = responses
+	waits := 0
+	runtime.wait = func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}
+
+	evidence, err := runtime.VerifyHealth(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "after 3 attempt(s)") || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Fatalf("evidence=%+v err=%v", evidence, err)
+	}
+	if evidence.Attempts != 3 || evidence.ChecksPassed != 0 || responses.calls != 3 || waits != 2 {
+		t.Fatalf("evidence=%+v calls=%d waits=%d", evidence, responses.calls, waits)
+	}
+}
+
+func TestComposeRuntimeHealthStopsWhenContextIsCancelled(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	target := runtime.config.Release.Targets[request.Target.ID]
+	target.HealthMaxAttempts = 3
+	target.HealthRetryInterval = "100ms"
+	target.HealthTimeout = "2s"
+	runtime.config.Release.Targets[request.Target.ID] = target
+	responses := &httpSequenceStub{statuses: []int{503}}
+	runtime.http = responses
+	ctx, cancel := context.WithCancel(context.Background())
+	runtime.wait = func(context.Context, time.Duration) error {
+		cancel()
+		return ctx.Err()
+	}
+
+	evidence, err := runtime.VerifyHealth(ctx, request)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("evidence=%+v err=%v", evidence, err)
+	}
+	if evidence.Attempts != 1 || responses.calls != 1 {
+		t.Fatalf("evidence=%+v calls=%d", evidence, responses.calls)
+	}
+}
+
+func TestComposeRuntimeHealthStopsAtConfiguredOverallTimeout(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	target := runtime.config.Release.Targets[request.Target.ID]
+	target.HealthMaxAttempts = 3
+	target.HealthRetryInterval = "100ms"
+	target.HealthTimeout = "1s"
+	runtime.config.Release.Targets[request.Target.ID] = target
+	runtime.http = blockingHTTPStub{}
+
+	evidence, err := runtime.VerifyHealth(context.Background(), request)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("evidence=%+v err=%v", evidence, err)
+	}
+	if evidence.Attempts != 1 {
+		t.Fatalf("evidence=%+v", evidence)
+	}
+}
+
+func TestComposeRuntimeHealthDefaultsToOneAttempt(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	responses := &httpSequenceStub{statuses: []int{503, 200}}
+	runtime.http = responses
+
+	evidence, err := runtime.VerifyHealth(context.Background(), request)
+	if err == nil || evidence.Attempts != 1 || responses.calls != 1 {
+		t.Fatalf("evidence=%+v calls=%d err=%v", evidence, responses.calls, err)
 	}
 }
 
