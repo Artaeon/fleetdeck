@@ -64,6 +64,20 @@ func (blockingHTTPStub) Do(request *http.Request) (*http.Response, error) {
 	return nil, request.Context().Err()
 }
 
+type productionBackupStub struct {
+	evidence BackupEvidence
+	calls    int
+}
+
+func (s *productionBackupStub) CreateAndVerify(
+	context.Context,
+	Project,
+	Request,
+) (BackupEvidence, error) {
+	s.calls++
+	return s.evidence, nil
+}
+
 func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunnerStub, string) {
 	t.Helper()
 	projectPath := t.TempDir()
@@ -297,5 +311,36 @@ func TestComposeRuntimeKeepsProductionDisabledWithoutVerifiedProvider(t *testing
 	request.Backup.Required = true
 	if _, err := runtime.Preflight(context.Background(), request); err == nil || !strings.Contains(err.Error(), "backup provider") {
 		t.Fatalf("production runtime error = %v", err)
+	}
+}
+
+func TestComposeRuntimeUsesConfiguredProviderForProductionOnly(t *testing.T) {
+	runtime, request, _, _ := composeRuntimeHarness(t)
+	runtime.config.Release.AllowProduction = true
+	policy := runtime.config.Release.Targets[request.Target.ID]
+	policy.Environment = "production"
+	runtime.config.Release.Targets[request.Target.ID] = policy
+	request.Target.Environment = "production"
+	request.Backup.Required = true
+	provider := &productionBackupStub{evidence: BackupEvidence{
+		BackupID:        "backup-1",
+		ManifestSHA256:  "sha256:" + strings.Repeat("a", 64),
+		Verified:        true,
+		Encrypted:       true,
+		OffsiteVerified: true,
+	}}
+	runtime.backups = provider
+
+	evidence, err := runtime.CreateAndVerifyBackup(context.Background(), request)
+	if err != nil || evidence.BackupID != "backup-1" || provider.calls != 1 {
+		t.Fatalf("evidence=%+v calls=%d err=%v", evidence, provider.calls, err)
+	}
+
+	request.Target.Environment = "staging"
+	if _, err := runtime.CreateAndVerifyBackup(context.Background(), request); err == nil {
+		t.Fatal("staging request unexpectedly reached the production backup provider")
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider called for staging: %d", provider.calls)
 	}
 }

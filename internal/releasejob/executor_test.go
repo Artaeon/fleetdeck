@@ -76,9 +76,11 @@ func readyHarness(t *testing.T) (*Executor, *memoryStore, *fakeRuntime) {
 	runtime := &fakeRuntime{
 		preflight: PreflightEvidence{ComposeValid: true, ImagesResolved: true, MigrationReady: true},
 		backup: BackupEvidence{
-			BackupID:       "backup-1",
-			ManifestSHA256: "sha256:" + strings.Repeat("a", 64),
-			Verified:       true,
+			BackupID:        "backup-1",
+			ManifestSHA256:  "sha256:" + strings.Repeat("a", 64),
+			Verified:        true,
+			Encrypted:       true,
+			OffsiteVerified: true,
 		},
 		apply:  ApplyEvidence{AppliedComponents: 1, MigrationApplied: true},
 		health: HealthEvidence{Profile: "http-standard", ChecksPassed: 3},
@@ -120,6 +122,30 @@ func TestExecutorRequiresVerifiedBackupBeforeProductionSideEffects(t *testing.T)
 	}
 	if store.failed == nil || store.succeeded != nil {
 		t.Fatal("failed result was not persisted")
+	}
+}
+
+func TestExecutorRequiresEncryptedOffsiteProductionBackup(t *testing.T) {
+	for _, field := range []string{"encrypted", "offsite"} {
+		t.Run(field, func(t *testing.T) {
+			executor, _, runtime := readyHarness(t)
+			request := validRequest(t)
+			request.Target.Environment = "production"
+			request.Backup.Required = true
+			if field == "encrypted" {
+				runtime.backup.Encrypted = false
+			} else {
+				runtime.backup.OffsiteVerified = false
+			}
+
+			result, err := executor.Execute(context.Background(), request)
+			if err == nil || result.ErrorCode != "BACKUP_NOT_VERIFIED" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if strings.Join(runtime.calls, ",") != "preflight,backup" {
+				t.Fatalf("production continued after incomplete backup evidence: %v", runtime.calls)
+			}
+		})
 	}
 }
 

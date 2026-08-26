@@ -49,9 +49,11 @@ type PreflightEvidence struct {
 }
 
 type BackupEvidence struct {
-	BackupID       string `json:"backup_id"`
-	ManifestSHA256 string `json:"manifest_sha256"`
-	Verified       bool   `json:"verified"`
+	BackupID        string `json:"backup_id"`
+	ManifestSHA256  string `json:"manifest_sha256"`
+	Verified        bool   `json:"verified"`
+	Encrypted       bool   `json:"encrypted"`
+	OffsiteVerified bool   `json:"offsite_verified"`
 }
 
 type ApplyEvidence struct {
@@ -149,7 +151,8 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Result, error)
 	if request.Backup.Required {
 		backup, err := e.runtime.CreateAndVerifyBackup(ctx, request)
 		result.Backup = &backup
-		if err != nil || !backup.Verified || !digestPattern.MatchString(backup.ManifestSHA256) || backup.BackupID == "" {
+		if err != nil || !backup.Verified || !backup.Encrypted || !backup.OffsiteVerified ||
+			!digestPattern.MatchString(backup.ManifestSHA256) || backup.BackupID == "" {
 			return e.fail(ctx, result, "backup", "BACKUP_NOT_VERIFIED")
 		}
 	}
