@@ -174,6 +174,7 @@ func TestProductionReleaseRequiresSeparateSwitchAndHTTPS(t *testing.T) {
 	}
 
 	cfg.Release.AllowProduction = true
+	cfg.Release.ProductionBackupCommand = "/usr/local/sbin/fleetdeck-release-backup"
 	target.HealthURLs = []string{"http://production.example.com/health"}
 	cfg.Release.Targets["synthetic-example"] = target
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must use https") {

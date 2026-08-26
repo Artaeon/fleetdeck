@@ -123,9 +123,10 @@ type DeployConfig struct {
 // health URLs themselves. Production remains independently disabled until an
 // operator explicitly enables it after validating their backup provider.
 type ReleaseConfig struct {
-	Enabled         bool                           `toml:"enabled"`
-	AllowProduction bool                           `toml:"allow_production"`
-	Targets         map[string]ReleaseTargetConfig `toml:"targets"`
+	Enabled                 bool                           `toml:"enabled"`
+	AllowProduction         bool                           `toml:"allow_production"`
+	ProductionBackupCommand string                         `toml:"production_backup_command"`
+	Targets                 map[string]ReleaseTargetConfig `toml:"targets"`
 }
 
 type ReleaseTargetConfig struct {
@@ -349,6 +350,13 @@ func validateReleaseConfig(release ReleaseConfig) error {
 	}
 	if len(release.Targets) == 0 {
 		return fmt.Errorf("release.enabled requires at least one allowlisted target")
+	}
+	if release.AllowProduction {
+		if release.ProductionBackupCommand == "" ||
+			!filepath.IsAbs(release.ProductionBackupCommand) ||
+			strings.ContainsRune(release.ProductionBackupCommand, '\x00') {
+			return fmt.Errorf("release.allow_production requires an absolute production_backup_command")
+		}
 	}
 	for id, target := range release.Targets {
 		if !releaseIdentifierPattern.MatchString(id) {
