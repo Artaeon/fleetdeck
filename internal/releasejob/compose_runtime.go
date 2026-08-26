@@ -45,12 +45,14 @@ type ProductionBackupProvider interface {
 }
 
 type ComposeRuntime struct {
-	config   *config.Config
-	projects ProjectStore
-	commands CommandRunner
-	http     HTTPDoer
-	backups  ProductionBackupProvider
-	wait     func(context.Context, time.Duration) error
+	config           *config.Config
+	projects         ProjectStore
+	commands         CommandRunner
+	http             HTTPDoer
+	backups          ProductionBackupProvider
+	preflightRuntime releasePreflightRuntime
+	removeFile       func(string) error
+	wait             func(context.Context, time.Duration) error
 }
 
 type OSCommandRunner struct{}
@@ -71,9 +73,11 @@ func (OSCommandRunner) Run(
 
 func NewComposeRuntime(cfg *config.Config, projects ProjectStore) *ComposeRuntime {
 	runtime := &ComposeRuntime{
-		config:   cfg,
-		projects: projects,
-		commands: OSCommandRunner{},
+		config:           cfg,
+		projects:         projects,
+		commands:         OSCommandRunner{},
+		preflightRuntime: defaultReleasePreflightRuntime(),
+		removeFile:       os.Remove,
 		http: &http.Client{
 			Timeout: 10 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -100,10 +104,11 @@ func waitForHealthRetry(ctx context.Context, delay time.Duration) error {
 }
 
 type resolvedTarget struct {
-	project  Project
-	policy   config.ReleaseTargetConfig
-	baseFile string
-	override string
+	project     Project
+	projectPath string
+	policy      config.ReleaseTargetConfig
+	baseFile    string
+	override    string
 }
 
 func (r *ComposeRuntime) resolve(request Request) (resolvedTarget, error) {
@@ -154,10 +159,11 @@ func (r *ComposeRuntime) resolve(request Request) (resolvedTarget, error) {
 
 	overrideDirectory := filepath.Join(projectPath, ".fleetdeck", "release-overrides")
 	return resolvedTarget{
-		project:  project,
-		policy:   policy,
-		baseFile: resolvedBase,
-		override: filepath.Join(overrideDirectory, request.JobID+".json"),
+		project:     project,
+		projectPath: projectPath,
+		policy:      policy,
+		baseFile:    resolvedBase,
+		override:    filepath.Join(overrideDirectory, request.JobID+".json"),
 	}, nil
 }
 
@@ -166,15 +172,32 @@ func pathInside(parent, child string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))
 }
 
-func (r *ComposeRuntime) Preflight(ctx context.Context, request Request) (PreflightEvidence, error) {
+func (r *ComposeRuntime) Preflight(
+	ctx context.Context,
+	request Request,
+) (evidence PreflightEvidence, resultErr error) {
 	target, err := r.resolve(request)
 	if err != nil {
 		return PreflightEvidence{}, err
 	}
-	if err := writeComposeOverride(target.override, request.Images); err != nil {
+	runtimeDirectory, err := r.preflightRuntime.prepare(target.projectPath)
+	if err != nil {
 		return PreflightEvidence{}, err
 	}
-	args := composeArgs(target)
+	preflightOverride, err := writeTemporaryComposeOverride(runtimeDirectory, request.Images)
+	if err != nil {
+		return PreflightEvidence{}, err
+	}
+	defer func() {
+		if err := r.removeFile(preflightOverride); err != nil && !errors.Is(err, os.ErrNotExist) {
+			evidence = PreflightEvidence{}
+			resultErr = errors.Join(resultErr, fmt.Errorf("remove preflight compose override: %w", err))
+		}
+	}()
+
+	preflightTarget := target
+	preflightTarget.override = preflightOverride
+	args := composeArgs(preflightTarget)
 	if _, err := r.commands.Run(ctx, target.project.Path, "docker", append(args, "config", "--quiet")...); err != nil {
 		return PreflightEvidence{}, err
 	}
@@ -328,39 +351,64 @@ func linesSet(value string) map[string]struct{} {
 }
 
 func writeComposeOverride(path string, images []Image) error {
+	temporaryPath, err := createComposeOverrideFile(
+		filepath.Dir(path),
+		".release-override-*",
+		images,
+	)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporaryPath)
+	return os.Rename(temporaryPath, path)
+}
+
+func writeTemporaryComposeOverride(directory string, images []Image) (string, error) {
+	return createComposeOverrideFile(directory, ".release-preflight-*", images)
+}
+
+func createComposeOverrideFile(directory, pattern string, images []Image) (string, error) {
+	payload, err := composeOverridePayload(images)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return "", err
+	}
+	temporary, err := os.CreateTemp(directory, pattern)
+	if err != nil {
+		return "", err
+	}
+	temporaryPath := temporary.Name()
+	removeOnError := true
+	defer func() {
+		if removeOnError {
+			_ = temporary.Close()
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0600); err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(temporary, bytes.NewReader(payload)); err != nil {
+		return "", err
+	}
+	if err := temporary.Sync(); err != nil {
+		return "", err
+	}
+	if err := temporary.Close(); err != nil {
+		return "", err
+	}
+	removeOnError = false
+	return temporaryPath, nil
+}
+
+func composeOverridePayload(images []Image) ([]byte, error) {
 	services := make(map[string]map[string]string, len(images))
 	for _, image := range images {
 		services[image.Component] = map[string]string{"image": image.Reference}
 	}
-	payload, err := json.Marshal(struct {
+	return json.Marshal(struct {
 		Services map[string]map[string]string `json:"services"`
 	}{Services: services})
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".release-override-*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0600); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := io.Copy(temporary, bytes.NewReader(payload)); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, path)
 }
