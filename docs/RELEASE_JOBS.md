@@ -91,6 +91,7 @@ FleetDeck sends one bounded JSON object to the configured command over stdin:
 ```json
 {
   "schema_version": 1,
+  "operation": "create-and-verify",
   "release_id": "release-example",
   "manifest_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
   "target_id": "production-example",
@@ -121,6 +122,28 @@ Provider stderr is discarded so a backup tool cannot leak credentials into
 the immutable release result. The provider remains responsible for creating
 the archive, verifying its content, encrypting it before transfer and proving
 that the remote copy is retrievable.
+
+If applying images/migrations or the post-deploy health gate fails after that
+backup, FleetDeck invokes the same fixed command again with
+`operation=restore-and-verify`, the exact `backup_id` and its manifest digest.
+The provider must restore that bound recovery point and return:
+
+```json
+{
+  "schema_version": 1,
+  "release_id": "release-example",
+  "target_id": "production-example",
+  "backup_id": "backup-018f1f4d",
+  "restored": true,
+  "health_verified": true
+}
+```
+
+Production remains failed after a successful restore (the original apply or
+health error stays visible), but the rollback evidence is attached to the
+result. A restore failure is elevated to `ROLLBACK_FAILED`; FleetDeck never
+pretends the previous version is healthy without the provider's independent
+post-restore check.
 
 ## Version 1 request
 
