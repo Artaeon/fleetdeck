@@ -38,6 +38,9 @@ non-functional:
 [release]
 enabled = true
 allow_production = false
+# Required before allow_production may be enabled. The command is selected by
+# this root-owned configuration, never by a release job.
+production_backup_command = "/usr/local/sbin/fleetdeck-release-backup"
 
 [release.targets.synthetic-example]
 project = "synthetic-example"
@@ -74,10 +77,50 @@ are used. Exhaustion remains fail-closed with `HEALTH_FAILED`; a later retry
 must use a new job ID and idempotency key unless it is an exact replay of an
 already stored result.
 
-`allow_production` is a second, independent switch. Enabling it does not make
-the built-in Compose adapter production-capable; a production-grade adapter
-must first prove a fresh, encrypted, integrity-checked backup through the
-`Runtime` contract.
+`allow_production` is a second, independent switch. Enabling it also requires
+an absolute `production_backup_command`. FleetDeck resolves that executable,
+requires it to be a root-owned regular file that is executable and not
+group/world-writable, and invokes it without command-line arguments. The
+provider must prove a fresh, encrypted, integrity-checked off-server backup
+before FleetDeck performs any migration or image change.
+
+### Production backup provider contract
+
+FleetDeck sends one bounded JSON object to the configured command over stdin:
+
+```json
+{
+  "schema_version": 1,
+  "release_id": "release-example",
+  "manifest_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "target_id": "production-example",
+  "project": "production-example",
+  "environment": "production"
+}
+```
+
+The provider must return exactly one JSON object on stdout (maximum 64 KiB):
+
+```json
+{
+  "schema_version": 1,
+  "release_id": "release-example",
+  "target_id": "production-example",
+  "backup_id": "backup-018f1f4d",
+  "manifest_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "verified": true,
+  "encrypted": true,
+  "offsite_verified": true
+}
+```
+
+Unknown fields, trailing JSON, identity mismatches, malformed identifiers,
+non-zero exits, oversized output, missing integrity evidence, unencrypted
+backups, and backups without confirmed off-server persistence all fail closed.
+Provider stderr is discarded so a backup tool cannot leak credentials into
+the immutable release result. The provider remains responsible for creating
+the archive, verifying its content, encrypting it before transfer and proving
+that the remote copy is retrievable.
 
 ## Version 1 request
 
