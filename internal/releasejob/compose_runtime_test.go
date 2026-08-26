@@ -24,10 +24,23 @@ type commandCall struct {
 	args       []string
 }
 
-type commandRunnerStub struct{ calls []commandCall }
+type commandRunnerStub struct {
+	calls     []commandCall
+	beforeRun func(commandCall) error
+	failAt    int
+}
 
 func (r *commandRunnerStub) Run(_ context.Context, directory, executable string, args ...string) (string, error) {
-	r.calls = append(r.calls, commandCall{directory: directory, executable: executable, args: args})
+	call := commandCall{directory: directory, executable: executable, args: args}
+	r.calls = append(r.calls, call)
+	if r.beforeRun != nil {
+		if err := r.beforeRun(call); err != nil {
+			return "", err
+		}
+	}
+	if r.failAt > 0 && len(r.calls) == r.failAt {
+		return "", errors.New("forced command failure")
+	}
 	if len(args) >= 2 && args[len(args)-2] == "config" && args[len(args)-1] == "--services" {
 		return "api\nweb\n", nil
 	}
@@ -67,14 +80,20 @@ func (blockingHTTPStub) Do(request *http.Request) (*http.Response, error) {
 type productionBackupStub struct {
 	evidence BackupEvidence
 	calls    int
+	onCreate func(Project, Request) error
 }
 
 func (s *productionBackupStub) CreateAndVerify(
-	context.Context,
-	Project,
-	Request,
+	_ context.Context,
+	project Project,
+	request Request,
 ) (BackupEvidence, error) {
 	s.calls++
+	if s.onCreate != nil {
+		if err := s.onCreate(project, request); err != nil {
+			return BackupEvidence{}, err
+		}
+	}
 	return s.evidence, nil
 }
 
@@ -120,11 +139,62 @@ func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunn
 	runtime := NewComposeRuntime(cfg, projectStoreStub{project: Project{Name: "target-example", Path: projectPath}})
 	runtime.commands = commands
 	runtime.http = httpStub{status: 200}
+	runtime.preflightRuntime = testReleasePreflightRuntime(t)
 	return runtime, request, commands, projectPath
 }
 
-func TestComposeRuntimePreflightUsesOnlyDerivedArgumentsAndImmutableOverride(t *testing.T) {
+func testReleasePreflightRuntime(t *testing.T) releasePreflightRuntime {
+	t.Helper()
+	parent := t.TempDir()
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return releasePreflightRuntime{
+		directory: filepath.Join(resolvedParent, "release-preflight"),
+		ownerUID:  uint32(os.Geteuid()),
+	}
+}
+
+func TestComposeRuntimePreflightUsesOnlyDerivedArgumentsAndTemporaryDigestOverride(t *testing.T) {
 	runtime, request, commands, projectPath := composeRuntimeHarness(t)
+	canonicalOverride := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
+	var preflightOverride string
+	commands.beforeRun = func(call commandCall) error {
+		if len(call.args) < 5 {
+			return errors.New("compose arguments do not contain an override")
+		}
+		observed := call.args[4]
+		if observed == canonicalOverride {
+			return errors.New("preflight used the persistent apply override")
+		}
+		if !pathInside(runtime.preflightRuntime.directory, observed) || pathInside(projectPath, observed) {
+			return errors.New("preflight override is not isolated in the runtime directory")
+		}
+		if !strings.HasPrefix(filepath.Base(observed), ".release-preflight-") {
+			return errors.New("preflight override does not use the bounded temporary prefix")
+		}
+		if preflightOverride == "" {
+			preflightOverride = observed
+		} else if observed != preflightOverride {
+			return errors.New("preflight changed override paths between commands")
+		}
+		payload, err := os.ReadFile(observed)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(payload), "@sha256:") || strings.Contains(string(payload), ":latest") {
+			return errors.New("preflight override did not contain immutable image references")
+		}
+		info, err := os.Stat(observed)
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm() != 0600 {
+			return errors.New("preflight override permissions are not 0600")
+		}
+		return nil
+	}
 	evidence, err := runtime.Preflight(context.Background(), request)
 	if err != nil || !evidence.ComposeValid || !evidence.ImagesResolved || !evidence.MigrationReady {
 		t.Fatalf("evidence=%+v err=%v", evidence, err)
@@ -137,22 +207,19 @@ func TestComposeRuntimePreflightUsesOnlyDerivedArgumentsAndImmutableOverride(t *
 			t.Fatalf("unbounded command call: %+v", call)
 		}
 	}
-	overridePath := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
-	payload, err := os.ReadFile(overridePath)
-	if err != nil {
-		t.Fatal(err)
+	if preflightOverride == "" {
+		t.Fatal("preflight override was not observed")
 	}
-	if !strings.Contains(string(payload), "@sha256:") || strings.Contains(string(payload), ":latest") {
-		t.Fatalf("unsafe override: %s", payload)
+	if _, err := os.Stat(preflightOverride); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary preflight override remains after success: %v", err)
 	}
-	info, err := os.Stat(overridePath)
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatalf("override permissions = %v, %v", info.Mode().Perm(), err)
+	if _, err := os.Stat(canonicalOverride); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("preflight created the persistent apply override: %v", err)
 	}
 }
 
 func TestComposeRuntimeAppliesMigrationAndImagesWithoutShell(t *testing.T) {
-	runtime, request, commands, _ := composeRuntimeHarness(t)
+	runtime, request, commands, projectPath := composeRuntimeHarness(t)
 	if _, err := runtime.Preflight(context.Background(), request); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +237,158 @@ func TestComposeRuntimeAppliesMigrationAndImagesWithoutShell(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.Join(commands.calls[1].args, " "), "up -d --remove-orphans") {
 		t.Fatalf("apply args = %v", commands.calls[1].args)
+	}
+	overridePath := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
+	payload, err := os.ReadFile(overridePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), "@sha256:") || strings.Contains(string(payload), ":latest") {
+		t.Fatalf("unsafe apply override: %s", payload)
+	}
+	info, err := os.Stat(overridePath)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("apply override permissions = %v, %v", info.Mode().Perm(), err)
+	}
+}
+
+func TestComposeRuntimePreflightRemovesTemporaryOverrideOnEveryFailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		failAt    int
+		configure func(*ComposeRuntime, *Request)
+	}{
+		{name: "compose validation", failAt: 1},
+		{name: "service discovery", failAt: 2},
+		{
+			name: "unknown candidate service",
+			configure: func(_ *ComposeRuntime, request *Request) {
+				request.Images[0].Component = "unknown"
+			},
+		},
+		{
+			name: "migration policy",
+			configure: func(runtime *ComposeRuntime, request *Request) {
+				policy := runtime.config.Release.Targets[request.Target.ID]
+				policy.MigrationArgs = nil
+				runtime.config.Release.Targets[request.Target.ID] = policy
+			},
+		},
+		{name: "candidate image pull", failAt: 3},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runtime, request, commands, projectPath := composeRuntimeHarness(t)
+			commands.failAt = test.failAt
+			var preflightOverride string
+			commands.beforeRun = func(call commandCall) error {
+				if len(call.args) >= 5 {
+					preflightOverride = call.args[4]
+				}
+				return nil
+			}
+			if test.configure != nil {
+				test.configure(runtime, &request)
+			}
+
+			if _, err := runtime.Preflight(context.Background(), request); err == nil {
+				t.Fatal("preflight failure was not returned")
+			}
+			if preflightOverride == "" {
+				t.Fatal("temporary preflight override was not observed")
+			}
+			if pathInside(projectPath, preflightOverride) {
+				t.Fatalf("temporary override entered the project tree: %s", preflightOverride)
+			}
+			if _, err := os.Stat(preflightOverride); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("temporary override remains after preflight failure: %v", err)
+			}
+			canonical := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
+			if _, err := os.Stat(canonical); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("failed preflight created the persistent apply override: %v", err)
+			}
+		})
+	}
+}
+
+func TestComposeRuntimePreflightFailsClosedWhenTemporaryOverrideCannotBeRemoved(t *testing.T) {
+	runtime, request, commands, projectPath := composeRuntimeHarness(t)
+	var preflightOverride string
+	commands.beforeRun = func(call commandCall) error {
+		if len(call.args) >= 5 {
+			preflightOverride = call.args[4]
+		}
+		return nil
+	}
+	runtime.removeFile = func(string) error { return errors.New("forced cleanup failure") }
+
+	evidence, err := runtime.Preflight(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "remove preflight compose override") {
+		t.Fatalf("evidence=%+v err=%v", evidence, err)
+	}
+	if evidence.ComposeValid || evidence.ImagesResolved || evidence.MigrationReady {
+		t.Fatalf("cleanup failure returned successful evidence: %+v", evidence)
+	}
+	if preflightOverride == "" {
+		t.Fatal("temporary preflight override was not observed")
+	}
+	if pathInside(projectPath, preflightOverride) {
+		t.Fatalf("orphaned temporary override entered the project tree: %s", preflightOverride)
+	}
+	if err := os.Remove(preflightOverride); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestComposeRuntimeRemovesPreflightOverrideBeforeProductionBackup(t *testing.T) {
+	runtime, request, _, projectPath := composeRuntimeHarness(t)
+	runtimeDirectory := runtime.preflightRuntime.directory
+	runtime.config.Release.AllowProduction = true
+	policy := runtime.config.Release.Targets[request.Target.ID]
+	policy.Environment = "production"
+	runtime.config.Release.Targets[request.Target.ID] = policy
+	request.Target.Environment = "production"
+	request.Backup.Required = true
+	provider := &productionBackupStub{
+		evidence: BackupEvidence{
+			BackupID:        "backup-1",
+			ManifestSHA256:  "sha256:" + strings.Repeat("a", 64),
+			Verified:        true,
+			Encrypted:       true,
+			OffsiteVerified: true,
+		},
+		onCreate: func(project Project, _ Request) error {
+			patterns := []string{
+				filepath.Join(project.Path, ".fleetdeck", "release-overrides", "*"),
+				filepath.Join(runtimeDirectory, "*"),
+			}
+			for _, pattern := range patterns {
+				matches, err := filepath.Glob(pattern)
+				if err != nil {
+					return err
+				}
+				if len(matches) != 0 {
+					return errors.New("candidate override was visible to the production backup provider")
+				}
+			}
+			return nil
+		},
+	}
+	runtime.backups = provider
+
+	if _, err := runtime.Preflight(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.CreateAndVerifyBackup(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("backup provider calls = %d", provider.calls)
+	}
+	canonical := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
+	if _, err := os.Stat(canonical); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("persistent apply override exists before apply: %v", err)
 	}
 }
 
