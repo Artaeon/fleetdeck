@@ -34,11 +34,16 @@ type HTTPDoer interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
+type ProductionBackupProvider interface {
+	CreateAndVerify(ctx context.Context, project Project, request Request) (BackupEvidence, error)
+}
+
 type ComposeRuntime struct {
 	config   *config.Config
 	projects ProjectStore
 	commands CommandRunner
 	http     HTTPDoer
+	backups  ProductionBackupProvider
 	wait     func(context.Context, time.Duration) error
 }
 
@@ -59,7 +64,7 @@ func (OSCommandRunner) Run(
 }
 
 func NewComposeRuntime(cfg *config.Config, projects ProjectStore) *ComposeRuntime {
-	return &ComposeRuntime{
+	runtime := &ComposeRuntime{
 		config:   cfg,
 		projects: projects,
 		commands: OSCommandRunner{},
@@ -71,6 +76,10 @@ func NewComposeRuntime(cfg *config.Config, projects ProjectStore) *ComposeRuntim
 		},
 		wait: waitForHealthRetry,
 	}
+	if cfg != nil && cfg.Release.ProductionBackupCommand != "" {
+		runtime.backups = NewExternalProductionBackupProvider(cfg.Release.ProductionBackupCommand)
+	}
+	return runtime
 }
 
 func waitForHealthRetry(ctx context.Context, delay time.Duration) error {
@@ -105,7 +114,12 @@ func (r *ComposeRuntime) resolve(request Request) (resolvedTarget, error) {
 		return resolvedTarget{}, errors.New("release target policy does not match the request")
 	}
 	if request.Target.Environment == "production" {
-		return resolvedTarget{}, errors.New("production backup provider is not configured for bounded release execution")
+		if !r.config.Release.AllowProduction {
+			return resolvedTarget{}, errors.New("production release execution is disabled")
+		}
+		if r.backups == nil {
+			return resolvedTarget{}, errors.New("production backup provider is not configured for bounded release execution")
+		}
 	}
 	project, err := r.projects.GetReleaseProject(policy.Project)
 	if err != nil {
@@ -183,10 +197,17 @@ func (r *ComposeRuntime) Preflight(ctx context.Context, request Request) (Prefli
 }
 
 func (r *ComposeRuntime) CreateAndVerifyBackup(
-	context.Context,
-	Request,
+	ctx context.Context,
+	request Request,
 ) (BackupEvidence, error) {
-	return BackupEvidence{}, errors.New("production backup provider is not configured for bounded release execution")
+	target, err := r.resolve(request)
+	if err != nil {
+		return BackupEvidence{}, err
+	}
+	if request.Target.Environment != "production" || !request.Backup.Required {
+		return BackupEvidence{}, errors.New("verified backups are only available for required production release jobs")
+	}
+	return r.backups.CreateAndVerify(ctx, target.project, request)
 }
 
 func (r *ComposeRuntime) Apply(ctx context.Context, request Request) (ApplyEvidence, error) {
