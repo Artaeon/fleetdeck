@@ -17,11 +17,14 @@ const maxBackupProviderOutput = 64 * 1024
 
 type externalBackupRequest struct {
 	SchemaVersion  int    `json:"schema_version"`
+	Operation      string `json:"operation"`
 	ReleaseID      string `json:"release_id"`
 	ManifestDigest string `json:"manifest_digest"`
 	TargetID       string `json:"target_id"`
 	Project        string `json:"project"`
 	Environment    string `json:"environment"`
+	BackupID       string `json:"backup_id,omitempty"`
+	BackupManifest string `json:"backup_manifest_sha256,omitempty"`
 }
 
 type externalBackupResult struct {
@@ -33,6 +36,15 @@ type externalBackupResult struct {
 	Verified        bool   `json:"verified"`
 	Encrypted       bool   `json:"encrypted"`
 	OffsiteVerified bool   `json:"offsite_verified"`
+}
+
+type externalRollbackResult struct {
+	SchemaVersion  int    `json:"schema_version"`
+	ReleaseID      string `json:"release_id"`
+	TargetID       string `json:"target_id"`
+	BackupID       string `json:"backup_id"`
+	Restored       bool   `json:"restored"`
+	HealthVerified bool   `json:"health_verified"`
 }
 
 type externalBackupRunner func(context.Context, string, []byte) ([]byte, error)
@@ -57,6 +69,7 @@ func (p *ExternalProductionBackupProvider) CreateAndVerify(
 	}
 	payload, err := json.Marshal(externalBackupRequest{
 		SchemaVersion:  SchemaVersion,
+		Operation:      "create-and-verify",
 		ReleaseID:      request.ReleaseID,
 		ManifestDigest: request.ManifestDigest,
 		TargetID:       request.Target.ID,
@@ -87,6 +100,49 @@ func (p *ExternalProductionBackupProvider) CreateAndVerify(
 		Verified:        result.Verified,
 		Encrypted:       result.Encrypted,
 		OffsiteVerified: result.OffsiteVerified,
+	}, nil
+}
+
+func (p *ExternalProductionBackupProvider) Restore(
+	ctx context.Context,
+	project Project,
+	request Request,
+	backup BackupEvidence,
+) (RollbackEvidence, error) {
+	command, err := validateExternalBackupCommand(p.command)
+	if err != nil {
+		return RollbackEvidence{}, err
+	}
+	payload, err := json.Marshal(externalBackupRequest{
+		SchemaVersion:  SchemaVersion,
+		Operation:      "restore-and-verify",
+		ReleaseID:      request.ReleaseID,
+		ManifestDigest: request.ManifestDigest,
+		TargetID:       request.Target.ID,
+		Project:        project.Name,
+		Environment:    request.Target.Environment,
+		BackupID:       backup.BackupID,
+		BackupManifest: backup.ManifestSHA256,
+	})
+	if err != nil {
+		return RollbackEvidence{}, errors.New("encode production rollback request")
+	}
+	output, err := p.run(ctx, command, append(payload, '\n'))
+	if err != nil {
+		return RollbackEvidence{}, errors.New("production rollback provider failed")
+	}
+	result, err := decodeExternalRollbackResult(output)
+	if err != nil {
+		return RollbackEvidence{}, err
+	}
+	if result.SchemaVersion != SchemaVersion || result.ReleaseID != request.ReleaseID ||
+		result.TargetID != request.Target.ID || result.BackupID != backup.BackupID {
+		return RollbackEvidence{}, errors.New("production rollback evidence identity mismatch")
+	}
+	return RollbackEvidence{
+		BackupID:       result.BackupID,
+		Restored:       result.Restored,
+		HealthVerified: result.HealthVerified,
 	}, nil
 }
 
@@ -146,6 +202,20 @@ func decodeExternalBackupResult(output []byte) (externalBackupResult, error) {
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return externalBackupResult{}, errors.New("production backup evidence contains trailing JSON")
+	}
+	return result, nil
+}
+
+func decodeExternalRollbackResult(output []byte) (externalRollbackResult, error) {
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	decoder.DisallowUnknownFields()
+	var result externalRollbackResult
+	if err := decoder.Decode(&result); err != nil {
+		return externalRollbackResult{}, fmt.Errorf("decode production rollback evidence: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return externalRollbackResult{}, errors.New("production rollback evidence contains trailing JSON")
 	}
 	return result, nil
 }

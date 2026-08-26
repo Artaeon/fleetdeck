@@ -36,6 +36,12 @@ type HTTPDoer interface {
 
 type ProductionBackupProvider interface {
 	CreateAndVerify(ctx context.Context, project Project, request Request) (BackupEvidence, error)
+	Restore(
+		ctx context.Context,
+		project Project,
+		request Request,
+		backup BackupEvidence,
+	) (RollbackEvidence, error)
 }
 
 type ComposeRuntime struct {
@@ -208,6 +214,21 @@ func (r *ComposeRuntime) CreateAndVerifyBackup(
 		return BackupEvidence{}, errors.New("verified backups are only available for required production release jobs")
 	}
 	return r.backups.CreateAndVerify(ctx, target.project, request)
+}
+
+func (r *ComposeRuntime) RestoreBackup(
+	ctx context.Context,
+	request Request,
+	backup BackupEvidence,
+) (RollbackEvidence, error) {
+	target, err := r.resolve(request)
+	if err != nil {
+		return RollbackEvidence{}, err
+	}
+	if request.Target.Environment != "production" {
+		return RollbackEvidence{}, errors.New("automatic restore is only available for production release jobs")
+	}
+	return r.backups.Restore(ctx, target.project, request, backup)
 }
 
 func (r *ComposeRuntime) Apply(ctx context.Context, request Request) (ApplyEvidence, error) {

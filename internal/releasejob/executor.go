@@ -36,6 +36,7 @@ type Result struct {
 	FinishedAt     *time.Time         `json:"finished_at,omitempty"`
 	Preflight      *PreflightEvidence `json:"preflight,omitempty"`
 	Backup         *BackupEvidence    `json:"backup,omitempty"`
+	Rollback       *RollbackEvidence  `json:"rollback,omitempty"`
 	Apply          *ApplyEvidence     `json:"apply,omitempty"`
 	Health         *HealthEvidence    `json:"health,omitempty"`
 	FailedStep     string             `json:"failed_step,omitempty"`
@@ -54,6 +55,12 @@ type BackupEvidence struct {
 	Verified        bool   `json:"verified"`
 	Encrypted       bool   `json:"encrypted"`
 	OffsiteVerified bool   `json:"offsite_verified"`
+}
+
+type RollbackEvidence struct {
+	BackupID       string `json:"backup_id"`
+	Restored       bool   `json:"restored"`
+	HealthVerified bool   `json:"health_verified"`
 }
 
 type ApplyEvidence struct {
@@ -77,6 +84,7 @@ type JobStore interface {
 type Runtime interface {
 	Preflight(ctx context.Context, request Request) (PreflightEvidence, error)
 	CreateAndVerifyBackup(ctx context.Context, request Request) (BackupEvidence, error)
+	RestoreBackup(ctx context.Context, request Request, backup BackupEvidence) (RollbackEvidence, error)
 	Apply(ctx context.Context, request Request) (ApplyEvidence, error)
 	VerifyHealth(ctx context.Context, request Request) (HealthEvidence, error)
 }
@@ -160,15 +168,24 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Result, error)
 	apply, err := e.runtime.Apply(ctx, request)
 	result.Apply = &apply
 	if err != nil || apply.AppliedComponents != len(request.Images) {
+		if result.Backup != nil {
+			return e.recoverAndFail(ctx, result, request, *result.Backup, "apply", "APPLY_FAILED")
+		}
 		return e.fail(ctx, result, "apply", "APPLY_FAILED")
 	}
 	if request.Migration.Mode == "preflight-and-apply" && !apply.MigrationApplied {
+		if result.Backup != nil {
+			return e.recoverAndFail(ctx, result, request, *result.Backup, "apply", "MIGRATION_NOT_APPLIED")
+		}
 		return e.fail(ctx, result, "apply", "MIGRATION_NOT_APPLIED")
 	}
 
 	health, err := e.runtime.VerifyHealth(ctx, request)
 	result.Health = &health
 	if err != nil || health.Profile != request.HealthProfile || health.ChecksPassed < 1 {
+		if result.Backup != nil {
+			return e.recoverAndFail(ctx, result, request, *result.Backup, "health", "HEALTH_FAILED")
+		}
 		return e.fail(ctx, result, "health", "HEALTH_FAILED")
 	}
 
@@ -179,6 +196,21 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Result, error)
 		return Result{}, fmt.Errorf("persist successful release job: %w", err)
 	}
 	return result, nil
+}
+
+func (e *Executor) recoverAndFail(
+	ctx context.Context,
+	result Result,
+	request Request,
+	backup BackupEvidence,
+	originalStep, originalCode string,
+) (Result, error) {
+	rollback, err := e.runtime.RestoreBackup(ctx, request, backup)
+	result.Rollback = &rollback
+	if err != nil || rollback.BackupID != backup.BackupID || !rollback.Restored || !rollback.HealthVerified {
+		return e.fail(ctx, result, "rollback", "ROLLBACK_FAILED")
+	}
+	return e.fail(ctx, result, originalStep, originalCode)
 }
 
 func (e *Executor) fail(ctx context.Context, result Result, step, code string) (Result, error) {
