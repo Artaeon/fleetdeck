@@ -38,6 +38,7 @@ type fakeRuntime struct {
 	backup    BackupEvidence
 	apply     ApplyEvidence
 	health    HealthEvidence
+	rollback  RollbackEvidence
 	failStep  string
 }
 
@@ -53,6 +54,9 @@ func (r *fakeRuntime) Preflight(context.Context, Request) (PreflightEvidence, er
 }
 func (r *fakeRuntime) CreateAndVerifyBackup(context.Context, Request) (BackupEvidence, error) {
 	return r.backup, r.step("backup")
+}
+func (r *fakeRuntime) RestoreBackup(context.Context, Request, BackupEvidence) (RollbackEvidence, error) {
+	return r.rollback, r.step("rollback")
 }
 func (r *fakeRuntime) Apply(context.Context, Request) (ApplyEvidence, error) {
 	return r.apply, r.step("apply")
@@ -84,6 +88,9 @@ func readyHarness(t *testing.T) (*Executor, *memoryStore, *fakeRuntime) {
 		},
 		apply:  ApplyEvidence{AppliedComponents: 1, MigrationApplied: true},
 		health: HealthEvidence{Profile: "http-standard", ChecksPassed: 3},
+		rollback: RollbackEvidence{
+			BackupID: "backup-1", HealthVerified: true, Restored: true,
+		},
 	}
 	executor := NewExecutor(store, runtime)
 	now := time.Date(2026, 8, 23, 20, 0, 0, 0, time.UTC)
@@ -176,6 +183,39 @@ func TestExecutorStopsAtFirstRuntimeFailure(t *testing.T) {
 	}
 	if strings.Join(runtime.calls, ",") != "preflight,apply" || store.failed == nil {
 		t.Fatalf("calls=%v failed=%v", runtime.calls, store.failed)
+	}
+}
+
+func TestExecutorRestoresVerifiedBackupAfterProductionHealthFailure(t *testing.T) {
+	executor, store, runtime := readyHarness(t)
+	request := validRequest(t)
+	request.Target.Environment = "production"
+	request.Backup.Required = true
+	runtime.failStep = "health"
+
+	result, err := executor.Execute(context.Background(), request)
+	if err == nil || result.ErrorCode != "HEALTH_FAILED" || result.Rollback == nil {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if strings.Join(runtime.calls, ",") != "preflight,backup,apply,health,rollback" {
+		t.Fatalf("production recovery sequence=%v", runtime.calls)
+	}
+	if !result.Rollback.Restored || !result.Rollback.HealthVerified || store.failed == nil {
+		t.Fatalf("rollback evidence=%+v failed=%v", result.Rollback, store.failed)
+	}
+}
+
+func TestExecutorEscalatesFailedProductionRecovery(t *testing.T) {
+	executor, _, runtime := readyHarness(t)
+	request := validRequest(t)
+	request.Target.Environment = "production"
+	request.Backup.Required = true
+	runtime.failStep = "rollback"
+	runtime.health.ChecksPassed = 0
+
+	result, err := executor.Execute(context.Background(), request)
+	if err == nil || result.FailedStep != "rollback" || result.ErrorCode != "ROLLBACK_FAILED" {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
 

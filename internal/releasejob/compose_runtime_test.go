@@ -78,6 +78,15 @@ func (s *productionBackupStub) CreateAndVerify(
 	return s.evidence, nil
 }
 
+func (s *productionBackupStub) Restore(
+	context.Context,
+	Project,
+	Request,
+	BackupEvidence,
+) (RollbackEvidence, error) {
+	return RollbackEvidence{BackupID: s.evidence.BackupID, Restored: true, HealthVerified: true}, nil
+}
+
 func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunnerStub, string) {
 	t.Helper()
 	projectPath := t.TempDir()

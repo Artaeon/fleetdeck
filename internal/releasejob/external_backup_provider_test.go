@@ -39,6 +39,38 @@ func TestExternalBackupProviderBindsEvidenceToReleaseAndTarget(t *testing.T) {
 	}
 }
 
+func TestExternalBackupProviderRestoresOnlyTheBoundBackup(t *testing.T) {
+	request := validRequest(t)
+	request.Target.Environment = "production"
+	provider := NewExternalProductionBackupProvider("/bin/sh")
+	provider.run = func(_ context.Context, _ string, payload []byte) ([]byte, error) {
+		if !strings.Contains(string(payload), `"operation":"restore-and-verify"`) ||
+			!strings.Contains(string(payload), `"backup_id":"backup-verified-1"`) {
+			t.Fatalf("restore payload=%s", payload)
+		}
+		return []byte(`{
+			"schema_version":1,
+			"release_id":"release-a",
+			"target_id":"target-example",
+			"backup_id":"backup-verified-1",
+			"restored":true,
+			"health_verified":true
+		}`), nil
+	}
+	evidence, err := provider.Restore(
+		context.Background(),
+		Project{Name: "target-example"},
+		request,
+		BackupEvidence{
+			BackupID:       "backup-verified-1",
+			ManifestSHA256: "sha256:" + strings.Repeat("a", 64),
+		},
+	)
+	if err != nil || !evidence.Restored || !evidence.HealthVerified {
+		t.Fatalf("evidence=%+v err=%v", evidence, err)
+	}
+}
+
 func TestExternalBackupProviderRejectsMismatchedOrUnboundedEvidence(t *testing.T) {
 	request := validRequest(t)
 	request.Target.Environment = "production"
