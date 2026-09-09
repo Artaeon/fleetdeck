@@ -98,12 +98,12 @@ func (s *productionBackupStub) CreateAndVerify(
 }
 
 func (s *productionBackupStub) Restore(
-	context.Context,
-	Project,
-	Request,
-	BackupEvidence,
+	_ context.Context,
+	_ Project,
+	request Request,
+	_ BackupEvidence,
 ) (RollbackEvidence, error) {
-	return RollbackEvidence{BackupID: s.evidence.BackupID, Restored: true, HealthVerified: true}, nil
+	return RollbackEvidence{BackupID: s.evidence.BackupID, Mode: request.Recovery.Mode, Restored: true, HealthVerified: true}, nil
 }
 
 func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunnerStub, string) {
@@ -126,14 +126,15 @@ func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunn
 		},
 	}
 	request := Request{
-		SchemaVersion: 1, JobID: "job-example", IdempotencyKey: "release.target.attempt-1",
+		SchemaVersion: SchemaVersion, JobID: "job-example", IdempotencyKey: "release.target.attempt-1",
 		ReleaseID: "release", ManifestDigest: "sha256:" + strings.Repeat("1", 64),
 		Target: Target{ID: "target-example", Environment: "staging", Profile: "standard"},
 		Images: []Image{
 			{Component: "api", Reference: "registry.example.com/example/api@sha256:" + strings.Repeat("2", 64)},
 			{Component: "web", Reference: "registry.example.com/example/web@sha256:" + strings.Repeat("3", 64)},
 		},
-		Migration: MigrationPolicy{Mode: "preflight-and-apply"}, HealthProfile: "http-standard",
+		Migration: MigrationPolicy{Mode: "preflight-and-apply", Compatibility: "unreviewed"},
+		Recovery:  RecoveryPolicy{Mode: "manual"}, HealthProfile: "http-standard",
 	}
 	commands := &commandRunnerStub{}
 	runtime := NewComposeRuntime(cfg, projectStoreStub{project: Project{Name: "target-example", Path: projectPath}})

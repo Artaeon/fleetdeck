@@ -89,7 +89,7 @@ func readyHarness(t *testing.T) (*Executor, *memoryStore, *fakeRuntime) {
 		apply:  ApplyEvidence{AppliedComponents: 1, MigrationApplied: true},
 		health: HealthEvidence{Profile: "http-standard", ChecksPassed: 3},
 		rollback: RollbackEvidence{
-			BackupID: "backup-1", HealthVerified: true, Restored: true,
+			BackupID: "backup-1", Mode: "runtime-only", HealthVerified: true, Restored: true,
 		},
 	}
 	executor := NewExecutor(store, runtime)
@@ -116,8 +116,7 @@ func TestExecutorRunsBoundedStagingSequence(t *testing.T) {
 func TestExecutorRequiresVerifiedBackupBeforeProductionSideEffects(t *testing.T) {
 	executor, store, runtime := readyHarness(t)
 	request := validRequest(t)
-	request.Target.Environment = "production"
-	request.Backup.Required = true
+	configureProductionRequest(&request)
 	runtime.backup.Verified = false
 
 	result, err := executor.Execute(context.Background(), request)
@@ -137,8 +136,7 @@ func TestExecutorRequiresEncryptedOffsiteProductionBackup(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			executor, _, runtime := readyHarness(t)
 			request := validRequest(t)
-			request.Target.Environment = "production"
-			request.Backup.Required = true
+			configureProductionRequest(&request)
 			if field == "encrypted" {
 				runtime.backup.Encrypted = false
 			} else {
@@ -189,8 +187,7 @@ func TestExecutorStopsAtFirstRuntimeFailure(t *testing.T) {
 func TestExecutorRestoresVerifiedBackupAfterProductionHealthFailure(t *testing.T) {
 	executor, store, runtime := readyHarness(t)
 	request := validRequest(t)
-	request.Target.Environment = "production"
-	request.Backup.Required = true
+	configureProductionRequest(&request)
 	runtime.failStep = "health"
 
 	result, err := executor.Execute(context.Background(), request)
@@ -200,7 +197,8 @@ func TestExecutorRestoresVerifiedBackupAfterProductionHealthFailure(t *testing.T
 	if strings.Join(runtime.calls, ",") != "preflight,backup,apply,health,rollback" {
 		t.Fatalf("production recovery sequence=%v", runtime.calls)
 	}
-	if !result.Rollback.Restored || !result.Rollback.HealthVerified || store.failed == nil {
+	if result.Rollback.Mode != "runtime-only" || !result.Rollback.Restored ||
+		!result.Rollback.HealthVerified || store.failed == nil {
 		t.Fatalf("rollback evidence=%+v failed=%v", result.Rollback, store.failed)
 	}
 }
@@ -208,8 +206,7 @@ func TestExecutorRestoresVerifiedBackupAfterProductionHealthFailure(t *testing.T
 func TestExecutorEscalatesFailedProductionRecovery(t *testing.T) {
 	executor, _, runtime := readyHarness(t)
 	request := validRequest(t)
-	request.Target.Environment = "production"
-	request.Backup.Required = true
+	configureProductionRequest(&request)
 	runtime.failStep = "rollback"
 	runtime.health.ChecksPassed = 0
 
@@ -221,7 +218,7 @@ func TestExecutorEscalatesFailedProductionRecovery(t *testing.T) {
 
 func TestExecutorReturnsStoredReplayWithoutSideEffects(t *testing.T) {
 	executor, store, runtime := readyHarness(t)
-	stored := Result{SchemaVersion: 1, JobID: "job-018f1f4d", Status: "succeeded"}
+	stored := Result{SchemaVersion: SchemaVersion, JobID: "job-018f1f4d", Status: "succeeded"}
 	store.reservation = Reservation{State: ReservationReplay, Result: &stored}
 
 	result, err := executor.Execute(context.Background(), validRequest(t))

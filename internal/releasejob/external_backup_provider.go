@@ -14,6 +14,7 @@ import (
 )
 
 const maxBackupProviderOutput = 64 * 1024
+const externalProviderSchemaVersion = 1
 
 type externalBackupRequest struct {
 	SchemaVersion  int    `json:"schema_version"`
@@ -43,6 +44,7 @@ type externalRollbackResult struct {
 	ReleaseID      string `json:"release_id"`
 	TargetID       string `json:"target_id"`
 	BackupID       string `json:"backup_id"`
+	Mode           string `json:"mode"`
 	Restored       bool   `json:"restored"`
 	HealthVerified bool   `json:"health_verified"`
 }
@@ -68,7 +70,7 @@ func (p *ExternalProductionBackupProvider) CreateAndVerify(
 		return BackupEvidence{}, err
 	}
 	payload, err := json.Marshal(externalBackupRequest{
-		SchemaVersion:  SchemaVersion,
+		SchemaVersion:  externalProviderSchemaVersion,
 		Operation:      "create-and-verify",
 		ReleaseID:      request.ReleaseID,
 		ManifestDigest: request.ManifestDigest,
@@ -87,7 +89,7 @@ func (p *ExternalProductionBackupProvider) CreateAndVerify(
 	if err != nil {
 		return BackupEvidence{}, err
 	}
-	if result.SchemaVersion != SchemaVersion || result.ReleaseID != request.ReleaseID ||
+	if result.SchemaVersion != externalProviderSchemaVersion || result.ReleaseID != request.ReleaseID ||
 		result.TargetID != request.Target.ID {
 		return BackupEvidence{}, errors.New("production backup evidence identity mismatch")
 	}
@@ -114,8 +116,8 @@ func (p *ExternalProductionBackupProvider) Restore(
 		return RollbackEvidence{}, err
 	}
 	payload, err := json.Marshal(externalBackupRequest{
-		SchemaVersion:  SchemaVersion,
-		Operation:      "restore-and-verify",
+		SchemaVersion:  externalProviderSchemaVersion,
+		Operation:      "restore-runtime-and-verify",
 		ReleaseID:      request.ReleaseID,
 		ManifestDigest: request.ManifestDigest,
 		TargetID:       request.Target.ID,
@@ -135,12 +137,14 @@ func (p *ExternalProductionBackupProvider) Restore(
 	if err != nil {
 		return RollbackEvidence{}, err
 	}
-	if result.SchemaVersion != SchemaVersion || result.ReleaseID != request.ReleaseID ||
-		result.TargetID != request.Target.ID || result.BackupID != backup.BackupID {
+	if result.SchemaVersion != externalProviderSchemaVersion || result.ReleaseID != request.ReleaseID ||
+		result.TargetID != request.Target.ID || result.BackupID != backup.BackupID ||
+		result.Mode != request.Recovery.Mode {
 		return RollbackEvidence{}, errors.New("production rollback evidence identity mismatch")
 	}
 	return RollbackEvidence{
 		BackupID:       result.BackupID,
+		Mode:           result.Mode,
 		Restored:       result.Restored,
 		HealthVerified: result.HealthVerified,
 	}, nil

@@ -59,6 +59,7 @@ type BackupEvidence struct {
 
 type RollbackEvidence struct {
 	BackupID       string `json:"backup_id"`
+	Mode           string `json:"mode"`
 	Restored       bool   `json:"restored"`
 	HealthVerified bool   `json:"health_verified"`
 }
@@ -168,13 +169,13 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Result, error)
 	apply, err := e.runtime.Apply(ctx, request)
 	result.Apply = &apply
 	if err != nil || apply.AppliedComponents != len(request.Images) {
-		if result.Backup != nil {
+		if result.Backup != nil && request.Recovery.Mode == "runtime-only" {
 			return e.recoverAndFail(ctx, result, request, *result.Backup, "apply", "APPLY_FAILED")
 		}
 		return e.fail(ctx, result, "apply", "APPLY_FAILED")
 	}
 	if request.Migration.Mode == "preflight-and-apply" && !apply.MigrationApplied {
-		if result.Backup != nil {
+		if result.Backup != nil && request.Recovery.Mode == "runtime-only" {
 			return e.recoverAndFail(ctx, result, request, *result.Backup, "apply", "MIGRATION_NOT_APPLIED")
 		}
 		return e.fail(ctx, result, "apply", "MIGRATION_NOT_APPLIED")
@@ -183,7 +184,7 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Result, error)
 	health, err := e.runtime.VerifyHealth(ctx, request)
 	result.Health = &health
 	if err != nil || health.Profile != request.HealthProfile || health.ChecksPassed < 1 {
-		if result.Backup != nil {
+		if result.Backup != nil && request.Recovery.Mode == "runtime-only" {
 			return e.recoverAndFail(ctx, result, request, *result.Backup, "health", "HEALTH_FAILED")
 		}
 		return e.fail(ctx, result, "health", "HEALTH_FAILED")
@@ -207,7 +208,8 @@ func (e *Executor) recoverAndFail(
 ) (Result, error) {
 	rollback, err := e.runtime.RestoreBackup(ctx, request, backup)
 	result.Rollback = &rollback
-	if err != nil || rollback.BackupID != backup.BackupID || !rollback.Restored || !rollback.HealthVerified {
+	if err != nil || rollback.BackupID != backup.BackupID || rollback.Mode != request.Recovery.Mode ||
+		!rollback.Restored || !rollback.HealthVerified {
 		return e.fail(ctx, result, "rollback", "ROLLBACK_FAILED")
 	}
 	return e.fail(ctx, result, originalStep, originalCode)

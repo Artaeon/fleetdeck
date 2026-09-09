@@ -10,8 +10,7 @@ import (
 
 func TestExternalBackupProviderBindsEvidenceToReleaseAndTarget(t *testing.T) {
 	request := validRequest(t)
-	request.Target.Environment = "production"
-	request.Backup.Required = true
+	configureProductionRequest(&request)
 	provider := NewExternalProductionBackupProvider("/bin/sh")
 	provider.run = func(_ context.Context, command string, payload []byte) ([]byte, error) {
 		if command == "" || !strings.Contains(string(payload), request.ManifestDigest) {
@@ -41,10 +40,10 @@ func TestExternalBackupProviderBindsEvidenceToReleaseAndTarget(t *testing.T) {
 
 func TestExternalBackupProviderRestoresOnlyTheBoundBackup(t *testing.T) {
 	request := validRequest(t)
-	request.Target.Environment = "production"
+	configureProductionRequest(&request)
 	provider := NewExternalProductionBackupProvider("/bin/sh")
 	provider.run = func(_ context.Context, _ string, payload []byte) ([]byte, error) {
-		if !strings.Contains(string(payload), `"operation":"restore-and-verify"`) ||
+		if !strings.Contains(string(payload), `"operation":"restore-runtime-and-verify"`) ||
 			!strings.Contains(string(payload), `"backup_id":"backup-verified-1"`) {
 			t.Fatalf("restore payload=%s", payload)
 		}
@@ -53,6 +52,7 @@ func TestExternalBackupProviderRestoresOnlyTheBoundBackup(t *testing.T) {
 			"release_id":"release-a",
 			"target_id":"target-example",
 			"backup_id":"backup-verified-1",
+			"mode":"runtime-only",
 			"restored":true,
 			"health_verified":true
 		}`), nil
@@ -66,14 +66,14 @@ func TestExternalBackupProviderRestoresOnlyTheBoundBackup(t *testing.T) {
 			ManifestSHA256: "sha256:" + strings.Repeat("a", 64),
 		},
 	)
-	if err != nil || !evidence.Restored || !evidence.HealthVerified {
+	if err != nil || evidence.Mode != "runtime-only" || !evidence.Restored || !evidence.HealthVerified {
 		t.Fatalf("evidence=%+v err=%v", evidence, err)
 	}
 }
 
 func TestExternalBackupProviderRejectsMismatchedOrUnboundedEvidence(t *testing.T) {
 	request := validRequest(t)
-	request.Target.Environment = "production"
+	configureProductionRequest(&request)
 	provider := NewExternalProductionBackupProvider("/bin/sh")
 	provider.run = func(context.Context, string, []byte) ([]byte, error) {
 		return []byte(`{"schema_version":1,"release_id":"other","target_id":"target-example","backup_id":"backup-1","manifest_sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verified":true,"encrypted":true,"offsite_verified":true}`), nil
