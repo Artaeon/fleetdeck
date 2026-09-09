@@ -10,7 +10,7 @@ cd fleetdeck
 make build
 ```
 
-**Requirements:** Go 1.23+, Docker with Compose v2 (for integration tests).
+**Requirements:** Go 1.26.6+, Docker with Compose v2 (for integration tests).
 
 ## Running Tests
 
@@ -49,7 +49,9 @@ The project has **883 test functions** across **59 test files**. All tests must 
 2. Write tests for new functionality (aim for >80% coverage on new code)
 3. Run `make test-race` and ensure all tests pass
 4. Run `go vet ./...` with no warnings
-5. Submit a PR with a clear description of what and why
+5. Run `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` and resolve
+   every reachable finding
+6. Submit a PR with a clear description of what and why
 
 ## Adding a Deployment Profile
 
