@@ -6,7 +6,7 @@ already made its rollout decision. It is not a general remote-shell API.
 
 ## Safety boundary
 
-- Job schema version `1` rejects unknown fields.
+- Job schema version `2` rejects unknown fields.
 - A job contains no command, path, hostname, health URL or credential.
 - Every image uses `registry/repository@sha256:...`; tags are rejected.
 - Target, environment, profile, Compose filename, migration arguments and
@@ -24,6 +24,16 @@ already made its rollout decision. It is not a general remote-shell API.
   the release before the backup provider can run.
 - A production job must request a backup. The built-in Compose adapter remains
   production-disabled until a verified production backup provider is wired.
+- A production migration must be attested as `online-expand-contract`, and its
+  automatic recovery mode must be `runtime-only`. FleetDeck never restores an
+  older database snapshot as part of an automatic release rollback.
+
+The request contract deliberately separates validation by environment:
+
+| Environment | Migration compatibility | Recovery mode |
+| --- | --- | --- |
+| staging | `unreviewed`, `online-expand-contract`, `maintenance-write-freeze`, or `not-applicable` for no migration | `manual` |
+| production | `online-expand-contract`, or `not-applicable` for no migration | `runtime-only` |
 
 The CLI accepts job JSON over stdin so private runtime data does not appear in
 process arguments:
@@ -144,8 +154,9 @@ that the remote copy is retrievable.
 
 If applying images/migrations or the post-deploy health gate fails after that
 backup, FleetDeck invokes the same fixed command again with
-`operation=restore-and-verify`, the exact `backup_id` and its manifest digest.
-The provider must restore that bound recovery point and return:
+`operation=restore-runtime-and-verify`, the exact `backup_id` and its manifest
+digest. The provider must start the previous immutable runtime, preserve the
+current database state, verify the complete target and return:
 
 ```json
 {
@@ -153,22 +164,28 @@ The provider must restore that bound recovery point and return:
   "release_id": "release-example",
   "target_id": "production-example",
   "backup_id": "backup-018f1f4d",
+  "mode": "runtime-only",
   "restored": true,
   "health_verified": true
 }
 ```
 
-Production remains failed after a successful restore (the original apply or
-health error stays visible), but the rollback evidence is attached to the
-result. A restore failure is elevated to `ROLLBACK_FAILED`; FleetDeck never
-pretends the previous version is healthy without the provider's independent
-post-restore check.
+Production remains failed after a successful runtime recovery (the original
+apply or health error stays visible), but the rollback evidence is attached to
+the result. A recovery failure is elevated to `ROLLBACK_FAILED`; FleetDeck
+never pretends the previous version is healthy without the provider's
+independent post-recovery check.
 
-## Version 1 request
+Full database recovery is an operator-controlled incident procedure, not an
+automatic release action. It requires a separately verified write freeze and a
+recovery-point decision because restoring an older database while users keep
+writing can discard valid business data.
+
+## Version 2 request
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "job_id": "job-example",
   "idempotency_key": "release-example.target-example.attempt-1",
   "release_id": "release-example",
@@ -186,7 +203,11 @@ post-restore check.
     }
   ],
   "backup": { "required": false },
-  "migration": { "mode": "preflight-and-apply" },
+  "migration": {
+    "mode": "preflight-and-apply",
+    "compatibility": "unreviewed"
+  },
+  "recovery": { "mode": "manual" },
   "health_profile": "http-standard"
 }
 ```
