@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	SchemaVersion  = 1
+	SchemaVersion  = 2
 	MaxRequestSize = 256 * 1024
 )
 
@@ -33,6 +33,7 @@ type Request struct {
 	Images         []Image         `json:"images"`
 	Backup         BackupPolicy    `json:"backup"`
 	Migration      MigrationPolicy `json:"migration"`
+	Recovery       RecoveryPolicy  `json:"recovery"`
 	HealthProfile  string          `json:"health_profile"`
 }
 
@@ -53,6 +54,11 @@ type BackupPolicy struct {
 }
 
 type MigrationPolicy struct {
+	Mode          string `json:"mode"`
+	Compatibility string `json:"compatibility"`
+}
+
+type RecoveryPolicy struct {
 	Mode string `json:"mode"`
 }
 
@@ -113,6 +119,26 @@ func (r Request) Validate() error {
 	}
 	if r.Migration.Mode != "preflight-and-apply" && r.Migration.Mode != "none" {
 		return errors.New("migration.mode must be preflight-and-apply or none")
+	}
+	if r.Migration.Mode == "none" && r.Migration.Compatibility != "not-applicable" {
+		return errors.New("migration.mode none requires compatibility not-applicable")
+	}
+	if r.Migration.Mode == "preflight-and-apply" &&
+		r.Migration.Compatibility != "unreviewed" &&
+		r.Migration.Compatibility != "online-expand-contract" &&
+		r.Migration.Compatibility != "maintenance-write-freeze" {
+		return errors.New("migration compatibility is unsupported")
+	}
+	if r.Target.Environment == "staging" && r.Recovery.Mode != "manual" {
+		return errors.New("staging release jobs require manual recovery")
+	}
+	if r.Target.Environment == "production" {
+		if r.Migration.Mode == "preflight-and-apply" && r.Migration.Compatibility != "online-expand-contract" {
+			return errors.New("production migrations require online-expand-contract compatibility")
+		}
+		if r.Recovery.Mode != "runtime-only" {
+			return errors.New("production release jobs require runtime-only recovery")
+		}
 	}
 	if len(r.Images) == 0 || len(r.Images) > 32 {
 		return errors.New("images must contain between 1 and 32 components")

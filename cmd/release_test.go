@@ -21,7 +21,7 @@ func (s releaseExecutorStub) Execute(context.Context, releasejob.Request) (relea
 }
 
 const validReleaseJob = `{
-  "schema_version": 1,
+  "schema_version": 2,
   "job_id": "job-example",
   "idempotency_key": "release-example.target-example.attempt-1",
   "release_id": "release-example",
@@ -37,7 +37,8 @@ const validReleaseJob = `{
     "reference": "registry.example.com/example/api@sha256:2222222222222222222222222222222222222222222222222222222222222222"
   }],
   "backup": { "required": false },
-  "migration": { "mode": "preflight-and-apply" },
+  "migration": { "mode": "preflight-and-apply", "compatibility": "unreviewed" },
+  "recovery": { "mode": "manual" },
   "health_profile": "http-standard"
 }`
 
@@ -71,7 +72,7 @@ func TestValidateReleaseJobRejectsCommandInjectionField(t *testing.T) {
 func TestApplyReleaseJobWritesMachineReadableSuccess(t *testing.T) {
 	var output bytes.Buffer
 	result := releasejob.Result{
-		SchemaVersion: 1,
+		SchemaVersion: releasejob.SchemaVersion,
 		JobID:         "job-example",
 		ReleaseID:     "release-example",
 		TargetID:      "target-example",
@@ -94,7 +95,7 @@ func TestApplyReleaseJobWritesMachineReadableSuccess(t *testing.T) {
 func TestApplyReleaseJobWritesBoundedFailureEvidence(t *testing.T) {
 	var output bytes.Buffer
 	result := releasejob.Result{
-		SchemaVersion: 1,
+		SchemaVersion: releasejob.SchemaVersion,
 		JobID:         "job-example",
 		ReleaseID:     "release-example",
 		TargetID:      "target-example",

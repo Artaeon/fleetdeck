@@ -22,7 +22,7 @@ func openReleaseJobDB(t *testing.T) *DB {
 
 func releaseJobRequest() releasejob.Request {
 	return releasejob.Request{
-		SchemaVersion:  1,
+		SchemaVersion:  releasejob.SchemaVersion,
 		JobID:          "job-1",
 		IdempotencyKey: "release-1.target-1.attempt-1",
 		ReleaseID:      "release-1",
@@ -35,7 +35,8 @@ func releaseJobRequest() releasejob.Request {
 			Reference: "registry.example.com/example/api@sha256:" + strings.Repeat("2", 64),
 		}},
 		Backup:        releasejob.BackupPolicy{Required: false},
-		Migration:     releasejob.MigrationPolicy{Mode: "preflight-and-apply"},
+		Migration:     releasejob.MigrationPolicy{Mode: "preflight-and-apply", Compatibility: "unreviewed"},
+		Recovery:      releasejob.RecoveryPolicy{Mode: "manual"},
 		HealthProfile: "http-standard",
 	}
 }
@@ -87,7 +88,7 @@ func TestReleaseJobSuccessAtomicallyAdvancesCurrentReleaseAndReplays(t *testing.
 	}
 	finished := time.Now().UTC()
 	result := releasejob.Result{
-		SchemaVersion: 1, JobID: request.JobID, IdempotencyKey: request.IdempotencyKey,
+		SchemaVersion: releasejob.SchemaVersion, JobID: request.JobID, IdempotencyKey: request.IdempotencyKey,
 		ReleaseID: request.ReleaseID, TargetID: request.Target.ID, Status: "succeeded",
 		StartedAt: time.Now().UTC(), FinishedAt: &finished,
 	}
@@ -117,7 +118,7 @@ func TestFailedReleaseDoesNotAdvanceCurrentRelease(t *testing.T) {
 	}
 	finished := time.Now().UTC()
 	result := releasejob.Result{
-		SchemaVersion: 1, JobID: request.JobID, IdempotencyKey: request.IdempotencyKey,
+		SchemaVersion: releasejob.SchemaVersion, JobID: request.JobID, IdempotencyKey: request.IdempotencyKey,
 		ReleaseID: request.ReleaseID, TargetID: request.Target.ID, Status: "failed",
 		StartedAt: time.Now().UTC(), FinishedAt: &finished, FailedStep: "health",
 		ErrorCode: "HEALTH_FAILED",
@@ -139,7 +140,7 @@ func TestReleaseJobCompletionIsCompareAndSet(t *testing.T) {
 	database := openReleaseJobDB(t)
 	finished := time.Now().UTC()
 	missing := releasejob.Result{
-		SchemaVersion: 1, JobID: "missing", IdempotencyKey: "missing",
+		SchemaVersion: releasejob.SchemaVersion, JobID: "missing", IdempotencyKey: "missing",
 		ReleaseID: "release-1", TargetID: "target-1", Status: "failed", FinishedAt: &finished,
 		ErrorCode: "MISSING_JOB",
 	}

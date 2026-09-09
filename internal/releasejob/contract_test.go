@@ -6,7 +6,7 @@ import (
 )
 
 const validJob = `{
-  "schema_version": 1,
+  "schema_version": 2,
   "job_id": "job-018f1f4d",
   "idempotency_key": "release-a.target-example.attempt-1",
   "release_id": "release-a",
@@ -24,9 +24,17 @@ const validJob = `{
     }
   ],
   "backup": { "required": false },
-  "migration": { "mode": "preflight-and-apply" },
+  "migration": { "mode": "preflight-and-apply", "compatibility": "unreviewed" },
+  "recovery": { "mode": "manual" },
   "health_profile": "http-standard"
 }`
+
+func configureProductionRequest(job *Request) {
+	job.Target.Environment = "production"
+	job.Backup.Required = true
+	job.Migration.Compatibility = "online-expand-contract"
+	job.Recovery.Mode = "runtime-only"
+}
 
 func TestDecodeValidBoundedJob(t *testing.T) {
 	job, err := Decode(strings.NewReader(validJob))
@@ -94,6 +102,8 @@ func TestValidateRequiresProductionBackup(t *testing.T) {
 		t.Fatalf("production backup error = %v", err)
 	}
 	job.Backup.Required = true
+	job.Migration.Compatibility = "online-expand-contract"
+	job.Recovery.Mode = "runtime-only"
 	if err := job.Validate(); err != nil {
 		t.Fatalf("production job with backup rejected: %v", err)
 	}
@@ -109,7 +119,7 @@ func TestValidateRejectsUnboundedValues(t *testing.T) {
 		name   string
 		mutate func(*Request)
 	}{
-		{"schema", func(r *Request) { r.SchemaVersion = 2 }},
+		{"schema", func(r *Request) { r.SchemaVersion = 1 }},
 		{"environment", func(r *Request) { r.Target.Environment = "development" }},
 		{"migration", func(r *Request) { r.Migration.Mode = "shell" }},
 		{"identifier", func(r *Request) { r.Target.ID = "../../target" }},
@@ -124,5 +134,32 @@ func TestValidateRejectsUnboundedValues(t *testing.T) {
 				t.Fatal("invalid job unexpectedly accepted")
 			}
 		})
+	}
+}
+
+func TestValidateRejectsAutomaticDatabaseRestoreForProduction(t *testing.T) {
+	job, err := Decode(strings.NewReader(validJob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Target.Environment = "production"
+	job.Backup.Required = true
+	job.Migration.Compatibility = "online-expand-contract"
+	job.Recovery.Mode = "restore-backup"
+	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "runtime-only") {
+		t.Fatalf("production recovery error = %v", err)
+	}
+}
+
+func TestValidateRejectsUnreviewedProductionMigration(t *testing.T) {
+	job, err := Decode(strings.NewReader(validJob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Target.Environment = "production"
+	job.Backup.Required = true
+	job.Recovery.Mode = "runtime-only"
+	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "online-expand-contract") {
+		t.Fatalf("production compatibility error = %v", err)
 	}
 }
