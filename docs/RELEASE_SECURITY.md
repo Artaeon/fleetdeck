@@ -15,6 +15,11 @@ to the upstream project.
 4. Verify the GitHub release, the keyless Sigstore bundle and the GitHub build
    provenance before installing the binary on a server.
 
+CI and release builds use an exact patched Go toolchain rather than a floating
+minor version. Before changing that pin, run the complete tests, `go vet` and
+`govulncheck`; a release must not contain a reachable standard-library or
+module vulnerability.
+
 The workflow uses an exact GoReleaser version. It creates Linux AMD64 and ARM64
 archives plus raw binaries, records every artifact in `checksums.txt`, signs the
 checksum file without a long-lived signing key and attests every recorded
