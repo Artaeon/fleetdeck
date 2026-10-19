@@ -69,7 +69,7 @@ make build
 sudo make install
 ```
 
-**Requirements:** Linux (Ubuntu 22.04+, Debian 12+). Go 1.26.6+ for building. Docker and Traefik are installed automatically by `server setup`.
+**Requirements:** Linux (Ubuntu 22.04+, Debian 12+). Go 1.26.9+ for building. Docker and Traefik are installed automatically by `server setup`.
 
 ### The One-Command Workflow
 
