@@ -71,6 +71,36 @@ func TestExternalBackupProviderRestoresOnlyTheBoundBackup(t *testing.T) {
 	}
 }
 
+func TestExternalBackupProviderRejectsMismatchedRecoveryMode(t *testing.T) {
+	request := validRequest(t)
+	configureProductionRequest(&request)
+	provider := NewExternalProductionBackupProvider("/bin/sh")
+	provider.run = func(context.Context, string, []byte) ([]byte, error) {
+		return []byte(`{
+			"schema_version":1,
+			"release_id":"release-a",
+			"target_id":"target-example",
+			"backup_id":"backup-verified-1",
+			"mode":"manual",
+			"restored":true,
+			"health_verified":true
+		}`), nil
+	}
+
+	_, err := provider.Restore(
+		context.Background(),
+		Project{Name: "target-example"},
+		request,
+		BackupEvidence{
+			BackupID:       "backup-verified-1",
+			ManifestSHA256: "sha256:" + strings.Repeat("a", 64),
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("recovery mode mismatch error = %v", err)
+	}
+}
+
 func TestExternalBackupProviderRejectsMismatchedOrUnboundedEvidence(t *testing.T) {
 	request := validRequest(t)
 	configureProductionRequest(&request)

@@ -163,3 +163,79 @@ func TestValidateRejectsUnreviewedProductionMigration(t *testing.T) {
 		t.Fatalf("production compatibility error = %v", err)
 	}
 }
+
+func TestValidateEnforcesEnvironmentSafetyMatrix(t *testing.T) {
+	tests := []struct {
+		name          string
+		environment   string
+		migrationMode string
+		compatibility string
+		recoveryMode  string
+		wantError     bool
+	}{
+		{
+			name:        "staging unreviewed migration",
+			environment: "staging", migrationMode: "preflight-and-apply",
+			compatibility: "unreviewed", recoveryMode: "manual",
+		},
+		{
+			name:        "staging maintenance migration",
+			environment: "staging", migrationMode: "preflight-and-apply",
+			compatibility: "maintenance-write-freeze", recoveryMode: "manual",
+		},
+		{
+			name:        "staging without migration",
+			environment: "staging", migrationMode: "none",
+			compatibility: "not-applicable", recoveryMode: "manual",
+		},
+		{
+			name:        "staging automatic recovery",
+			environment: "staging", migrationMode: "preflight-and-apply",
+			compatibility: "unreviewed", recoveryMode: "runtime-only", wantError: true,
+		},
+		{
+			name:        "production reviewed online migration",
+			environment: "production", migrationMode: "preflight-and-apply",
+			compatibility: "online-expand-contract", recoveryMode: "runtime-only",
+		},
+		{
+			name:        "production without migration",
+			environment: "production", migrationMode: "none",
+			compatibility: "not-applicable", recoveryMode: "runtime-only",
+		},
+		{
+			name:        "production maintenance migration",
+			environment: "production", migrationMode: "preflight-and-apply",
+			compatibility: "maintenance-write-freeze", recoveryMode: "runtime-only", wantError: true,
+		},
+		{
+			name:        "production manual recovery",
+			environment: "production", migrationMode: "preflight-and-apply",
+			compatibility: "online-expand-contract", recoveryMode: "manual", wantError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			job, err := Decode(strings.NewReader(validJob))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job.Target.Environment = test.environment
+			job.Backup.Required = test.environment == "production"
+			job.Migration = MigrationPolicy{
+				Mode:          test.migrationMode,
+				Compatibility: test.compatibility,
+			}
+			job.Recovery.Mode = test.recoveryMode
+
+			err = job.Validate()
+			if test.wantError && err == nil {
+				t.Fatal("unsafe environment policy was accepted")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("safe environment policy was rejected: %v", err)
+			}
+		})
+	}
+}
