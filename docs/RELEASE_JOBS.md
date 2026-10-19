@@ -22,6 +22,10 @@ already made its rollout decision. It is not a general remote-shell API.
   root-owned, mode `0700`, absolute and free of symlinks or unsafe ancestors.
 - Preflight removes its override before backup creation. Cleanup failure stops
   the release before the backup provider can run.
+- Candidate pulls and the final Compose apply are restricted to the exact
+  components named in the validated job. Apply uses `--no-deps`; it does not
+  reconcile PostgreSQL, workers or other unrequested services and does not run
+  a broad orphan cleanup.
 - A production job must request a backup. The built-in Compose adapter remains
   production-disabled until a verified production backup provider is wired.
 - A production migration must be attested as `online-expand-contract`, and its
@@ -110,8 +114,11 @@ FleetDeck removes the temporary override after preflight and before calling the
 backup provider. The provider therefore observes the pre-release runtime rather
 than candidate image references. Only the later apply stage creates the
 durable, job-specific Compose override used for migration and rollout. Pulling
-immutable candidate images during preflight does not change the running
-services.
+immutable candidate images during preflight is component-scoped and does not
+change running services. The apply stage also addresses only those components
+with `docker compose up -d --no-deps`; an unrelated database or auxiliary
+service remains outside the release job even if it is declared in the same
+Compose project.
 
 ### Production backup provider contract
 
