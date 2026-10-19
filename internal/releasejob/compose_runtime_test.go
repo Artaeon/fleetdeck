@@ -25,9 +25,10 @@ type commandCall struct {
 }
 
 type commandRunnerStub struct {
-	calls     []commandCall
-	beforeRun func(commandCall) error
-	failAt    int
+	calls          []commandCall
+	beforeRun      func(commandCall) error
+	failAt         int
+	servicesOutput string
 }
 
 func (r *commandRunnerStub) Run(_ context.Context, directory, executable string, args ...string) (string, error) {
@@ -42,6 +43,9 @@ func (r *commandRunnerStub) Run(_ context.Context, directory, executable string,
 		return "", errors.New("forced command failure")
 	}
 	if len(args) >= 2 && args[len(args)-2] == "config" && args[len(args)-1] == "--services" {
+		if r.servicesOutput != "" {
+			return r.servicesOutput, nil
+		}
 		return "api\nweb\n", nil
 	}
 	return "", nil
@@ -217,6 +221,13 @@ func TestComposeRuntimePreflightUsesOnlyDerivedArgumentsAndTemporaryDigestOverri
 	if _, err := os.Stat(canonicalOverride); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("preflight created the persistent apply override: %v", err)
 	}
+	pull := strings.Join(commands.calls[2].args, " ")
+	if !strings.HasSuffix(pull, "pull --quiet api web") {
+		t.Fatalf("candidate pull is not component-scoped: %s", pull)
+	}
+	if strings.Contains(pull, "postgres") {
+		t.Fatalf("candidate pull included an unrequested database service: %s", pull)
+	}
 }
 
 func TestComposeRuntimeAppliesMigrationAndImagesWithoutShell(t *testing.T) {
@@ -236,8 +247,12 @@ func TestComposeRuntimeAppliesMigrationAndImagesWithoutShell(t *testing.T) {
 	if !strings.Contains(migration, "run --rm --no-deps api app migrate apply") || strings.Contains(migration, "sh -c") {
 		t.Fatalf("migration args = %s", migration)
 	}
-	if !strings.HasSuffix(strings.Join(commands.calls[1].args, " "), "up -d --remove-orphans") {
-		t.Fatalf("apply args = %v", commands.calls[1].args)
+	apply := strings.Join(commands.calls[1].args, " ")
+	if !strings.HasSuffix(apply, "up -d --no-deps api web") {
+		t.Fatalf("apply is not component-scoped: %s", apply)
+	}
+	if strings.Contains(apply, "--remove-orphans") || strings.Contains(apply, "postgres") {
+		t.Fatalf("apply can reconcile an unrequested service: %s", apply)
 	}
 	overridePath := filepath.Join(projectPath, ".fleetdeck", "release-overrides", "job-example.json")
 	payload, err := os.ReadFile(overridePath)
@@ -250,6 +265,39 @@ func TestComposeRuntimeAppliesMigrationAndImagesWithoutShell(t *testing.T) {
 	info, err := os.Stat(overridePath)
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("apply override permissions = %v, %v", info.Mode().Perm(), err)
+	}
+}
+
+func TestRequestedComponentsPreservesValidatedRequestScope(t *testing.T) {
+	images := []Image{
+		{Component: "web", Reference: "registry.example.com/example/web@sha256:" + strings.Repeat("1", 64)},
+		{Component: "api", Reference: "registry.example.com/example/api@sha256:" + strings.Repeat("2", 64)},
+	}
+	components := requestedComponents(images)
+	if strings.Join(components, ",") != "web,api" {
+		t.Fatalf("components = %v", components)
+	}
+}
+
+func TestComposeRuntimeNeverTargetsUnrequestedComposeServices(t *testing.T) {
+	runtime, request, commands, _ := composeRuntimeHarness(t)
+	commands.servicesOutput = "api\nweb\npostgres\nworker\n"
+
+	if _, err := runtime.Preflight(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	pull := strings.Join(commands.calls[2].args, " ")
+	if !strings.HasSuffix(pull, "pull --quiet api web") || strings.Contains(pull, "postgres") || strings.Contains(pull, "worker") {
+		t.Fatalf("candidate pull escaped the signed component set: %s", pull)
+	}
+
+	commands.calls = nil
+	if _, err := runtime.Apply(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	apply := strings.Join(commands.calls[1].args, " ")
+	if !strings.HasSuffix(apply, "up -d --no-deps api web") || strings.Contains(apply, "postgres") || strings.Contains(apply, "worker") {
+		t.Fatalf("apply escaped the signed component set: %s", apply)
 	}
 }
 

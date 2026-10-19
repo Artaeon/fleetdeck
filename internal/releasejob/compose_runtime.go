@@ -219,7 +219,9 @@ func (r *ComposeRuntime) Preflight(
 	if !migrationReady {
 		return PreflightEvidence{}, errors.New("configured migration service is not available")
 	}
-	if _, err := r.commands.Run(ctx, target.project.Path, "docker", append(args, "pull", "--quiet")...); err != nil {
+	pullArgs := append(append([]string{}, args...), "pull", "--quiet")
+	pullArgs = append(pullArgs, requestedComponents(request.Images)...)
+	if _, err := r.commands.Run(ctx, target.project.Path, "docker", pullArgs...); err != nil {
 		return PreflightEvidence{}, err
 	}
 	return PreflightEvidence{ComposeValid: true, ImagesResolved: true, MigrationReady: true}, nil
@@ -271,7 +273,9 @@ func (r *ComposeRuntime) Apply(ctx context.Context, request Request) (ApplyEvide
 		}
 		migrationApplied = true
 	}
-	if _, err := r.commands.Run(ctx, target.project.Path, "docker", append(args, "up", "-d", "--remove-orphans")...); err != nil {
+	applyArgs := append(append([]string{}, args...), "up", "-d", "--no-deps")
+	applyArgs = append(applyArgs, requestedComponents(request.Images)...)
+	if _, err := r.commands.Run(ctx, target.project.Path, "docker", applyArgs...); err != nil {
 		return ApplyEvidence{}, err
 	}
 	return ApplyEvidence{AppliedComponents: len(request.Images), MigrationApplied: migrationApplied}, nil
@@ -348,6 +352,14 @@ func linesSet(value string) map[string]struct{} {
 		}
 	}
 	return result
+}
+
+func requestedComponents(images []Image) []string {
+	components := make([]string, 0, len(images))
+	for _, image := range images {
+		components = append(components, image.Component)
+	}
+	return components
 }
 
 func writeComposeOverride(path string, images []Image) error {
