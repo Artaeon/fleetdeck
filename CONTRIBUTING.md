@@ -10,7 +10,7 @@ cd fleetdeck
 make build
 ```
 
-**Requirements:** Go 1.26.6+, Docker with Compose v2 (for integration tests).
+**Requirements:** Go 1.26.9+, Docker with Compose v2 (for integration tests).
 
 ## Running Tests
 
