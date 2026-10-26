@@ -293,8 +293,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.apiToken == "" {
-			// No token configured — allow (development mode)
-			next(w, r)
+			writeError(w, http.StatusServiceUnavailable, "dashboard authentication is not configured")
 			return
 		}
 
@@ -324,7 +323,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.apiToken == "" {
-			next(w, r)
+			writeError(w, http.StatusServiceUnavailable, "dashboard authentication is not configured")
 			return
 		}
 
@@ -372,6 +371,9 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start() error {
+	if err := ValidateAPIToken(s.apiToken); err != nil {
+		return err
+	}
 	log.Printf("FleetDeck dashboard starting on %s", s.server.Addr)
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err

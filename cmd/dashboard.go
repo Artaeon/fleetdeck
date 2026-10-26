@@ -19,6 +19,9 @@ var dashboardCmd = &cobra.Command{
 	Long:  "Starts the FleetDeck web dashboard for visual project management.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		addr, _ := cmd.Flags().GetString("addr")
+		if err := server.ValidateAPIToken(cfg.Server.APIToken); err != nil {
+			return err
+		}
 
 		d := openDB()
 		srv := server.New(cfg, d, addr)
@@ -40,14 +43,9 @@ var dashboardCmd = &cobra.Command{
 		fmt.Println()
 		ui.Success("FleetDeck Dashboard started")
 		ui.Info("Listening on http://%s", addr)
-		if cfg.Server.APIToken == "" {
-			ui.Warn("No api_token configured — dashboard is UNAUTHENTICATED!")
-			ui.Warn("Set FLEETDECK_API_TOKEN env var or api_token in config.toml")
-		} else {
-			ui.Info("Authentication enabled (Bearer token / cookie)")
-		}
+		ui.Info("Authentication enabled (Bearer token / cookie)")
 		if cfg.Server.WebhookSecret == "" {
-			ui.Warn("No webhook_secret configured — GitHub webhooks are unverified")
+			ui.Warn("No webhook_secret configured — GitHub webhooks are disabled")
 		}
 		ui.Info("Press Ctrl+C to stop")
 		fmt.Println()
@@ -57,6 +55,6 @@ var dashboardCmd = &cobra.Command{
 }
 
 func init() {
-	dashboardCmd.Flags().String("addr", ":8420", "Listen address (host:port)")
+	dashboardCmd.Flags().String("addr", "127.0.0.1:8420", "Listen address (host:port)")
 	rootCmd.AddCommand(dashboardCmd)
 }

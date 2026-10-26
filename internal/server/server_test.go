@@ -33,6 +33,7 @@ func setupTestServer(t *testing.T) (*Server, *db.DB) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 	t.Cleanup(func() {
 		srv.metrics.Stop()
 		srv.asyncJobs.Wait()
@@ -420,16 +421,16 @@ func TestLoginWithInvalidToken(t *testing.T) {
 	}
 }
 
-func TestNoAuthAllowsAccessByDefault(t *testing.T) {
-	// Default test server has no API token set
-	srv, _ := setupTestServer(t)
+func TestNoAuthRejectsAccessByDefault(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+	srv.apiToken = ""
 
 	req := httptest.NewRequest("GET", "/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200 without auth when no token configured, got %d", w.Code)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when no token configured, got %d", w.Code)
 	}
 }
 
@@ -508,7 +509,7 @@ func TestSecurityHeadersPresent(t *testing.T) {
 		srv.server.Handler.ServeHTTP(w, req)
 
 		headers := map[string]string{
-			"X-Frame-Options":        "DENY",
+			"X-Frame-Options":         "DENY",
 			"X-Content-Type-Options":  "nosniff",
 			"Referrer-Policy":         "strict-origin-when-cross-origin",
 			"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
@@ -986,4 +987,17 @@ func TestAuthRequiredForWriteEndpoints(t *testing.T) {
 			t.Errorf("%s %s: expected 401 without auth, got %d", ep.method, ep.path, w.Code)
 		}
 	}
+}
+
+// authenticateHandlerTests supplies a synthetic credential only to functional
+// handler tests. Security tests use setupAuthTestServer and the real handler.
+func authenticateHandlerTests(srv *Server) {
+	srv.apiToken = strings.Repeat("handler-fixture-", 3)
+	handler := srv.server.Handler
+	srv.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.Clone(r.Context())
+		r.Header.Set("Authorization", "Bearer "+srv.apiToken)
+		r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: srv.apiToken})
+		handler.ServeHTTP(w, r)
+	})
 }

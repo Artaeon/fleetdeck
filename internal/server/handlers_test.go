@@ -44,6 +44,7 @@ func setupTestServerWithAuditLog(t *testing.T, entries []string) (*Server, strin
 	cfg.Audit.LogPath = auditPath
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 	return srv, auditPath
 }
 
@@ -62,6 +63,7 @@ func TestHandleAuditLogEmpty(t *testing.T) {
 	cfg.Audit.LogPath = filepath.Join(dir, "nonexistent-audit.log")
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 
 	req := httptest.NewRequest("GET", "/api/audit", nil)
 	w := httptest.NewRecorder()
@@ -146,9 +148,9 @@ func TestHandleAuditLogLimitBounds(t *testing.T) {
 
 	// Invalid limit values should be ignored (fall back to default 50)
 	tests := []struct {
-		query    string
-		wantLen  int
-		desc     string
+		query   string
+		wantLen int
+		desc    string
 	}{
 		{"limit=0", 1, "limit=0 ignored, uses default"},
 		{"limit=-5", 1, "negative limit ignored"},
@@ -1316,9 +1318,9 @@ func TestHandleListBackupsMultipleRecords(t *testing.T) {
 
 	sizes := []int64{512, 1024 * 1024, 1024 * 1024 * 1024}
 	wantSizes := map[int64]string{
-		512:                  "512 B",
-		1024 * 1024:         "1.0 MB",
-		1024 * 1024 * 1024:  "1.0 GB",
+		512:                "512 B",
+		1024 * 1024:        "1.0 MB",
+		1024 * 1024 * 1024: "1.0 GB",
 	}
 
 	for i, size := range sizes {
