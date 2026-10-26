@@ -4,7 +4,7 @@ services:
     image: authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54
     user: "${AUTHELIA_UID:?Set the dedicated host user UID}:${AUTHELIA_GID:?Set the dedicated host group GID}"
     command: [authelia, --config, /config/configuration.yml]
-    restart: unless-stopped
+    restart: "no" # systemd owns restarts and the activation gate
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
