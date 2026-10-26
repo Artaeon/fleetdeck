@@ -30,9 +30,12 @@ type Result struct {
 }
 
 // Bootstrap provisions a fresh server by running each step in order. Every
-// step is idempotent and safe to re-run.
+// step reports errors; security failures stop before publishing services.
 func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 	res := &Result{}
+	if _, err := validatedSSHPort(cfg.Port); err != nil {
+		return res, err
+	}
 
 	// 1. System preparation
 	if err := prepareSystem(runner); err != nil {
@@ -71,8 +74,9 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 	res.DockerInstalled = true
 
 	// 4. Firewall
-	if err := configureFirewall(runner); err != nil {
+	if err := configureFirewall(runner, cfg.Port); err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("configure firewall: %v", err))
+		return res, fmt.Errorf("configuring firewall: %w", err)
 	} else {
 		res.FirewallConfigured = true
 	}
