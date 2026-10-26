@@ -23,7 +23,7 @@ func TestHandleUpdateProjectDomain(t *testing.T) {
 	})
 
 	body := `{"domain":"new.example.com"}`
-	req := httptest.NewRequest("PUT", "/api/projects/domain-test/domain", strings.NewReader(body))
+	req := httptest.NewRequest("PUT", "https://fleet.example.com/api/projects/domain-test/domain", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -49,7 +49,7 @@ func TestHandleUpdateProjectDomainNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"domain":"new.example.com"}`
-	req := httptest.NewRequest("PUT", "/api/projects/nonexistent/domain", strings.NewReader(body))
+	req := httptest.NewRequest("PUT", "https://fleet.example.com/api/projects/nonexistent/domain", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -72,7 +72,7 @@ func TestHandleUpdateProjectDomainMissing(t *testing.T) {
 	})
 
 	body := `{"domain":""}`
-	req := httptest.NewRequest("PUT", "/api/projects/domain-miss/domain", strings.NewReader(body))
+	req := httptest.NewRequest("PUT", "https://fleet.example.com/api/projects/domain-miss/domain", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)

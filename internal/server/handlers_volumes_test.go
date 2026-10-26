@@ -9,7 +9,7 @@ import (
 func TestHandleListVolumesEndpoint(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/volumes", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/volumes", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -22,7 +22,7 @@ func TestHandleListVolumesEndpoint(t *testing.T) {
 func TestHandleDeleteVolumeInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/volumes/bad;name", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/volumes/bad;name", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -41,7 +41,7 @@ func TestHandleDeleteVolumeShellInjection(t *testing.T) {
 		"test$HOME",
 	}
 	for _, name := range names {
-		req := httptest.NewRequest("DELETE", "/api/volumes/"+name, nil)
+		req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/volumes/"+name, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 

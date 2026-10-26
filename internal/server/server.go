@@ -118,6 +118,7 @@ func (s *Server) projectMutex(name string) *sync.Mutex {
 // securityHeaders wraps a handler to set standard security response headers.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -149,10 +150,7 @@ func requestLogger(next http.Handler) http.Handler {
 		next.ServeHTTP(sw, r)
 		duration := time.Since(start)
 
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = strings.TrimSpace(strings.Split(fwd, ",")[0])
-		}
+		ip := clientIP(r)
 
 		log.Printf("HTTP %s %s %d %s %s rid=%s",
 			r.Method, r.URL.Path, sw.statusCode, duration, ip,
@@ -300,6 +298,11 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		if !safeTransport(r) {
+			writeError(w, http.StatusForbidden, "HTTPS or direct loopback access is required")
+			return
+		}
+
 		// Check Authorization header
 		auth := r.Header.Get("Authorization")
 		if strings.HasPrefix(auth, "Bearer ") {
@@ -313,6 +316,10 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		// Check session cookie
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
 			if s.sessions.valid(cookie.Value) {
+				if !safeCookieRequest(r) {
+					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
+					return
+				}
 				next(w, r)
 				return
 			}
@@ -332,6 +339,10 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
 			if s.sessions.valid(cookie.Value) {
+				if !safeCookieRequest(r) {
+					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
+					return
+				}
 				next(w, r)
 				return
 			}
@@ -347,6 +358,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	if !safeTransport(r) || (r.Header.Get("Origin") != "" && !sameOrigin(r)) {
+		writeError(w, http.StatusForbidden, "HTTPS or direct loopback access with a matching origin is required")
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64KB limit
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid form data")
@@ -369,7 +384,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			Value:    session,
 			Path:     "/",
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   !directLoopback(r) || requestHTTPS(r),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   int(sessionLifetime.Seconds()),
 		})
@@ -388,7 +403,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "fleetdeck_session", Value: "", Path: "/",
-		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+		HttpOnly: true, Secure: !directLoopback(r) || requestHTTPS(r), SameSite: http.SameSiteStrictMode,
 		MaxAge: -1,
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)

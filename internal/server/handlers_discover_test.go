@@ -11,7 +11,7 @@ import (
 func TestHandleDiscoverEndpoint(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/discover", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/discover", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -30,7 +30,7 @@ func TestHandleDiscoverImportEmpty(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"projects":[]}`
-	req := httptest.NewRequest("POST", "/api/discover/import", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/discover/import", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -54,7 +54,7 @@ func TestHandleDiscoverImportProjects(t *testing.T) {
 
 	dir := t.TempDir()
 	body := `{"projects":[{"name":"imported-app","dir":"` + dir + `","domain":"imported.io"}]}`
-	req := httptest.NewRequest("POST", "/api/discover/import", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/discover/import", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -79,7 +79,7 @@ func TestHandleDiscoverImportProjects(t *testing.T) {
 func TestHandleDiscoverImportInvalidJSON(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/discover/import", strings.NewReader("not json"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/discover/import", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)

@@ -9,7 +9,7 @@ import (
 func TestHandleListSchedulesEndpoint(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/schedule", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/schedule", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -23,7 +23,7 @@ func TestHandleListSchedulesEndpoint(t *testing.T) {
 func TestHandleEnableScheduleProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/schedule/nonexistent/enable", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/schedule/nonexistent/enable", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -35,7 +35,7 @@ func TestHandleEnableScheduleProjectNotFound(t *testing.T) {
 func TestHandleEnableScheduleInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/schedule/A/enable", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/schedule/A/enable", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -47,7 +47,7 @@ func TestHandleEnableScheduleInvalidName(t *testing.T) {
 func TestHandleDisableScheduleInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/schedule/A/disable", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/schedule/A/disable", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

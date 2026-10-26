@@ -14,7 +14,7 @@ func TestHandleCreateServer(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"name":"web01.prod","host":"10.0.0.1","port":"22","user":"deploy"}`
-	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -37,7 +37,7 @@ func TestHandleCreateServerDefaults(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	body := `{"name":"web02.prod","host":"10.0.0.2"}`
-	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -62,7 +62,7 @@ func TestHandleCreateServerMissingFields(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"name":"","host":""}`
-	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -76,7 +76,7 @@ func TestHandleCreateServerInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"name":"INVALID","host":"10.0.0.1"}`
-	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -95,7 +95,7 @@ func TestHandleCreateServerDuplicate(t *testing.T) {
 	})
 
 	body := `{"name":"existing.srv","host":"10.0.0.2"}`
-	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -113,7 +113,7 @@ func TestHandleDeleteServer(t *testing.T) {
 		Host: "10.0.0.1",
 	})
 
-	req := httptest.NewRequest("DELETE", "/api/servers/to-delete.srv", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/servers/to-delete.srv", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -131,7 +131,7 @@ func TestHandleDeleteServer(t *testing.T) {
 func TestHandleDeleteServerNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/servers/nonexistent.srv", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/servers/nonexistent.srv", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -143,7 +143,7 @@ func TestHandleDeleteServerNotFound(t *testing.T) {
 func TestHandleCheckServerNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/servers/nonexistent.srv/check", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers/nonexistent.srv/check", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -155,7 +155,7 @@ func TestHandleCheckServerNotFound(t *testing.T) {
 func TestHandleCheckServerInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/servers/INVALID/check", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/servers/INVALID/check", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

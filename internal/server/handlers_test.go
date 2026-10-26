@@ -65,7 +65,7 @@ func TestHandleAuditLogEmpty(t *testing.T) {
 	srv := New(cfg, database, ":0")
 	authenticateHandlerTests(srv)
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -90,7 +90,7 @@ func TestHandleAuditLogWithEntries(t *testing.T) {
 
 	srv, _ := setupTestServerWithAuditLog(t, []string{entry1, entry2, entry3})
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -124,7 +124,7 @@ func TestHandleAuditLogWithLimitParam(t *testing.T) {
 
 	srv, _ := setupTestServerWithAuditLog(t, lines)
 
-	req := httptest.NewRequest("GET", "/api/audit?limit=3", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit?limit=3", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -159,7 +159,7 @@ func TestHandleAuditLogLimitBounds(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		req := httptest.NewRequest("GET", "/api/audit?"+tt.query, nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit?"+tt.query, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -186,7 +186,7 @@ func TestHandleAuditLogSkipsMalformedLines(t *testing.T) {
 
 	srv, _ := setupTestServerWithAuditLog(t, lines)
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -214,7 +214,7 @@ func TestHandleAuditLogSkipsBlankLines(t *testing.T) {
 
 	srv, _ := setupTestServerWithAuditLog(t, lines)
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -229,7 +229,7 @@ func TestHandleAuditLogResponseContentType(t *testing.T) {
 	srv, _ := setupTestServerWithAuditLog(t, nil)
 
 	// Create the file as empty
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -246,7 +246,7 @@ func TestHandleAuditLogResponseContentType(t *testing.T) {
 func TestHandleDeleteProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -265,7 +265,7 @@ func TestHandleDeleteProjectInvalidName(t *testing.T) {
 		"a",
 	}
 	for _, name := range invalidNames {
-		req := httptest.NewRequest("DELETE", "/api/projects/"+name, nil)
+		req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/"+name, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -289,7 +289,7 @@ func TestHandleDeleteProjectSuccess(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/delete-me", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/delete-me", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -328,7 +328,7 @@ func TestHandleDeleteProjectKeepData(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/keep-data?keep-data=true", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/keep-data?keep-data=true", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -520,7 +520,7 @@ func TestHandleGitHubWebhookWithValidHMACMatchingProject(t *testing.T) {
 	mac.Write([]byte(body))
 	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	req.Header.Set("X-Hub-Signature-256", sig)
 	w := httptest.NewRecorder()
@@ -544,7 +544,7 @@ func TestHandleGitHubWebhookWithValidHMACMatchingProject(t *testing.T) {
 func TestHandleDashboardHTMLContent(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -576,7 +576,7 @@ func TestHandleDashboardNonRootPath404(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	// The dashboard handler checks r.URL.Path != "/" and returns 404
-	req := httptest.NewRequest("GET", "/nonexistent-page", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/nonexistent-page", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -592,7 +592,7 @@ func TestHandleDashboardNonRootPath404(t *testing.T) {
 func TestLoginPageHTMLContent(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/login", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/login", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -627,7 +627,7 @@ func TestLoginPageHTMLContent(t *testing.T) {
 func TestLoginErrorPageHTMLContent(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=wrong-token"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=wrong-token"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -652,7 +652,7 @@ func TestLoginErrorPageHTMLContent(t *testing.T) {
 func TestHandleProjectPage(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/project/myapp", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/project/myapp", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -670,7 +670,7 @@ func TestHandleProjectPage(t *testing.T) {
 func TestHandleProjectPageRequiresAuthWhenConfigured(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/project/anyapp", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/project/anyapp", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -685,7 +685,7 @@ func TestHandleProjectPageRequiresAuthWhenConfigured(t *testing.T) {
 func TestHandleProjectPageWithValidCookie(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/project/anyapp", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/project/anyapp", nil)
 	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -707,7 +707,7 @@ func TestHandleProjectPageWithValidCookie(t *testing.T) {
 func TestStaticCSSContent(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/static/style.css", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/static/style.css", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -726,7 +726,7 @@ func TestStaticCSSContent(t *testing.T) {
 func TestStaticJSContent(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/static/app.js", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/static/app.js", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -765,7 +765,7 @@ func TestDeploymentsEndpointWithCustomLimit(t *testing.T) {
 	}
 
 	// Request with limit=2
-	req := httptest.NewRequest("GET", "/api/projects/limit-test/deployments?limit=2", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/limit-test/deployments?limit=2", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -798,7 +798,7 @@ func TestDeploymentsEndpointInvalidLimit(t *testing.T) {
 	// Invalid limit values should fall back to default 20
 	invalidLimits := []string{"abc", "0", "-1", "101"}
 	for _, lim := range invalidLimits {
-		req := httptest.NewRequest("GET", "/api/projects/inv-limit/deployments?limit="+lim, nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/inv-limit/deployments?limit="+lim, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -813,7 +813,7 @@ func TestDeploymentsEndpointInvalidProjectName(t *testing.T) {
 
 	invalidNames := []string{"-bad", "BAD", "bad-"}
 	for _, name := range invalidNames {
-		req := httptest.NewRequest("GET", "/api/projects/"+name+"/deployments", nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/"+name+"/deployments", nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -832,7 +832,7 @@ func TestHandleStartProjectInvalidName(t *testing.T) {
 
 	invalidNames := []string{"-leading", "trailing-", "UPPER", "a"}
 	for _, name := range invalidNames {
-		req := httptest.NewRequest("POST", "/api/projects/"+name+"/start", nil)
+		req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/"+name+"/start", nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -852,7 +852,7 @@ func TestHandleStartProjectInvalidName(t *testing.T) {
 func TestHandleStopProjectInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/-invalid/stop", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/-invalid/stop", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -864,7 +864,7 @@ func TestHandleStopProjectInvalidName(t *testing.T) {
 func TestHandleRestartProjectInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/-invalid/restart", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/-invalid/restart", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -880,7 +880,7 @@ func TestHandleRestartProjectInvalidName(t *testing.T) {
 func TestHandleProjectHealthNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent/health", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent/health", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -892,7 +892,7 @@ func TestHandleProjectHealthNotFound(t *testing.T) {
 func TestHandleProjectHealthInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/-invalid/health", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/-invalid/health", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -917,7 +917,7 @@ func TestManualDeployProjectExists(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/webhook/deploy/trigger-app", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/deploy/trigger-app", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -935,7 +935,7 @@ func TestManualDeployProjectExists(t *testing.T) {
 func TestManualDeployInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/webhook/deploy/A", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/deploy/A", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -951,7 +951,7 @@ func TestManualDeployInvalidName(t *testing.T) {
 func TestAuditEndpointRequiresAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -976,7 +976,7 @@ func TestAuditEndpointAllowsValidBearer(t *testing.T) {
 
 	srv := New(cfg, database, ":0")
 
-	req := httptest.NewRequest("GET", "/api/audit", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/audit", nil)
 	req.Header.Set("Authorization", "Bearer audit-token")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1010,7 +1010,7 @@ func TestHandleServerStatusWithProjects(t *testing.T) {
 		ProjectPath: dir3, Template: "node", Status: "error",
 	})
 
-	req := httptest.NewRequest("GET", "/api/status", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/status", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1044,7 +1044,7 @@ func TestHandleServerStatusWithProjects(t *testing.T) {
 func TestHandleCreateBackupInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/-invalid/backup", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/-invalid/backup", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1056,7 +1056,7 @@ func TestHandleCreateBackupInvalidName(t *testing.T) {
 func TestHandleCreateBackupProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/backup", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/backup", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1072,7 +1072,7 @@ func TestHandleCreateBackupProjectNotFound(t *testing.T) {
 func TestHandleRestoreBackupInvalidProjectName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/-invalid/backup/some-id/restore", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/-invalid/backup/some-id/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1084,7 +1084,7 @@ func TestHandleRestoreBackupInvalidProjectName(t *testing.T) {
 func TestHandleRestoreBackupProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000/restore", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1100,7 +1100,7 @@ func TestHandleRestoreBackupProjectNotFound(t *testing.T) {
 func TestHandleDeleteBackupInvalidProjectName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/-invalid/backup/some-id", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/-invalid/backup/some-id", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1112,7 +1112,7 @@ func TestHandleDeleteBackupInvalidProjectName(t *testing.T) {
 func TestHandleDeleteBackupProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/nonexistent/backup/00000000-0000-0000-0000-000000000000", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1128,7 +1128,7 @@ func TestHandleDeleteBackupProjectNotFound(t *testing.T) {
 func TestHandleProjectLogsInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/-invalid/logs", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/-invalid/logs", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1152,7 +1152,7 @@ func TestHandleProjectLogsBoundaryLines(t *testing.T) {
 	// Boundary valid values
 	validLines := []string{"1", "10000"}
 	for _, lines := range validLines {
-		req := httptest.NewRequest("GET", "/api/projects/boundary-logs/logs?lines="+lines, nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/boundary-logs/logs?lines="+lines, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -1207,7 +1207,7 @@ func TestHandleGetProjectResponseFormat(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("GET", "/api/projects/format-test", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/format-test", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1250,7 +1250,7 @@ func TestHandleGetProjectResponseFormat(t *testing.T) {
 func TestHandleSystemHealthRequiresAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/health", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/health", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1267,7 +1267,7 @@ func TestCreateProjectUnknownTemplate(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"name":"new-proj","domain":"new.io","template":"nonexistent-template"}`
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1290,7 +1290,7 @@ func TestCreateProjectUnknownTemplate(t *testing.T) {
 func TestHandleListBackupsProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent/backups", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent/backups", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1334,7 +1334,7 @@ func TestHandleListBackupsMultipleRecords(t *testing.T) {
 		database.CreateBackupRecord(b)
 	}
 
-	req := httptest.NewRequest("GET", "/api/projects/multi-backup/backups", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/multi-backup/backups", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
