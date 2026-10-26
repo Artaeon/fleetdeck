@@ -63,3 +63,12 @@ FleetDeck's source is public. Operator and customer configuration must remain
 outside Git even when it is encrypted. See
 [`docs/PUBLIC_REPOSITORY_BOUNDARY.md`](docs/PUBLIC_REPOSITORY_BOUNDARY.md) for
 the allowed content, local secret-scan gate and reviewed fixture policy.
+
+## Bootstrap proxy administration
+
+New `fleetdeck server setup` configurations disable the Traefik API and dashboard.
+Application HTTPS routing does not require either administrative endpoint.
+Existing installations are not changed by a binary upgrade: remove the old
+`routers.dashboard` labels and disable the API in the operator-owned Traefik
+Compose file, then recreate only the proxy during a planned maintenance window.
+Review custom proxy configuration before applying this migration.

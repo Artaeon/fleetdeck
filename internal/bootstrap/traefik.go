@@ -66,13 +66,13 @@ func setupTraefik(runner CommandRunner, domain, email, network string) error {
 	return nil
 }
 
-func composeFile(domain, email, network string) string {
+func composeFile(_ string, email, network string) string {
 	return fmt.Sprintf(`services:
   traefik:
     image: traefik:v3
     restart: unless-stopped
     command:
-      - "--api.dashboard=true"
+      - "--api=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
@@ -92,12 +92,6 @@ func composeFile(domain, email, network string) string {
       - "./acme.json:/acme.json"
     networks:
       - %s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(%s) && (PathPrefix(%s) || PathPrefix(%s))"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.dashboard.service=api@internal"
 
 networks:
   %s:
@@ -105,9 +99,6 @@ networks:
 		email,
 		network,
 		network,
-		"`"+domain+"`",
-		"`/api`",
-		"`/dashboard`",
 		network,
 	)
 }
