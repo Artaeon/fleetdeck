@@ -257,10 +257,13 @@ func TestMonitorStatus(t *testing.T) {
 	ctx := context.Background()
 	mon.Start(ctx)
 
-	// Wait for initial checks plus at least one interval tick.
-	time.Sleep(200 * time.Millisecond)
-
+	// Observe both stored results instead of assuming a scheduler deadline.
+	deadline := time.Now().Add(5 * time.Second)
 	results := mon.Status()
+	for len(results) != 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		results = mon.Status()
+	}
 	mon.Stop()
 
 	if len(results) != 2 {
