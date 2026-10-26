@@ -614,7 +614,7 @@ func TestWorkflowDetectThenScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading Dockerfile: %v", err)
 	}
-	if !strings.Contains(string(dockerfileData), "node:20-alpine") {
+	if !strings.Contains(string(dockerfileData), "node:24-alpine") {
 		t.Error("Dockerfile does not contain expected base image from node template")
 	}
 }
