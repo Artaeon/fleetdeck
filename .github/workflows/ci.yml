@@ -103,6 +103,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq nftables
           sudo tests/integration/firewall.sh
+          go run -tags=integration tests/integration/origin_fixture.go > /tmp/fleetdeck-origin-test.nft
+          sudo tests/integration/origin-firewall.sh /tmp/fleetdeck-origin-test.nft
       - name: Run deploy integration tests
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
