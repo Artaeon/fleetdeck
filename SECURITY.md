@@ -19,14 +19,15 @@ FleetDeck implements defense in depth across multiple layers:
 - **SSH TOFU** -- Trust On First Use host key verification; keys saved to `~/.ssh/known_hosts` on first connect, verified on subsequent connections
 
 ### Process Isolation
-- **Per-project Linux users** with minimal privileges (`fleetdeck-<name>`)
-- **Per-project Docker networks** for container isolation
-- **SSH key restrictions** limited to `docker compose` commands only
+- **New project accounts** have private groups, 0750 homes, no login shell and no Docker-group membership (`fleetdeck-<name>`)
+- **Generated project networks** separate each project edge and its internal backend
+- **Trusted deployment administrator** controls Docker; new project CI builds without host SSH credentials
 - **Per-project deployment locks** prevent concurrent deploys
 
 ### Network Security
 - **Traefik TLS termination** with automatic Let's Encrypt certificates
-- **UFW firewall** allowing only SSH (22), HTTP (80), HTTPS (443)
+- **Host firewall** preserves the configured SSH port and existing UFW rules
+- **Docker forwarding guard** filters IPv4/IPv6 published ports independently of UFW
 - **Per-IP rate limiting** on API endpoints (10 req/s, 20 burst)
 - **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
 
@@ -110,3 +111,12 @@ configure an external SMTP provider for production email delivery. Existing
 stacks must remove the old Mailpit router labels and shared proxy-network
 membership in their operator-owned Compose file; upgrading FleetDeck alone does
 not rewrite deployed projects.
+
+## Host and project boundaries
+
+See [Host firewall and project isolation](docs/SERVER_SECURITY.md) for deployment,
+verification, existing-installation migration and rollback. These defaults do not
+provide hostile multi-tenant isolation: administrators, approved Compose code,
+webhook repositories and the shared reverse proxy are trusted. The Docker socket
+bind mount on the proxy is not a read-only Docker API. No rootless-runtime or
+per-tenant VM boundary is implied.
