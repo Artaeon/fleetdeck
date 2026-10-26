@@ -24,7 +24,7 @@ func signedWebhookRequest(t *testing.T, body, event string) *http.Request {
 	mac.Write([]byte(body))
 	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", event)
 	req.Header.Set("X-Hub-Signature-256", sig)
 	return req
@@ -142,7 +142,7 @@ func TestHandleListDeployments(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("GET", "/api/projects/deployapp/deployments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/deployapp/deployments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -247,7 +247,7 @@ func TestFindProjectByRepoMultipleProjects(t *testing.T) {
 func TestHandleStartProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/start", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/start", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -265,7 +265,7 @@ func TestHandleStartProjectNotFound(t *testing.T) {
 func TestHandleStopProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/stop", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/stop", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -283,7 +283,7 @@ func TestHandleStopProjectNotFound(t *testing.T) {
 func TestHandleRestartProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/restart", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/restart", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -310,7 +310,7 @@ func TestHandleStartProjectLookupSucceeds(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/projects/startme/start", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/startme/start", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -333,7 +333,7 @@ func TestHandleStopProjectLookupSucceeds(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/projects/stopme/stop", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/stopme/stop", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -356,7 +356,7 @@ func TestHandleRestartProjectLookupSucceeds(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/projects/restartme/restart", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/restartme/restart", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -371,7 +371,7 @@ func TestHandleRestartProjectLookupSucceeds(t *testing.T) {
 func TestHandleProjectLogsNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent/logs", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent/logs", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -392,7 +392,7 @@ func TestHandleProjectLogsValidLines(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("GET", "/api/projects/logapp/logs?lines=50", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/logapp/logs?lines=50", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -419,7 +419,7 @@ func TestHandleProjectLogsDefaultLines(t *testing.T) {
 	})
 
 	// No lines param — defaults to 100
-	req := httptest.NewRequest("GET", "/api/projects/logdefault/logs", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/logdefault/logs", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -438,7 +438,7 @@ func TestHandleGitHubWebhookWithHMACValidation(t *testing.T) {
 	body := `{"ref":"refs/heads/main","after":"abc123","repository":{"full_name":"org/repo"}}`
 
 	// Without signature — should fail
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -452,7 +452,7 @@ func TestHandleGitHubWebhookWithHMACValidation(t *testing.T) {
 	mac.Write([]byte(body))
 	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	req = httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req = httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	req.Header.Set("X-Hub-Signature-256", sig)
 	w = httptest.NewRecorder()

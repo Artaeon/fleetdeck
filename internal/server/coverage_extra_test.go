@@ -23,7 +23,7 @@ import (
 func TestHandleHealthzOK(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/healthz", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -61,7 +61,7 @@ func TestHandleHealthzUnhealthy(t *testing.T) {
 	// Close the database to make Ping fail.
 	database.Close()
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/healthz", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -83,7 +83,7 @@ func TestHandleHealthzUnhealthy(t *testing.T) {
 func TestHandleHealthzNoAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/healthz", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -103,7 +103,7 @@ func TestHandleHealthzNoAuth(t *testing.T) {
 func TestHandleMetricsOutputFormat(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/metrics", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -165,7 +165,7 @@ func TestHandleMetricsReflectsCounters(t *testing.T) {
 	srv.metrics.incDeploymentFailures()
 	srv.metrics.incBackups()
 
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/metrics", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -191,7 +191,7 @@ func TestHandleMetricsReflectsCounters(t *testing.T) {
 func TestHandleMetricsRequiresAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/metrics", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -203,7 +203,7 @@ func TestHandleMetricsRequiresAuth(t *testing.T) {
 func TestHandleMetricsWithAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/metrics", nil)
 	req.Header.Set("Authorization", "Bearer test-secret-token")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -229,7 +229,7 @@ func TestHandleMetricsWithProjectData(t *testing.T) {
 	// Force a cache refresh so the project shows up in metrics.
 	srv.metrics.refreshCache(srv)
 
-	req := httptest.NewRequest("GET", "/metrics", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/metrics", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -303,7 +303,7 @@ func TestMetricsStopChannel(t *testing.T) {
 func TestHandleListServersEmpty(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/servers", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/servers", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -323,7 +323,7 @@ func TestHandleListServersEmpty(t *testing.T) {
 func TestHandleListServersRequiresAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/servers", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/servers", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -339,7 +339,7 @@ func TestHandleListServersRequiresAuth(t *testing.T) {
 func TestHandleSystemHealthEmptyDB(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/health", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/health", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -383,7 +383,7 @@ func TestCreateProjectSuccess(t *testing.T) {
 	authenticateHandlerTests(srv)
 
 	body := `{"name":"my-new-app","domain":"new.example.com","template":"custom"}`
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -442,7 +442,7 @@ func TestCreateProjectDefaultTemplate(t *testing.T) {
 
 	// No template specified - should default to "custom".
 	body := `{"name":"default-tmpl","domain":"dt.io"}`
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -475,7 +475,7 @@ func TestCreateProjectDuplicateName(t *testing.T) {
 
 	// Create first project.
 	body := `{"name":"dup-test","domain":"dup.io"}`
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -485,7 +485,7 @@ func TestCreateProjectDuplicateName(t *testing.T) {
 	}
 
 	// Try to create duplicate.
-	req2 := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req2 := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w2, req2)
@@ -505,7 +505,7 @@ func TestCreateProjectInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"name":"INVALID","domain":"inv.io"}`
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -537,7 +537,7 @@ func TestHandleDeleteProjectRemovesDirectory(t *testing.T) {
 	database.CreateProject(p)
 
 	// Delete WITHOUT keep-data.
-	req := httptest.NewRequest("DELETE", "/api/projects/rm-me", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/rm-me", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -685,7 +685,7 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	handler := rateLimitMiddleware(il, backend)
 
 	// First request with X-Forwarded-For should succeed.
-	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	req1 := httptest.NewRequest("GET", "https://fleet.example.com/api/test", nil)
 	req1.RemoteAddr = "127.0.0.1:1234"
 	req1.Header.Set("X-Forwarded-For", "10.0.0.50, 10.0.0.1")
 	w1 := httptest.NewRecorder()
@@ -696,7 +696,7 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	}
 
 	// Second request from the same X-Forwarded-For IP should be rate-limited.
-	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	req2 := httptest.NewRequest("GET", "https://fleet.example.com/api/test", nil)
 	req2.RemoteAddr = "127.0.0.1:5678"
 	req2.Header.Set("X-Forwarded-For", "10.0.0.50")
 	w2 := httptest.NewRecorder()
@@ -707,7 +707,7 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	}
 
 	// Third request from different X-Forwarded-For IP should succeed.
-	req3 := httptest.NewRequest("GET", "/api/test", nil)
+	req3 := httptest.NewRequest("GET", "https://fleet.example.com/api/test", nil)
 	req3.RemoteAddr = "127.0.0.1:9999"
 	req3.Header.Set("X-Forwarded-For", "10.0.0.99")
 	w3 := httptest.NewRecorder()
@@ -738,7 +738,7 @@ func TestRateLimitMiddlewareRejectsSpoofedXForwardedFor(t *testing.T) {
 	// the XFF header on each. With trust disabled, the peer IP is what
 	// the limiter sees, so the second request is rate-limited even
 	// though the attacker tried to pose as a different client.
-	req1 := httptest.NewRequest("GET", "/api/test", nil)
+	req1 := httptest.NewRequest("GET", "https://fleet.example.com/api/test", nil)
 	req1.RemoteAddr = "203.0.113.99:1111"
 	req1.Header.Set("X-Forwarded-For", "10.0.0.1")
 	w1 := httptest.NewRecorder()
@@ -747,7 +747,7 @@ func TestRateLimitMiddlewareRejectsSpoofedXForwardedFor(t *testing.T) {
 		t.Errorf("first request: expected 200, got %d", w1.Code)
 	}
 
-	req2 := httptest.NewRequest("GET", "/api/test", nil)
+	req2 := httptest.NewRequest("GET", "https://fleet.example.com/api/test", nil)
 	req2.RemoteAddr = "203.0.113.99:2222"
 	req2.Header.Set("X-Forwarded-For", "10.0.0.2") // rotated — shouldn't help
 	w2 := httptest.NewRecorder()
@@ -763,7 +763,7 @@ func TestRateLimitMiddlewareRejectsSpoofedXForwardedFor(t *testing.T) {
 
 func TestClientIPXForwardedForWithSpaces(t *testing.T) {
 	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "  10.0.0.1  ,  10.0.0.2  ")
 
@@ -774,7 +774,7 @@ func TestClientIPXForwardedForWithSpaces(t *testing.T) {
 }
 
 func TestClientIPIPv6RemoteAddr(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "[::1]:1234"
 
 	got := clientIP(r)
@@ -784,7 +784,7 @@ func TestClientIPIPv6RemoteAddr(t *testing.T) {
 }
 
 func TestClientIPEmptyXForwardedFor(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "192.168.1.1:5000"
 	r.Header.Set("X-Forwarded-For", "")
 
@@ -805,7 +805,7 @@ func TestMetricsMiddlewareIncrementsErrorsOn4xx(t *testing.T) {
 	initialErrors := srv.metrics.httpRequestErrors.Load()
 
 	// Trigger a 404.
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -824,7 +824,7 @@ func TestMetricsMiddlewareIncrementsRequests(t *testing.T) {
 
 	initial := srv.metrics.httpRequestsTotal.Load()
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -851,7 +851,7 @@ func TestHandleRestoreBackupInvalidBackupID(t *testing.T) {
 	})
 
 	// Invalid UUID format.
-	req := httptest.NewRequest("POST", "/api/projects/restore-test/backup/not-a-uuid/restore", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/restore-test/backup/not-a-uuid/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -873,7 +873,7 @@ func TestHandleRestoreBackupNotFoundInDB(t *testing.T) {
 	})
 
 	// Valid UUID but not in DB.
-	req := httptest.NewRequest("POST", "/api/projects/restore-nf/backup/00000000-0000-0000-0000-000000000001/restore", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/restore-nf/backup/00000000-0000-0000-0000-000000000001/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -898,7 +898,7 @@ func TestHandleDeleteBackupInvalidBackupID(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("DELETE", "/api/projects/delbk-test/backup/not-valid-uuid", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/delbk-test/backup/not-valid-uuid", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -919,7 +919,7 @@ func TestHandleDeleteBackupNotFoundInDB(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("DELETE", "/api/projects/delbk-nf/backup/00000000-0000-0000-0000-000000000002", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/delbk-nf/backup/00000000-0000-0000-0000-000000000002", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -967,7 +967,7 @@ func TestHandleDeleteBackupWrongProject(t *testing.T) {
 	database.CreateBackupRecord(b)
 
 	// Try to delete it via proj-two's endpoint.
-	req := httptest.NewRequest("DELETE", "/api/projects/proj-two/backup/"+b.ID, nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/proj-two/backup/"+b.ID, nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1012,7 +1012,7 @@ func TestHandleDeleteBackupSuccess(t *testing.T) {
 	}
 	database.CreateBackupRecord(b)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/delbk-ok/backup/"+b.ID, nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/delbk-ok/backup/"+b.ID, nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1070,7 +1070,7 @@ func TestHandleRestoreBackupWrongProject(t *testing.T) {
 	database.CreateBackupRecord(b)
 
 	// Try to restore p1's backup via p2's endpoint.
-	req := httptest.NewRequest("POST", "/api/projects/rest-two/backup/"+b.ID+"/restore", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/rest-two/backup/"+b.ID+"/restore", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1095,7 +1095,7 @@ func TestHandleListBackupsEmptyResult(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("GET", "/api/projects/no-backups/backups", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/no-backups/backups", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1117,7 +1117,7 @@ func TestHandleListBackupsEmptyResult(t *testing.T) {
 func TestHandleListBackupsInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/A/backups", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/A/backups", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1142,7 +1142,7 @@ func TestHandleCreateBackupProjectExists(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/projects/bk-create/backup", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/bk-create/backup", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1164,7 +1164,7 @@ func TestWebhookNoSecretConfigured(t *testing.T) {
 	srv.webhookSecret = ""
 
 	body := `{}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1357,7 +1357,7 @@ func TestServerShutdown(t *testing.T) {
 func TestHandleLoginGETContentType(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/login", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/login", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -1378,7 +1378,7 @@ func TestLoginSubmitNoAPITokenConfigured(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	srv.apiToken = ""
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=anything"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=anything"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)

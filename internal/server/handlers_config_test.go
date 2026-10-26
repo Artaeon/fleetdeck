@@ -10,7 +10,7 @@ import (
 func TestHandleGetConfig(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/config", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/config", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -42,7 +42,7 @@ func TestHandleGetConfigNoSecrets(t *testing.T) {
 	srv.cfg.Server.WebhookSecret = "secret-webhook"
 	srv.cfg.DNS.APIToken = "secret-dns"
 
-	req := httptest.NewRequest("GET", "/api/config", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/config", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -74,7 +74,7 @@ func containsSubstring(s, substr string) bool {
 func TestHandleGetWebhookURL(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/config/webhook-url", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/config/webhook-url", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -94,7 +94,7 @@ func TestHandleGetWebhookURLWithDomain(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	srv.cfg.Server.Domain = "fleet.example.com"
 
-	req := httptest.NewRequest("GET", "/api/config/webhook-url", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/config/webhook-url", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

@@ -203,7 +203,7 @@ func TestIPLimiterCleanupStaleEntries(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClientIPFromRemoteAddr(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "192.168.1.100:54321"
 
 	got := clientIP(r)
@@ -215,7 +215,7 @@ func TestClientIPFromRemoteAddr(t *testing.T) {
 func TestClientIPFromXForwardedFor(t *testing.T) {
 	// With the immediate peer explicitly trusted, XFF is honored.
 	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
 
@@ -227,7 +227,7 @@ func TestClientIPFromXForwardedFor(t *testing.T) {
 
 func TestClientIPFromXForwardedForSingleIP(t *testing.T) {
 	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-For", "203.0.113.50")
 
@@ -243,7 +243,7 @@ func TestClientIPFromXForwardedForSingleIP(t *testing.T) {
 // bypassable by rotating the header per request.
 func TestClientIPIgnoresXForwardedForFromUntrustedPeer(t *testing.T) {
 	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "")
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "203.0.113.99:54321"         // direct client, not a proxy
 	r.Header.Set("X-Forwarded-For", "10.0.0.1") // attacker-supplied
 
@@ -254,7 +254,7 @@ func TestClientIPIgnoresXForwardedForFromUntrustedPeer(t *testing.T) {
 }
 
 func TestClientIPFallsBackWhenNoPort(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	r.RemoteAddr = "192.168.1.100" // no port
 
 	got := clientIP(r)
@@ -282,7 +282,7 @@ func TestRateLimitMiddlewareBlocks429(t *testing.T) {
 	handler := rateLimitMiddleware(il, backend)
 
 	// First request to /api/ should succeed.
-	req1 := httptest.NewRequest("GET", "/api/projects", nil)
+	req1 := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req1.RemoteAddr = "10.0.0.1:1234"
 	w1 := httptest.NewRecorder()
 	handler.ServeHTTP(w1, req1)
@@ -292,7 +292,7 @@ func TestRateLimitMiddlewareBlocks429(t *testing.T) {
 	}
 
 	// Second request from the same IP should be rate-limited.
-	req2 := httptest.NewRequest("GET", "/api/projects", nil)
+	req2 := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req2.RemoteAddr = "10.0.0.1:1234"
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req2)
@@ -352,7 +352,7 @@ func TestRateLimitMiddlewareDifferentIPsGetSeparateLimits(t *testing.T) {
 	handler := rateLimitMiddleware(il, backend)
 
 	// First IP exhausts its burst.
-	req1 := httptest.NewRequest("GET", "/api/projects", nil)
+	req1 := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req1.RemoteAddr = "10.0.0.1:1234"
 	w1 := httptest.NewRecorder()
 	handler.ServeHTTP(w1, req1)
@@ -361,7 +361,7 @@ func TestRateLimitMiddlewareDifferentIPsGetSeparateLimits(t *testing.T) {
 	}
 
 	// Second IP should still be able to make a request.
-	req2 := httptest.NewRequest("GET", "/api/projects", nil)
+	req2 := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req2.RemoteAddr = "10.0.0.2:1234"
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req2)
@@ -432,7 +432,7 @@ func TestRequestLoggerPassesThrough(t *testing.T) {
 
 	handler := requestLogger(backend)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -457,7 +457,7 @@ func TestRequestLoggerCapturesNonOKStatus(t *testing.T) {
 
 	handler := requestLogger(backend)
 
-	req := httptest.NewRequest("POST", "/api/deploy", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/deploy", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -476,7 +476,7 @@ func TestRequestLoggerUsesXForwardedFor(t *testing.T) {
 
 	handler := requestLogger(backend)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -495,7 +495,7 @@ func TestRequestLoggerDefaultStatusWhenNoExplicitWriteHeader(t *testing.T) {
 
 	handler := requestLogger(backend)
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/test", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -515,7 +515,7 @@ func TestSecurityHeadersMiddlewareDirectly(t *testing.T) {
 
 	handler := securityHeaders(backend)
 
-	req := httptest.NewRequest("GET", "/anything", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/anything", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -545,7 +545,7 @@ func TestSecurityHeadersSetBeforeHandler(t *testing.T) {
 	})
 
 	handler := securityHeaders(backend)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -646,7 +646,7 @@ func TestRequireAuthEmptyBearerPrefix(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	// Authorization header present but with just "Bearer " and empty token.
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.Header.Set("Authorization", "Bearer ")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -660,7 +660,7 @@ func TestRequireAuthBasicSchemeRejected(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	// Using Basic auth scheme instead of Bearer.
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -673,7 +673,7 @@ func TestRequireAuthBasicSchemeRejected(t *testing.T) {
 func TestRequireAuthInvalidCookieRejected(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: "wrong-cookie-value"})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -686,7 +686,7 @@ func TestRequireAuthInvalidCookieRejected(t *testing.T) {
 func TestRequireAuthWrongCookieName(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.AddCookie(&http.Cookie{Name: "other_session", Value: "test-secret-token"})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -699,7 +699,7 @@ func TestRequireAuthWrongCookieName(t *testing.T) {
 func TestRequireAuthErrorResponseFormat(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -727,7 +727,7 @@ func TestRequireAuthErrorResponseFormat(t *testing.T) {
 func TestRequirePageAuthInvalidCookieRedirects(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: "bad-value"})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -743,7 +743,7 @@ func TestRequirePageAuthInvalidCookieRedirects(t *testing.T) {
 func TestRequirePageAuthNoCookieRedirects(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -755,7 +755,7 @@ func TestRequirePageAuthNoCookieRedirects(t *testing.T) {
 func TestRequirePageAuthValidCookieAllows(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -900,7 +900,7 @@ func TestWebhookHMACRejectsWrongSignature(t *testing.T) {
 	mac.Write([]byte(body))
 	wrongSig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	req.Header.Set("X-Hub-Signature-256", wrongSig)
 	w := httptest.NewRecorder()
@@ -916,7 +916,7 @@ func TestWebhookNoSecretConfiguredRejectsRequests(t *testing.T) {
 	srv.webhookSecret = "" // No secret configured.
 
 	body := `{"ref":"refs/heads/main","after":"abc123","repository":{"full_name":"org/nonexistent"}}`
-	req := httptest.NewRequest("POST", "/api/webhook/github", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/github", strings.NewReader(body))
 	req.Header.Set("X-GitHub-Event", "push")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -934,7 +934,7 @@ func TestWebhookNoSecretConfiguredRejectsRequests(t *testing.T) {
 func TestLoginSubmitWithEmptyToken(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token="))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token="))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -947,7 +947,7 @@ func TestLoginSubmitWithEmptyToken(t *testing.T) {
 func TestLoginSubmitWithNoFormField(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader(""))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader(""))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -964,7 +964,7 @@ func TestLoginSubmitWithNoFormField(t *testing.T) {
 func TestFullMiddlewareChainOnAPIRequest(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.RemoteAddr = "10.0.0.1:5555"
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -990,7 +990,7 @@ func TestRateLimitIntegrationViaServerHandler(t *testing.T) {
 	// Send 21 rapid requests from the same IP to exhaust the burst.
 	var lastCode int
 	for i := 0; i < 25; i++ {
-		req := httptest.NewRequest("GET", "/api/projects", nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 		req.RemoteAddr = "10.99.99.99:1234"
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
@@ -1004,7 +1004,7 @@ func TestRateLimitIntegrationViaServerHandler(t *testing.T) {
 	// Due to timing, we verify at least one 429 occurred.
 	got429 := false
 	for i := 0; i < 30; i++ {
-		req := httptest.NewRequest("GET", "/api/projects", nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 		req.RemoteAddr = "10.88.88.88:1234"
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
@@ -1026,7 +1026,7 @@ func TestRateLimitIntegrationViaServerHandler(t *testing.T) {
 func TestCreateProjectRejectsEmptyBody(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(""))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(""))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1039,7 +1039,7 @@ func TestCreateProjectRejectsEmptyBody(t *testing.T) {
 func TestCreateProjectRejectsInvalidJSON(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader("{invalid json"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader("{invalid json"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1053,7 +1053,7 @@ func TestCreateProjectRejectsMissingFields(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	// Missing domain.
-	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"testapp"}`))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(`{"name":"testapp"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -1063,7 +1063,7 @@ func TestCreateProjectRejectsMissingFields(t *testing.T) {
 	}
 
 	// Missing name.
-	req2 := httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"domain":"test.com"}`))
+	req2 := httptest.NewRequest("POST", "https://fleet.example.com/api/projects", strings.NewReader(`{"domain":"test.com"}`))
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w2, req2)
@@ -1087,7 +1087,7 @@ func TestManualDeployInvalidProjectName(t *testing.T) {
 	}
 
 	for _, name := range invalidNames {
-		req := httptest.NewRequest("POST", "/api/webhook/deploy/"+name, nil)
+		req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/deploy/"+name, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 

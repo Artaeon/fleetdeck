@@ -88,3 +88,11 @@ memory. They expire after eight hours and are revoked by `POST /logout` or a
 process restart. Logging in again replaces that browser's previous session.
 API tokens are accepted only as bearer credentials, never as session cookies.
 Existing browser cookies from older versions require a fresh login.
+
+Remote dashboard/API requests require HTTPS. TLS termination is recognized only
+when the immediate proxy IP is explicitly listed in `FLEETDECK_TRUST_PROXY_IPS`
+and that proxy sets `X-Forwarded-Proto: https`. The proxy must overwrite forwarding
+headers supplied by clients and preserve the public Host header. Direct loopback
+HTTP (including SSH tunnels) remains available for local use; only that path uses
+a non-Secure session cookie. Browser mutations require a matching Origin header.
+Admin responses are marked `Cache-Control: no-store`.

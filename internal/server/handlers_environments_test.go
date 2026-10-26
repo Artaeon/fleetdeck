@@ -28,7 +28,7 @@ func TestHandleListEnvironmentsEmpty(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("GET", "/api/projects/env-test/environments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/env-test/environments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -46,7 +46,7 @@ func TestHandleListEnvironmentsEmpty(t *testing.T) {
 func TestHandleListEnvironmentsProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent/environments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent/environments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -71,7 +71,7 @@ func TestHandleCreateEnvironmentMissingFields(t *testing.T) {
 	})
 
 	body := `{"environment":"","domain":""}`
-	req := httptest.NewRequest("POST", "/api/projects/env-create/environments", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/env-create/environments", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -85,7 +85,7 @@ func TestHandleCreateEnvironmentProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	body := `{"environment":"staging","domain":"staging.test.io"}`
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/environments", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/environments", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -98,7 +98,7 @@ func TestHandleCreateEnvironmentProjectNotFound(t *testing.T) {
 func TestHandleDeleteEnvironmentProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/projects/nonexistent/environments/staging", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/projects/nonexistent/environments/staging", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -123,7 +123,7 @@ func TestHandlePromoteEnvironmentMissingFields(t *testing.T) {
 	})
 
 	body := `{"from":"","to":""}`
-	req := httptest.NewRequest("POST", "/api/projects/promo-test/environments/promote", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/promo-test/environments/promote", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -136,7 +136,7 @@ func TestHandlePromoteEnvironmentMissingFields(t *testing.T) {
 func TestHandleListEnvironmentsInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/A/environments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/A/environments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

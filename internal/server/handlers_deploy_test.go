@@ -13,7 +13,7 @@ import (
 func TestHandleDeployProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/nonexistent/deploy", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/nonexistent/deploy", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -25,7 +25,7 @@ func TestHandleDeployProjectNotFound(t *testing.T) {
 func TestHandleDeployProjectInvalidName(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/projects/A/deploy", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/A/deploy", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -47,7 +47,7 @@ func TestHandleDeployProjectExisting(t *testing.T) {
 	})
 
 	body := `{"no_cache":true}`
-	req := httptest.NewRequest("POST", "/api/projects/deploy-api/deploy", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/projects/deploy-api/deploy", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)

@@ -10,7 +10,7 @@ import (
 func TestHandleListDNSRecordsNoToken(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/dns/example.com", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/dns/example.com", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -28,7 +28,7 @@ func TestHandleListDNSRecordsNoToken(t *testing.T) {
 func TestHandleSetupDNSNoToken(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/dns/example.com/setup", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/dns/example.com/setup", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -41,7 +41,7 @@ func TestHandleSetupDNSNoToken(t *testing.T) {
 func TestHandleDeleteDNSRecordNoToken(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("DELETE", "/api/dns/example.com/A/test", nil)
+	req := httptest.NewRequest("DELETE", "https://fleet.example.com/api/dns/example.com/A/test", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

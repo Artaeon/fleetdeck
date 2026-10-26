@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func setupAuthTestServer(t *testing.T) (*Server, *db.DB) {
 func TestHandleListProjectsEmpty(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -103,7 +104,7 @@ func TestHandleListProjectsWithData(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -140,7 +141,7 @@ func TestHandleGetProject(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("GET", "/api/projects/myapp", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/myapp", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -158,7 +159,7 @@ func TestHandleGetProject(t *testing.T) {
 func TestHandleGetProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -170,7 +171,7 @@ func TestHandleGetProjectNotFound(t *testing.T) {
 func TestHandleServerStatus(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/status", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/status", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -190,7 +191,7 @@ func TestHandleServerStatus(t *testing.T) {
 func TestHandleDashboard(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -209,7 +210,7 @@ func TestHandleDashboard(t *testing.T) {
 func TestHandleCSS(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/static/style.css", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/static/style.css", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -224,7 +225,7 @@ func TestHandleCSS(t *testing.T) {
 func TestHandleJS(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/static/app.js", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/static/app.js", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -261,7 +262,7 @@ func TestHandleListBackups(t *testing.T) {
 	}
 	database.CreateBackupRecord(b)
 
-	req := httptest.NewRequest("GET", "/api/projects/backupapp/backups", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/backupapp/backups", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -305,7 +306,7 @@ func TestAPIRequiresAuthWhenConfigured(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	// No auth header — should get 401
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -317,7 +318,7 @@ func TestAPIRequiresAuthWhenConfigured(t *testing.T) {
 func TestAPIAllowsValidBearerToken(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.Header.Set("Authorization", "Bearer test-secret-token")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -330,7 +331,7 @@ func TestAPIAllowsValidBearerToken(t *testing.T) {
 func TestAPIRejectsInvalidBearerToken(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -343,7 +344,7 @@ func TestAPIRejectsInvalidBearerToken(t *testing.T) {
 func TestAPIAllowsValidCookie(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -356,7 +357,7 @@ func TestAPIAllowsValidCookie(t *testing.T) {
 func TestDashboardRedirectsToLoginWhenAuthConfigured(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -371,7 +372,7 @@ func TestDashboardRedirectsToLoginWhenAuthConfigured(t *testing.T) {
 func TestLoginPageAccessible(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("GET", "/login", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/login", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -383,7 +384,7 @@ func TestLoginPageAccessible(t *testing.T) {
 func TestLoginWithValidToken(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=test-secret-token"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=test-secret-token"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -411,7 +412,7 @@ func TestLoginWithValidToken(t *testing.T) {
 func TestLoginWithInvalidToken(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=wrong"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=wrong"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -425,7 +426,7 @@ func TestNoAuthRejectsAccessByDefault(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 	srv.apiToken = ""
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -459,7 +460,7 @@ func TestLogsEndpointRejectsInvalidLines(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		req := httptest.NewRequest("GET", "/api/projects/testlogs/logs?lines="+tt.lines, nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/testlogs/logs?lines="+tt.lines, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -504,7 +505,7 @@ func TestSecurityHeadersPresent(t *testing.T) {
 	}
 
 	for _, ep := range endpoints {
-		req := httptest.NewRequest(ep.method, ep.path, nil)
+		req := httptest.NewRequest(ep.method, "https://fleet.example.com"+ep.path, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -528,7 +529,7 @@ func TestSecurityHeadersOnAuthEndpoints(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	// Even auth-rejected requests should have security headers
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -547,7 +548,7 @@ func TestSecurityHeadersOnAuthEndpoints(t *testing.T) {
 func TestPermissionsPolicyHeader(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -565,7 +566,7 @@ func TestPermissionsPolicyHeader(t *testing.T) {
 func TestLoginCookieSecurityFlags(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
-	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=test-secret-token"))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=test-secret-token"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -610,7 +611,7 @@ func TestLoginRejectsOversizedBody(t *testing.T) {
 
 	// Create a body larger than the 64KB limit (1<<16 = 65536)
 	bigBody := strings.Repeat("token=x&padding=", 5000) // ~80KB
-	req := httptest.NewRequest("POST", "/login", strings.NewReader(bigBody))
+	req := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader(bigBody))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
@@ -630,7 +631,7 @@ func TestErrorMessageSanitization(t *testing.T) {
 
 	// Request a non-existent project — the error message should NOT leak
 	// internal details like file paths, SQL queries, or stack traces.
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -664,7 +665,7 @@ func TestInternalErrorSanitization(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	// handleGetProject now returns "project not found" rather than raw DB error
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -697,7 +698,7 @@ func TestProjectNameValidation(t *testing.T) {
 	}
 
 	for _, tt := range invalidNames {
-		req := httptest.NewRequest("GET", "/api/projects/"+tt.name, nil)
+		req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/"+tt.name, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -756,7 +757,7 @@ func TestDeploymentsEndpointReturnsJSONArray(t *testing.T) {
 	}
 	database.CreateProject(p)
 
-	req := httptest.NewRequest("GET", "/api/projects/deploy-test/deployments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/deploy-test/deployments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -799,7 +800,7 @@ func TestDeploymentsEndpointWithData(t *testing.T) {
 	}
 	database.CreateDeployment(dep)
 
-	req := httptest.NewRequest("GET", "/api/projects/deploy-data/deployments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/deploy-data/deployments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -819,7 +820,7 @@ func TestDeploymentsEndpointWithData(t *testing.T) {
 func TestDeploymentsEndpointProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent/deployments", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent/deployments", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -833,7 +834,7 @@ func TestDeploymentsEndpointProjectNotFound(t *testing.T) {
 func TestManualDeployProjectNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/webhook/deploy/nonexistent", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/deploy/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -854,7 +855,7 @@ func TestManualDeployExistingProject(t *testing.T) {
 		Template:    "node",
 	})
 
-	req := httptest.NewRequest("POST", "/api/webhook/deploy/manual-deploy", nil)
+	req := httptest.NewRequest("POST", "https://fleet.example.com/api/webhook/deploy/manual-deploy", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -887,7 +888,7 @@ func TestAPIResponsesAreJSON(t *testing.T) {
 	}
 
 	for _, ep := range endpoints {
-		req := httptest.NewRequest(ep.method, ep.path, nil)
+		req := httptest.NewRequest(ep.method, "https://fleet.example.com"+ep.path, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -901,7 +902,7 @@ func TestAPIResponsesAreJSON(t *testing.T) {
 func TestNotFoundResponseIsJSON(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/projects/nonexistent", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/nonexistent", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -935,7 +936,7 @@ func TestValidProjectNameMiddleware(t *testing.T) {
 	})
 
 	// Valid name should succeed
-	req := httptest.NewRequest("GET", "/api/projects/valid-app", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/projects/valid-app", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -944,7 +945,7 @@ func TestValidProjectNameMiddleware(t *testing.T) {
 	}
 
 	// Invalid name with special characters should be rejected
-	req = httptest.NewRequest("GET", "/api/projects/invalid%00app", nil)
+	req = httptest.NewRequest("GET", "https://fleet.example.com/api/projects/invalid%00app", nil)
 	w = httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -979,7 +980,7 @@ func TestAuthRequiredForWriteEndpoints(t *testing.T) {
 	}
 
 	for _, ep := range writeEndpoints {
-		req := httptest.NewRequest(ep.method, ep.path, nil)
+		req := httptest.NewRequest(ep.method, "https://fleet.example.com"+ep.path, nil)
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, req)
 
@@ -1000,6 +1001,7 @@ func authenticateHandlerTests(srv *Server) {
 	handler := srv.server.Handler
 	srv.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.Clone(r.Context())
+		r.TLS = &tls.ConnectionState{}
 		r.Header.Set("Authorization", "Bearer "+srv.apiToken)
 		r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: session})
 		handler.ServeHTTP(w, r)

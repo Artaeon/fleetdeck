@@ -10,7 +10,7 @@ import (
 func TestHandleListTemplates(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest("GET", "/api/templates", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/api/templates", nil)
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

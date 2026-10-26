@@ -48,7 +48,8 @@ func TestSessionExpiryRevocationAndRestart(t *testing.T) {
 func TestLogoutRevokesCookieReplay(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 	token := testSession(t, srv)
-	r := httptest.NewRequest("POST", "/logout", nil)
+	r := httptest.NewRequest("POST", "https://fleet.example.com/logout", nil)
+	r.Header.Set("Origin", "https://fleet.example.com")
 	r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: token})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, r)
@@ -58,7 +59,7 @@ func TestLogoutRevokesCookieReplay(t *testing.T) {
 	if cookies := w.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
 		t.Fatal("logout did not clear cookie")
 	}
-	r = httptest.NewRequest("GET", "/api/projects", nil)
+	r = httptest.NewRequest("GET", "https://fleet.example.com/api/projects", nil)
 	r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: token})
 	w = httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, r)
@@ -70,7 +71,7 @@ func TestLogoutRevokesCookieReplay(t *testing.T) {
 func TestAPITokenIsNotABrowserSession(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 	for _, path := range []string{"/", "/api/projects"} {
-		r := httptest.NewRequest("GET", path, nil)
+		r := httptest.NewRequest("GET", "https://fleet.example.com"+path, nil)
 		r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: srv.apiToken})
 		w := httptest.NewRecorder()
 		srv.server.Handler.ServeHTTP(w, r)
@@ -83,7 +84,7 @@ func TestAPITokenIsNotABrowserSession(t *testing.T) {
 func TestReauthenticationReplacesOnlyCurrentSession(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 	old, other := testSession(t, srv), testSession(t, srv)
-	r := httptest.NewRequest("POST", "/login", strings.NewReader("token=test-secret-token"))
+	r := httptest.NewRequest("POST", "https://fleet.example.com/login", strings.NewReader("token=test-secret-token"))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: old})
 	w := httptest.NewRecorder()

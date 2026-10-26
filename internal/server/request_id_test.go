@@ -17,7 +17,7 @@ func TestRequestIDMiddlewareGeneratesID(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	rec := httptest.NewRecorder()
 	requestIDMiddleware(next).ServeHTTP(rec, req)
 
@@ -43,7 +43,7 @@ func TestRequestIDMiddlewareHonorsInboundID(t *testing.T) {
 		seen = requestIDFromContext(r.Context())
 	})
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	req.Header.Set(requestIDHeader, clientID)
 	rec := httptest.NewRecorder()
 	requestIDMiddleware(next).ServeHTTP(rec, req)
@@ -69,7 +69,7 @@ func TestRequestIDMiddlewareTruncatesHugeInbound(t *testing.T) {
 		seen = requestIDFromContext(r.Context())
 	})
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "https://fleet.example.com/", nil)
 	req.Header.Set(requestIDHeader, string(huge))
 	rec := httptest.NewRecorder()
 	requestIDMiddleware(next).ServeHTTP(rec, req)
