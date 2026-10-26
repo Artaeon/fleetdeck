@@ -43,6 +43,10 @@ type githubPushPayload struct {
 }
 
 func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Server.OIDC.Enabled {
+		writeError(w, http.StatusForbidden, "webhook deployments are disabled on the MFA admin listener; use private CLI automation")
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1MB limit
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read body")

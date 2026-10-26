@@ -44,6 +44,7 @@ type Server struct {
 	sessions      *sessionStore
 	apiToken      string
 	metricsToken  string
+	oidc          *oidcLogin
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
 	metrics       *Metrics
@@ -258,6 +259,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	// Dashboard UI (requires an authenticated browser session)
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", loginRateLimit(s.handleLoginSubmit))
+	mux.HandleFunc("GET /auth/callback", loginRateLimit(s.completeOIDC))
 	mux.HandleFunc("POST /logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("GET /", s.requirePageAuth(s.handleDashboard))
 	mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
@@ -296,7 +298,12 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 // requireAuth validates API requests via Bearer token or cookie.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.apiToken == "" {
+		if s.cfg.Server.OIDC.Enabled {
+			if !s.oidcRequestAllowed(r) {
+				writeError(w, http.StatusForbidden, "use the configured HTTPS dashboard address")
+				return
+			}
+		} else if s.apiToken == "" {
 			writeError(w, http.StatusServiceUnavailable, "dashboard authentication is not configured")
 			return
 		}
@@ -308,7 +315,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check Authorization header
 		auth := r.Header.Get("Authorization")
-		if strings.HasPrefix(auth, "Bearer ") {
+		if !s.cfg.Server.OIDC.Enabled && strings.HasPrefix(auth, "Bearer ") {
 			token := strings.TrimPrefix(auth, "Bearer ")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
 				next(w, r)
@@ -318,7 +325,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check session cookie
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if s.sessions.validForDevice(cookie.Value, requestDevice(r)) {
+			if s.sessions.validSession(cookie.Value, requestDevice(r), s.cfg.Server.OIDC.Enabled) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
 					return
@@ -335,13 +342,18 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // requirePageAuth redirects to login for unauthenticated page requests.
 func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.apiToken == "" {
+		if s.cfg.Server.OIDC.Enabled {
+			if !s.oidcRequestAllowed(r) {
+				writeError(w, http.StatusForbidden, "use the configured HTTPS dashboard address")
+				return
+			}
+		} else if s.apiToken == "" {
 			writeError(w, http.StatusServiceUnavailable, "dashboard authentication is not configured")
 			return
 		}
 
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if s.sessions.validForDevice(cookie.Value, requestDevice(r)) {
+			if s.sessions.validSession(cookie.Value, requestDevice(r), s.cfg.Server.OIDC.Enabled) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
 					return
@@ -356,6 +368,10 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Server.OIDC.Enabled {
+		s.beginOIDC(w, r)
+		return
+	}
 	if !safeTransport(r) {
 		writeError(w, http.StatusForbidden, "open the dashboard over HTTPS or direct loopback before signing in")
 		return
@@ -365,6 +381,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Server.OIDC.Enabled {
+		writeError(w, http.StatusForbidden, "token login is disabled; sign in through Authelia")
+		return
+	}
 	if !safeTransport(r) || (r.Header.Get("Origin") != "" && !sameOrigin(r)) {
 		writeError(w, http.StatusForbidden, "HTTPS or direct loopback access with a matching origin is required")
 		return
@@ -413,11 +433,23 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, Secure: !directLoopback(r) || requestHTTPS(r), SameSite: http.SameSiteStrictMode,
 		MaxAge: -1,
 	})
+	if s.cfg.Server.OIDC.Enabled {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(`<!doctype html><title>Signed out</title><h1>Signed out of FleetDeck</h1><p>Your Authelia session may still be active. Sign out there too on a shared device.</p><a href="/login">Sign in again</a>`))
+		return
+	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (s *Server) Start() error {
-	if err := ValidateDashboardTokens(s.apiToken, s.metricsToken); err != nil {
+	auth := s.cfg.Server
+	auth.APIToken, auth.MetricsToken = s.apiToken, s.metricsToken
+	if err := ValidateDashboardAuth(auth); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.configureOIDC(ctx); err != nil {
 		return err
 	}
 	if s.server.TLSConfig == nil {

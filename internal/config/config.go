@@ -33,18 +33,31 @@ type AuditConfig struct {
 }
 
 type ServerConfig struct {
-	BasePath      string `toml:"base_path"`
-	Domain        string `toml:"domain"`
-	EncryptionKey string `toml:"encryption_key"`
-	APIToken      string `toml:"api_token"`
-	MetricsToken  string `toml:"metrics_token"`
-	WebhookSecret string `toml:"webhook_secret"`
+	BasePath      string     `toml:"base_path"`
+	Domain        string     `toml:"domain"`
+	EncryptionKey string     `toml:"encryption_key"`
+	APIToken      string     `toml:"api_token"`
+	MetricsToken  string     `toml:"metrics_token"`
+	OIDC          OIDCConfig `toml:"oidc"`
+	WebhookSecret string     `toml:"webhook_secret"`
 
 	// MaxConcurrentDeploys caps how many deploys the HTTP server will
 	// run in parallel (webhook-triggered or dashboard-triggered). Zero
 	// means "use the default" (3) — intentionally modest so a 2-4 GB
 	// VPS doesn't page out under a coordinated 20-repo push.
 	MaxConcurrentDeploys int `toml:"max_concurrent_deploys"`
+}
+
+// OIDCConfig contains deployment settings, never a private signing key.
+type OIDCConfig struct {
+	Enabled          bool   `toml:"enabled"`
+	Issuer           string `toml:"issuer"`
+	ClientID         string `toml:"client_id"`
+	ClientSecretFile string `toml:"client_secret_file"`
+	PublicURL        string `toml:"public_url"`
+	AdminGroup       string `toml:"admin_group"`
+	// Empty means webauthn. hardware additionally requires Authelia's hwk claim.
+	AuthenticationMethod string `toml:"authentication_method"`
 }
 
 type TraefikConfig struct {
