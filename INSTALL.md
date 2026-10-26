@@ -162,7 +162,7 @@ fleetdeck detect .
 
 This shows you what FleetDeck thinks your app is and which profile it recommends, without deploying anything.
 
-### Option C: Create Project With Full CI/CD Setup
+### Option C: Create a Project With Build CI
 
 ```bash
 fleetdeck create myapp \
@@ -172,23 +172,19 @@ fleetdeck create myapp \
   --github-org your-org
 ```
 
-This creates everything: Linux user, SSH keys, Docker Compose config, GitHub repo, GitHub Actions workflow, and deploy secrets. After this, every `git push` auto-deploys.
+This creates a private Linux account, Docker Compose configuration, GitHub repository and build-only GitHub Actions workflow. Project accounts receive no Docker access or host deployment keys. Deploy using your trusted administrator account.
 
 ---
 
-## Step 6: Set Up CI/CD (Optional but Recommended)
+## Step 6: Build CI and Deployment
 
-If you used `fleetdeck create` with `--github-org`, CI/CD is already configured. For projects deployed with `fleetdeck deploy`, you can add CI/CD manually:
+Projects created with `--github-org` include build-only CI. Pushes verify the image
+build; they do not automatically deploy. Use `fleetdeck deploy` from your trusted
+administrator account. If you explicitly configure webhook deployment, treat that
+repository's code as privileged host input.
 
-1. Create a GitHub repo for your project
-2. Add these secrets to the repo (Settings > Secrets > Actions):
-   - `DEPLOY_HOST`: your server IP
-   - `DEPLOY_USER`: the Linux user FleetDeck created (e.g., `fleetdeck-myapp`)
-   - `SSH_PRIVATE_KEY`: the private key from `/opt/fleetdeck/myapp/.ssh/deploy_key`
-
-3. The deploy workflow is already in your project at `.github/workflows/deploy.yml`
-
-Now every push to `main` auto-deploys.
+For existing servers, review [firewall, isolation and migration](docs/SERVER_SECURITY.md)
+before changing deployed networks or removing legacy CI credentials.
 
 ---
 
@@ -252,10 +248,10 @@ fleetdeck rollback myapp --latest    # Quick rollback
 ### Update Running App
 
 ```bash
-# Option 1: Push to GitHub (auto-deploys via CI/CD)
+# Publish source and run build CI
 git push origin main
 
-# Option 2: Direct deploy
+# Deploy the reviewed version
 fleetdeck deploy . --server root@SERVER --domain myapp.yourdomain.com
 ```
 

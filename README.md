@@ -20,13 +20,13 @@
 
 ---
 
-**FleetDeck** is a single-binary deployment platform that takes your application from code to production with one command. It detects your stack, provisions your server, deploys with zero downtime, sets up HTTPS, configures CI/CD, monitors health, and handles backups. No Kubernetes. No YAML hell. Just ship.
+**FleetDeck** is a single-binary deployment platform that takes your application from code to production with one command. It detects your stack, provisions your server, deploys with zero downtime, sets up HTTPS, generates build CI, monitors health, and handles backups. No Kubernetes. No YAML hell. Just ship.
 
 ```bash
 fleetdeck deploy ./my-saas --server root@server.ip --domain myapp.com --profile saas
 ```
 
-That one command connects to your server, detects your app (Next.js, Go, Python, whatever), generates a Docker Compose stack with PostgreSQL + Redis + S3 + email, configures Traefik for automatic HTTPS, deploys your containers, and sets up GitHub Actions CI/CD. Done.
+That one command connects to your server, detects your app (Next.js, Go, Python, whatever), generates a Docker Compose stack with PostgreSQL + Redis + S3 + email, configures Traefik for automatic HTTPS, deploys your containers. New projects created with `fleetdeck create` receive build-only GitHub Actions CI; deployments use a trusted administrator.
 
 ---
 
@@ -452,7 +452,7 @@ fleetdeck deploy . \
 ### Day-to-Day Workflow
 
 ```bash
-# Push code -> GitHub Actions auto-deploys
+# Push code -> GitHub Actions verifies the build
 git push origin main
 
 # Check project status
@@ -520,7 +520,7 @@ worker       -                       running   node      worker
 staging      staging.myapp.com       stopped   nextjs    saas
 ```
 
-Each project gets its own Linux user, SSH keys, Docker network, and backup schedule. Complete isolation.
+Generated projects use separate edge and internal backend networks. New project accounts have no Docker-group access. This protects service boundaries on a trusted host; it is not isolation for hostile tenants. See [server security and migration](docs/SERVER_SECURITY.md).
 
 ---
 
@@ -793,14 +793,14 @@ Sensitive values can be set via environment variables: `FLEETDECK_API_TOKEN`, `F
 
 | Layer | Implementation |
 |-------|---------------|
-| Process isolation | Per-project Linux users with minimal privileges |
-| SSH | Ed25519 keys, TOFU host verification, restricted to `docker compose` only |
+| Project accounts | Private groups/homes, no login shell or Docker-group access |
+| Deployment trust | Administrator SSH; generated CI receives no host credentials |
 | Secrets | AES-256-GCM at rest, PBKDF2 key derivation (100K iterations) |
 | Webhooks | HMAC-SHA256 signature verification |
 | API | Bearer token auth, per-IP rate limiting (10 req/s) |
-| Network | Per-project Docker networks, Traefik TLS termination |
+| Network | Per-project edge bridges, internal backend networks, Traefik TLS |
 | HTTP | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| Firewall | UFW: SSH + HTTP + HTTPS only |
+| Firewall | UFW host rules plus IPv4/IPv6 Docker ingress guard |
 | Input validation | Shell injection prevention, path traversal protection |
 | Deployment | Per-project file locking prevents concurrent deploys |
 | Audit | Structured JSON logs for every operation |
