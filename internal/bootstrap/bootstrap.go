@@ -74,7 +74,7 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 	res.DockerInstalled = true
 
 	// 4. Firewall
-	if err := configureFirewall(runner, cfg.Port); err != nil {
+	if err := ConfigureFirewall(runner, cfg.Port); err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("configure firewall: %v", err))
 		return res, fmt.Errorf("configuring firewall: %w", err)
 	} else {
