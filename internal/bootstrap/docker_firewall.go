@@ -11,7 +11,7 @@ var firewallFiles embed.FS
 const dockerFirewallService = `[Unit]
 Description=FleetDeck container ingress firewall (IPv4 and IPv6)
 Before=docker.service
-After=ufw.service
+After=ufw.service nftables.service
 
 [Service]
 Type=oneshot
