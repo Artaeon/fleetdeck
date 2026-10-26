@@ -398,8 +398,8 @@ fleetdeck dashboard
 The dashboard binds to `127.0.0.1:8420` by default and refuses to start without
 `FLEETDECK_API_TOKEN` (or `[server] api_token`). For remote browser access, keep
 this listener private behind an HTTPS reverse proxy with restricted access.
-Using `--addr` to expose another interface is an explicit operator choice;
-authentication remains required. For a simple private connection, run this on
+Direct non-loopback listeners require mutual TLS with explicitly allowed device
+certificates as well as the API token. For a simple private connection, run this on
 your workstation while the dashboard runs on the server:
 
 ```bash
@@ -411,6 +411,11 @@ loopback access supports browser sessions; remote access requires HTTPS. A
 trusted reverse proxy must preserve Host, overwrite forwarded headers, and set
 `X-Forwarded-Proto: https`; list its immediate IP in
 `FLEETDECK_TRUST_PROXY_IPS`.
+
+See [admin access and monitoring](docs/ADMIN_ACCESS.md) for device certificates,
+revocation and a separate read-only Prometheus credential. Native passkey/MFA
+enrollment and a complete multi-server control panel are not implemented; see the
+[current application and integration coverage](docs/APPLICATION_COVERAGE.md).
 
 Browser-based project management: real-time server stats, project grid, start/stop/restart controls, live log viewer, backup browser, deployment history, and GitHub webhook integration.
 
@@ -645,6 +650,7 @@ Do this at least once per quarter. Verified backups are the only kind that count
 |---------|---------|
 | `FLEETDECK_ENCRYPTION_KEY` | AES key passphrase for encrypted secrets column |
 | `FLEETDECK_API_TOKEN` | Bearer token for the dashboard / HTTP API |
+| `FLEETDECK_METRICS_TOKEN` | Separate read-only credential for `GET /metrics` |
 | `FLEETDECK_WEBHOOK_SECRET` | HMAC secret for GitHub push webhooks |
 | `FLEETDECK_DNS_TOKEN` | Cloudflare API token |
 | `FLEETDECK_MONITORING_SLACK` / `FLEETDECK_MONITORING_WEBHOOK` | Alert destinations |
