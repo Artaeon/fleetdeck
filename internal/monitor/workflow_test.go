@@ -20,8 +20,11 @@ import (
 
 func TestWorkflowMonitorHealthyService(t *testing.T) {
 	var checkCount atomic.Int64
+	thirdCheck := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		checkCount.Add(1)
+		if checkCount.Add(1) == 3 {
+			close(thirdCheck)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
@@ -46,9 +49,13 @@ func TestWorkflowMonitorHealthyService(t *testing.T) {
 	ctx := context.Background()
 	mon.Start(ctx)
 
-	// Wait long enough for the initial check plus at least 2 interval ticks
-	// (initial + 2 ticks = 3 checks minimum).
-	time.Sleep(200 * time.Millisecond)
+	// Wait for observed checks, not a scheduler timing assumption under -race.
+	select {
+	case <-thirdCheck:
+	case <-time.After(5 * time.Second):
+		mon.Stop()
+		t.Fatal("monitor did not perform three health checks")
+	}
 	mon.Stop()
 
 	// Verify we got at least 3 checks.
