@@ -101,3 +101,12 @@ Login attempts have a separate per-client budget (burst five, then one attempt
 per twelve seconds). Client IPs are resolved from the nearest untrusted hop in
 an explicitly trusted proxy chain. Rate-limit visitor storage is bounded;
 overflow identities share a budget instead of allocating unbounded memory.
+
+## Development mailbox
+
+The SaaS profile keeps Mailpit on the private project network, disables Traefik
+exposure, and publishes no host port. It is an email capture tool for testing;
+configure an external SMTP provider for production email delivery. Existing
+stacks must remove the old Mailpit router labels and shared proxy-network
+membership in their operator-owned Compose file; upgrading FleetDeck alone does
+not rewrite deployed projects.

@@ -296,7 +296,6 @@ func TestSaaSProfileHasAllServices(t *testing.T) {
 		{"SMTP_HOST in app", "SMTP_HOST: mailpit"},
 		{"SMTP_PORT in app", "SMTP_PORT: \"1025\""},
 		{"s3 subdomain routing", "s3.platform.example.com"},
-		{"mail subdomain routing", "mail.platform.example.com"},
 	}
 
 	for _, check := range serviceChecks {

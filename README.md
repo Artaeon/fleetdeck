@@ -172,7 +172,7 @@ Everything you need for a production SaaS, generated in one command:
 - **PostgreSQL** with health checks, persistent storage, `pg_isready` probes
 - **Redis** with AOF persistence, 512MB memory limit, LRU eviction
 - **MinIO** (S3-compatible) at `s3.yourdomain.com` for file uploads
-- **Mailpit** at `mail.yourdomain.com` for email testing/SMTP relay
+- **Mailpit** as a private development mailbox, without a public web route. Configure a production SMTP provider to send real email.
 - Auto-generated `.env` with cryptographically random passwords
 
 ### The `fullstack` Profile

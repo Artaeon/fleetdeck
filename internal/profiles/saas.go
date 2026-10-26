@@ -3,7 +3,7 @@ package profiles
 func init() {
 	Register(&Profile{
 		Name:          "saas",
-		Description:   "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + email relay + cron.",
+		Description:   "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + private test mailbox.",
 		DefaultCPU:    "2.0",
 		DefaultMemory: "2G",
 		Services: []Service{
@@ -11,7 +11,7 @@ func init() {
 			{Name: "postgres", Image: "postgres:{{.PostgresVersion}}", Description: "PostgreSQL database", Required: true},
 			{Name: "redis", Image: "redis:7-alpine", Description: "Redis cache/sessions/queue", Required: true},
 			{Name: "minio", Image: "minio/minio:latest", Description: "S3-compatible object storage", Required: false},
-			{Name: "mailpit", Image: "axllent/mailpit:latest", Description: "Email testing (dev) / SMTP relay", Required: false},
+			{Name: "mailpit", Image: "axllent/mailpit:latest", Description: "Private development email capture", Required: false},
 		},
 		Compose: `services:
   app:
@@ -121,14 +121,8 @@ func init() {
     volumes:
       - ./mailpit_data:/data
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.{{.Name}}-mail.rule=Host(` + "`mail.{{.Domain}}`" + `)"
-      - "traefik.http.routers.{{.Name}}-mail.entrypoints=websecure"
-      - "traefik.http.routers.{{.Name}}-mail.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.{{.Name}}-mail.tls=true"
-      - "traefik.http.services.{{.Name}}-mail.loadbalancer.server.port=8025"
+      - "traefik.enable=false"
     networks:
-      - default
       - {{.Name}}-internal
 
 networks:
