@@ -305,6 +305,7 @@ func TestCreateBackupDBRecordFailureCleansUp(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRestoreBackupConfigFilesOnly(t *testing.T) {
+	putFakeDockerOnPath(t, "exit 0\n")
 	// Create a backup with config files
 	backupDir := t.TempDir()
 	projectDir := t.TempDir()
@@ -381,6 +382,7 @@ func TestRestoreBackupPathTraversalDetection(t *testing.T) {
 }
 
 func TestRestoreBackupOnlyConfigsRestored(t *testing.T) {
+	putFakeDockerOnPath(t, "exit 0\n")
 	// When FilesOnly is set, only config components should be restored.
 	// Volume and database components should be skipped.
 	backupDir := t.TempDir()
@@ -482,6 +484,7 @@ func TestRestoreBackupVerificationFailure(t *testing.T) {
 }
 
 func TestRestoreBackupMissingSourceFileSkipped(t *testing.T) {
+	putFakeDockerOnPath(t, "exit 0\n")
 	backupDir := t.TempDir()
 	projectDir := t.TempDir()
 
@@ -1670,5 +1673,31 @@ func TestHasFailuresOneFailed(t *testing.T) {
 	}
 	if !HasFailures(results) {
 		t.Error("expected failures when one failed")
+	}
+}
+
+func TestRestoreStopsBeforeChangingFilesWhenDockerFails(t *testing.T) {
+	putFakeDockerOnPath(t, "exit 1\n")
+	backupDir, projectDir := t.TempDir(), t.TempDir()
+	current := []byte("current configuration")
+	restored := []byte("old configuration")
+	if err := os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), current, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "saved.yml"), restored, 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(restored)
+	data, _ := json.Marshal(Manifest{Version: "1", Components: []ComponentInfo{{Type: "config", Name: "docker-compose.yml", Path: "saved.yml", Checksum: hex.EncodeToString(hash[:])}}})
+	if err := os.WriteFile(filepath.Join(backupDir, "manifest.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := RestoreBackup(backupDir, projectDir, RestoreOptions{FilesOnly: true, NoStart: true})
+	if err == nil || !strings.Contains(err.Error(), "stopping project before restore") {
+		t.Fatalf("expected stop failure, got %v", err)
+	}
+	actual, _ := os.ReadFile(filepath.Join(projectDir, "docker-compose.yml"))
+	if string(actual) != string(current) {
+		t.Fatal("restore changed files while containers may still be running")
 	}
 }

@@ -78,16 +78,11 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 	// data. We now abort (and do NOT start the project) if anything failed.
 	var failures []string
 
-	// Stop running containers (AFTER verification above confirmed backup is valid).
-	// Surface the stop failure as a warning but continue — forcing a hard abort
-	// here would strand the operator with a half-stopped project and no way to
-	// finish the restore without manual docker work. The project may already
-	// be in a broken state (which is why they're restoring).
+	// Never replace data while a failed stop may have left writers running.
 	step++
 	ui.Step(step, totalSteps, "Stopping project containers...")
 	if err := project.ComposeDown(projectPath); err != nil {
-		ui.Warn("Could not stop containers cleanly: %v", err)
-		ui.Warn("Continuing restore — files may race with in-flight writes.")
+		return fmt.Errorf("stopping project before restore: %w; no backup data restored", err)
 	} else {
 		ui.Success("Containers stopped")
 	}
