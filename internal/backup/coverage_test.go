@@ -343,6 +343,7 @@ func TestBackupVolumesCreatesArchive(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "data")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("backup volumes: %v", err)
@@ -384,7 +385,7 @@ func TestBackupVolumesCreatesArchive(t *testing.T) {
 	}
 }
 
-func TestBackupVolumesSkipsNodeModules(t *testing.T) {
+func TestBackupVolumesIncludesMountedNodeModules(t *testing.T) {
 	projectDir := t.TempDir()
 	backupDir := t.TempDir()
 
@@ -401,19 +402,18 @@ func TestBackupVolumesSkipsNodeModules(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "node_modules")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("backup volumes: %v", err)
 	}
 
-	for _, c := range components {
-		if strings.Contains(c.Name, "node_modules") {
-			t.Error("node_modules should be skipped")
-		}
+	if len(components) != 1 {
+		t.Fatal("explicit writable mount was omitted")
 	}
 }
 
-func TestBackupVolumesSkipsGitDir(t *testing.T) {
+func TestBackupVolumesIncludesMountedGitDir(t *testing.T) {
 	projectDir := t.TempDir()
 	backupDir := t.TempDir()
 
@@ -429,15 +429,14 @@ func TestBackupVolumesSkipsGitDir(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, ".git")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("backup volumes: %v", err)
 	}
 
-	for _, c := range components {
-		if strings.Contains(c.Name, ".git") {
-			t.Error(".git should be skipped")
-		}
+	if len(components) != 1 {
+		t.Fatal("explicit writable mount was omitted")
 	}
 }
 
@@ -462,6 +461,7 @@ func TestBackupVolumesMultipleVolumes(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "uploads", "logs", "cache_data")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("backup volumes: %v", err)
@@ -476,9 +476,10 @@ func TestBackupVolumesNoComposeFile(t *testing.T) {
 	projectDir := t.TempDir()
 	backupDir := t.TempDir()
 
+	putFakeDockerOnPath(t, "exit 1\n")
 	components, err := BackupVolumes(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("backup volumes: %v", err)
+	if err == nil {
+		t.Fatal("incomplete volume inventory was accepted")
 	}
 
 	if components != nil && len(components) != 0 {
@@ -498,18 +499,19 @@ func TestBackupVolumesNonexistentHostPath(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "nonexistent_dir")
 	components, err := BackupVolumes(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("backup volumes: %v", err)
+	if err == nil {
+		t.Fatal("incomplete volume inventory was accepted")
 	}
 
-	// Nonexistent paths should be silently skipped
+	// Missing writable data must fail the backup.
 	if len(components) != 0 {
 		t.Errorf("expected 0 components for nonexistent volume path, got %d", len(components))
 	}
 }
 
-func TestBackupVolumesVolumeWithoutColonSkipped(t *testing.T) {
+func TestBackupVolumesRejectsAnonymousVolumes(t *testing.T) {
 	projectDir := t.TempDir()
 	backupDir := t.TempDir()
 
@@ -521,12 +523,13 @@ func TestBackupVolumesVolumeWithoutColonSkipped(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeVolumeModel(t, map[string]any{"services": map[string]any{"app": map[string]any{"volumes": []composeMount{{Type: "volume", Target: "/data"}}}}}, "exit 1\n")
 	components, err := BackupVolumes(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("backup volumes: %v", err)
+	if err == nil {
+		t.Fatal("incomplete volume inventory was accepted")
 	}
 
-	// A volume definition without a colon separator should be skipped
+	// Anonymous writable volumes cannot be silently omitted.
 	if len(components) != 0 {
 		t.Errorf("expected 0 components for volume without colon, got %d", len(components))
 	}
@@ -875,6 +878,7 @@ func TestBackupProjectNoVolumesInCompose(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir)
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("backup volumes: %v", err)
