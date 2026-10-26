@@ -107,6 +107,10 @@ jobs:
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
           FLEETDECK_INTEGRATION: "true"
+      - name: Verify project accounts and CLI proxy routes
+        run: |
+          go build -o /tmp/fleetdeck-cli-integration .
+          sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/cli-isolation.sh
 
   integration-ssh:
     runs-on: ubuntu-24.04
