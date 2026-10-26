@@ -17,7 +17,12 @@ func skipIfNoIntegration(t *testing.T) {
 		t.Skip("skipping integration test: FLEETDECK_INTEGRATION not set")
 	}
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("skipping integration test: docker not found")
+		t.Fatal("FLEETDECK_INTEGRATION is set but docker is not installed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
+		t.Fatalf("FLEETDECK_INTEGRATION requires a reachable Docker daemon: %v", err)
 	}
 }
 
