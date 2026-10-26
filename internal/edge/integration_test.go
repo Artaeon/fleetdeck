@@ -44,7 +44,7 @@ func TestIntegrationProjectNetworks(t *testing.T) {
 		exec.CommandContext(cleanupCtx, "docker", "rm", "-f", proxy, a, b, db).Run()
 		exec.CommandContext(cleanupCtx, "docker", "network", "rm", netA, netB, private).Run()
 	})
-	image := "alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"
+	image := "python@sha256:601e99e090cb08c2784a42395487709500bc39930307fe72f3f11a8f3c430762"
 	must("run", "-d", "--name", proxy, "--network", "bridge", "--label", "io.fleetdeck.proxy=true", image, "sleep", "300")
 	for _, name := range []string{netA, netB, netA} {
 		if err := Ensure(LocalRunner{Context: ctx}, name); err != nil {
@@ -53,7 +53,7 @@ func TestIntegrationProjectNetworks(t *testing.T) {
 	}
 	must("network", "create", "--internal", private)
 	server := func(name, network string) {
-		must("run", "-d", "--name", name, "--network", network, "--security-opt", "no-new-privileges:true", "--cap-drop", "NET_RAW", "--pids-limit", "512", image, "sh", "-c", "mkdir /www; echo fixture > /www/index.html; exec httpd -f -p 8080 -h /www")
+		must("run", "-d", "--name", name, "--network", network, "--security-opt", "no-new-privileges:true", "--cap-drop", "NET_RAW", "--pids-limit", "512", image, "sh", "-c", "mkdir /www; echo fixture > /www/index.html; exec python3 -m http.server 8080 --directory /www")
 	}
 	server(a, netA)
 	server(b, netB)
@@ -72,6 +72,19 @@ func TestIntegrationProjectNetworks(t *testing.T) {
 		}
 	}
 	// Positive checks establish server readiness before negative isolation checks.
+	for _, address := range []string{aIP, bIP} {
+		ready := false
+		for i := 0; i < 30; i++ {
+			if _, err := docker("exec", proxy, "wget", "-qO-", "-T", "1", "http://"+address+":8080/"); err == nil {
+				ready = true
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if !ready {
+			t.Fatalf("fixture server %s did not become ready", address)
+		}
+	}
 	probe(proxy, aIP, true)
 	probe(proxy, bIP, true)
 	probe(a, dbIP, true)
