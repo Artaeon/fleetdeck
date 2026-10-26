@@ -49,7 +49,7 @@ func healthcheck(port int, path string) string {
 
 func dockerfileNextJS(port int) string {
 	var b strings.Builder
-	b.WriteString(`FROM node:20-alpine AS deps
+	b.WriteString(`FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
 RUN if [ -f package-lock.json ]; then npm ci; \
@@ -57,14 +57,14 @@ RUN if [ -f package-lock.json ]; then npm ci; \
     elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; \
     else npm install; fi
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -85,7 +85,7 @@ USER nextjs
 
 func dockerfileNode(port int, entrypoint string) string {
 	var b strings.Builder
-	b.WriteString(`FROM node:20-alpine AS builder
+	b.WriteString(`FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
 RUN if [ -f package-lock.json ]; then npm ci; \
@@ -95,7 +95,7 @@ RUN if [ -f package-lock.json ]; then npm ci; \
 COPY . .
 RUN npm run build --if-present
 
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app ./

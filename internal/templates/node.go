@@ -4,14 +4,14 @@ func init() {
 	Register(&Template{
 		Name:        "node",
 		Description: "Node.js application with PostgreSQL",
-		Dockerfile: `FROM node:20-alpine AS builder
+		Dockerfile: `FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 COPY --from=builder /app/package*.json ./
 RUN npm ci --omit=dev

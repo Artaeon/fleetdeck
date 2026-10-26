@@ -4,7 +4,7 @@ func init() {
 	Register(&Template{
 		Name:        "nestjs",
 		Description: "NestJS application with Prisma and PostgreSQL",
-		Dockerfile: `FROM node:20-alpine AS builder
+		Dockerfile: `FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma
@@ -13,7 +13,7 @@ RUN npx prisma generate
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma

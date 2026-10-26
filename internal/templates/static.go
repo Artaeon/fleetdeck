@@ -4,7 +4,7 @@ func init() {
 	Register(&Template{
 		Name:        "static",
 		Description: "Static site served by Nginx",
-		Dockerfile: `FROM node:20-alpine AS builder
+		Dockerfile: `FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
