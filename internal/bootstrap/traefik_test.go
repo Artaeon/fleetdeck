@@ -255,9 +255,9 @@ func TestComposeFileGeneration(t *testing.T) {
 		t.Errorf("expected compose file to contain ACME email %s", email)
 	}
 
-	// Verify dashboard is enabled.
-	if !strings.Contains(output, "--api.dashboard=true") {
-		t.Error("expected compose file to enable Traefik dashboard")
+	// The bootstrap proxy must not expose an administrative API.
+	if !strings.Contains(output, "--api=false") {
+		t.Error("expected compose file to disable the Traefik API")
 	}
 
 	// Verify entrypoints.
@@ -296,18 +296,10 @@ func TestComposeFileGeneration(t *testing.T) {
 		t.Error("expected compose file to enable access logging")
 	}
 
-	// Verify dashboard labels.
-	if !strings.Contains(output, "traefik.enable=true") {
-		t.Error("expected compose file to contain traefik.enable=true label")
-	}
-	if !strings.Contains(output, "traefik.http.routers.dashboard.entrypoints=websecure") {
-		t.Error("expected compose file to set dashboard entrypoint to websecure")
-	}
-	if !strings.Contains(output, "traefik.http.routers.dashboard.tls.certresolver=letsencrypt") {
-		t.Error("expected compose file to set dashboard cert resolver to letsencrypt")
-	}
-	if !strings.Contains(output, "traefik.http.routers.dashboard.service=api@internal") {
-		t.Error("expected compose file to route dashboard to api@internal")
+	for _, forbidden := range []string{"api@internal", "routers.dashboard", "--api.insecure=true", "8080:"} {
+		if strings.Contains(output, forbidden) {
+			t.Errorf("bootstrap exposes an administrative endpoint: %s", forbidden)
+		}
 	}
 
 	// Verify external network declaration.
@@ -349,44 +341,6 @@ func TestComposeFileNetworkName(t *testing.T) {
 			topLevelNetwork := "\n  " + tt.network + ":\n    external: true"
 			if !strings.Contains(output, topLevelNetwork) {
 				t.Errorf("expected compose output to contain top-level network declaration for %q", tt.network)
-			}
-		})
-	}
-}
-
-func TestComposeFileDomainInLabels(t *testing.T) {
-	tests := []struct {
-		name   string
-		domain string
-	}{
-		{"simple domain", "example.com"},
-		{"subdomain", "fleet.example.com"},
-		{"long subdomain", "app.staging.fleet.example.com"},
-		{"hyphenated domain", "my-fleet.example.com"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output := composeFile(tt.domain, "admin@example.com", "traefik")
-
-			// The domain should appear in the router rule Host() directive,
-			// wrapped in backticks as per Traefik label syntax.
-			hostDirective := "Host(`" + tt.domain + "`)"
-			if !strings.Contains(output, hostDirective) {
-				t.Errorf("expected compose output to contain Host directive %q", hostDirective)
-			}
-
-			// Verify the PathPrefix directives are present alongside the domain.
-			if !strings.Contains(output, "PathPrefix(`/api`)") {
-				t.Error("expected compose output to contain PathPrefix for /api")
-			}
-			if !strings.Contains(output, "PathPrefix(`/dashboard`)") {
-				t.Error("expected compose output to contain PathPrefix for /dashboard")
-			}
-
-			// Verify the complete router rule structure.
-			if !strings.Contains(output, "traefik.http.routers.dashboard.rule=") {
-				t.Error("expected compose output to contain dashboard router rule")
 			}
 		})
 	}
