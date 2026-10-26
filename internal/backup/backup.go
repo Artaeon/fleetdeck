@@ -28,11 +28,12 @@ type Manifest struct {
 }
 
 type ComponentInfo struct {
-	Type      string `json:"type"` // "config", "volume", "database"
-	Name      string `json:"name"`
-	Path      string `json:"path"` // relative path within backup
-	SizeBytes int64  `json:"size_bytes"`
-	Checksum  string `json:"checksum"` // SHA256
+	Type        string `json:"type"` // "config", "volume", "database"
+	Name        string `json:"name"`
+	Path        string `json:"path"` // relative path within backup
+	SizeBytes   int64  `json:"size_bytes"`
+	Checksum    string `json:"checksum"`               // SHA256
+	RestorePath string `json:"restore_path,omitempty"` // project-relative bind directory
 }
 
 type Options struct {

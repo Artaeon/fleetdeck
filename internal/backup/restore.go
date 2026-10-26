@@ -147,7 +147,7 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 				}
 			} else {
 				// Bind mount — extract to project path
-				if err := restoreBindMount(archivePath, projectPath); err != nil {
+				if err := restoreProjectBindMount(archivePath, projectPath, comp.RestorePath); err != nil {
 					ui.Warn("Could not restore volume %s: %v", comp.Name, err)
 					failures = append(failures, fmt.Sprintf("volume %s: %v", comp.Name, err))
 					continue
