@@ -91,5 +91,16 @@ probe outside 198.51.100.2 8080 deny
 probe outside 2001:db8:2::2 8080 deny
 probe app 192.0.2.2 8081 allow
 probe app 2001:db8:1::2 8081 allow
+# An application on another Docker bridge must not use the host's published
+# private port to bypass the project boundary. HTTP remains publicly routable.
+ip link set wan name br-other
+nft -f - <<'RULES'
+add rule inet fixture_nat prerouting iifname "br-other" ip daddr 192.0.2.1 tcp dport {80,18080} dnat ip to 198.51.100.2:8080
+add rule inet fixture_nat prerouting iifname "br-other" ip6 daddr 2001:db8:1::1 tcp dport {80,18080} dnat ip6 to [2001:db8:2::2]:8080
+RULES
+for address in 192.0.2.1 2001:db8:1::1; do
+    probe outside "$address" 18080 deny
+    probe outside "$address" 80 allow
+done
 kill "$host_pid"
 echo 'Firewall packet tests passed (IPv4, IPv6, DNAT, direct routing, host input, egress, reload).'

@@ -7,13 +7,16 @@ table inet fleetdeck {
         type filter hook forward priority -10; policy drop;
         ct state invalid counter drop
         ct state established,related accept
+        # Match the published host port, not the translated container port.
+        meta l4proto tcp ct status dnat ct original proto-dst { 80, 443 } accept
+        # Also reject private published ports reached from another container
+        # via a host address; bridge egress below must not bypass this guard.
+        ct status dnat counter drop
         # Preserve container egress and traffic on Docker's standard bridges.
         # Docker's own later chains still enforce cross-network isolation.
         iifname "lo" accept
         iifname "docker0" accept
         iifname "br-*" accept
-        # Match the published host port, not the translated container port.
-        meta l4proto tcp ct status dnat ct original proto-dst { 80, 443 } accept
         counter drop
     }
 }
