@@ -1,0 +1,25 @@
+[Unit]
+Description=FleetDeck authenticated administration dashboard
+Requires=fleetdeck-authelia.service
+After=fleetdeck-authelia.service caddy.service network-online.target
+ConditionPathExists=/etc/fleetdeck/admin-auth/ready
+
+[Service]
+Type=simple
+Environment=FLEETDECK_TRUST_PROXY_IPS=127.0.0.1
+ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/admin-auth/dashboard.toml dashboard --addr 127.0.0.1:8420
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Dashboard deployment operations and the Docker socket remain host-privileged.
+
+[Install]
+WantedBy=multi-user.target

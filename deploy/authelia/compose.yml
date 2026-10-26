@@ -1,0 +1,32 @@
+name: fleetdeck-auth
+services:
+  authelia:
+    image: authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54
+    user: "${AUTHELIA_UID:?Set the dedicated host user UID}:${AUTHELIA_GID:?Set the dedicated host group GID}"
+    command: [authelia, --config, /config/configuration.yml]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    volumes:
+      - /etc/fleetdeck/admin-auth/authelia:/config:ro
+      - /var/lib/fleetdeck-authelia:/data
+      - /var/lib/fleetdeck-authelia/healthcheck.env:/app/.healthcheck.env
+    ports:
+      - "127.0.0.1:9091:9091"
+    networks: [auth]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  auth:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-fd-auth
