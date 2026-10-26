@@ -94,6 +94,9 @@ func TestReleasePreflightRuntimeRejectsUnsafePaths(t *testing.T) {
 		if err := os.Mkdir(directory, 0755); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(directory, 0755); err != nil {
+			t.Fatal(err)
+		}
 		runtime := releasePreflightRuntime{directory: directory, ownerUID: ownerUID}
 		if _, err := runtime.prepare(projectPath); err == nil || !strings.Contains(err.Error(), "mode 0700") {
 			t.Fatalf("error = %v", err)
@@ -168,6 +171,11 @@ func resolvedTemporaryDirectory(t *testing.T) string {
 	t.Helper()
 	directory, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	// t.TempDir leaf permissions inherit the process umask (including 0002).
+	// This fixture deliberately models a private runtime parent.
+	if err := os.Chmod(directory, 0700); err != nil {
 		t.Fatal(err)
 	}
 	return directory
