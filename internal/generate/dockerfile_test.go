@@ -16,9 +16,9 @@ func TestDockerfile_NextJS(t *testing.T) {
 	}
 	df := Dockerfile(result)
 
-	assertContains(t, df, "FROM node:20-alpine AS deps")
-	assertContains(t, df, "FROM node:20-alpine AS builder")
-	assertContains(t, df, "FROM node:20-alpine AS runner")
+	assertContains(t, df, "FROM node:24-alpine AS deps")
+	assertContains(t, df, "FROM node:24-alpine AS builder")
+	assertContains(t, df, "FROM node:24-alpine AS runner")
 	assertContains(t, df, "NEXT_TELEMETRY_DISABLED=1")
 	assertContains(t, df, "adduser --system --uid 1001 nextjs")
 	assertContains(t, df, "USER nextjs")
@@ -51,7 +51,7 @@ func TestDockerfile_Node(t *testing.T) {
 	}
 	df := Dockerfile(result)
 
-	assertContains(t, df, "FROM node:20-alpine AS builder")
+	assertContains(t, df, "FROM node:24-alpine AS builder")
 	assertContains(t, df, "npm run build --if-present")
 	assertContains(t, df, "npm prune --production")
 	assertContains(t, df, "EXPOSE 3000")
@@ -76,7 +76,7 @@ func TestDockerfile_NestJS(t *testing.T) {
 	}
 	df := Dockerfile(result)
 
-	assertContains(t, df, "FROM node:20-alpine AS builder")
+	assertContains(t, df, "FROM node:24-alpine AS builder")
 	assertContains(t, df, `CMD ["node", "dist/main.js"]`)
 	assertContains(t, df, "EXPOSE 3000")
 }
