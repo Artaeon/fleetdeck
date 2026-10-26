@@ -27,10 +27,13 @@ services:
     command: [python3, -c, "import time; time.sleep(3600)"]
     volumes:
       - ./nested/state:/state
+      - ./nginx.conf:/etc/probe.conf:ro
     network_mode: none
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 EOF
+printf 'public container configuration' > "$base/project/nginx.conf"
+chmod 0644 "$base/project/nginx.conf"
 cli() { "$binary" --config "$base/config.toml" "$@"; }
 cli import "$name" --path "$base/project" --domain example.invalid
 cli start "$name"
@@ -56,6 +59,7 @@ with sqlite3.connect('/state/example.sqlite3') as db:
     assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
     assert db.execute('SELECT value FROM evidence').fetchall() == [('before',)]
 PY
+docker compose -f "$base/project/docker-compose.yml" exec -T --user 65534 app python3 -c "assert open('/etc/probe.conf').read() == 'public container configuration'"
 # Corrupt backups must fail before stopping the current working deployment.
 printf 'corrupt' > "$(dirname "$manifest")/config/docker-compose.yml"
 if cli rollback "$name" --backup-id "$id" --no-snapshot; then

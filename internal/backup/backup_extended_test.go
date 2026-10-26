@@ -1739,3 +1739,23 @@ func TestRestoredConfigurationIsPrivate(t *testing.T) {
 		t.Fatalf("restored configuration permissions: %o", info.Mode().Perm())
 	}
 }
+
+func TestRestoredPublicConfigKeepsContainerReadPermission(t *testing.T) {
+	source, destination := filepath.Join(t.TempDir(), "nginx.conf"), filepath.Join(t.TempDir(), "nginx.conf")
+	if err := os.WriteFile(source, []byte("events {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(source, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := copyFileWithChecksum(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("non-root container cannot read restored config: %o", info.Mode().Perm())
+	}
+}
