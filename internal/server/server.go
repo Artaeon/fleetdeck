@@ -43,6 +43,7 @@ type Server struct {
 	webhookSecret string
 	sessions      *sessionStore
 	apiToken      string
+	metricsToken  string
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
 	metrics       *Metrics
@@ -171,6 +172,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		db:             database,
 		webhookSecret:  cfg.Server.WebhookSecret,
 		apiToken:       cfg.Server.APIToken,
+		metricsToken:   cfg.Server.MetricsToken,
 		sessions:       newSessionStore(),
 		rateLimiter:    newIPLimiter(rate.Limit(10), 20),
 		metrics:        newMetrics(),
@@ -245,7 +247,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /api/config/webhook-url", s.requireAuth(s.handleGetWebhookURL))
 
 	// Prometheus metrics endpoint (auth required)
-	mux.HandleFunc("GET /metrics", s.requireAuth(s.handleMetrics))
+	mux.HandleFunc("GET /metrics", s.requireMetricsAuth(s.handleMetrics))
 
 	// Unauthenticated health check for load balancers
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -415,7 +417,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start() error {
-	if err := ValidateAPIToken(s.apiToken); err != nil {
+	if err := ValidateDashboardTokens(s.apiToken, s.metricsToken); err != nil {
 		return err
 	}
 	if s.server.TLSConfig == nil {

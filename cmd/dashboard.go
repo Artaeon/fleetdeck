@@ -19,7 +19,7 @@ var dashboardCmd = &cobra.Command{
 	Long:  "Starts the FleetDeck web dashboard for visual project management.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		addr, _ := cmd.Flags().GetString("addr")
-		if err := server.ValidateAPIToken(cfg.Server.APIToken); err != nil {
+		if err := server.ValidateDashboardTokens(cfg.Server.APIToken, cfg.Server.MetricsToken); err != nil {
 			return err
 		}
 		cert, _ := cmd.Flags().GetString("tls-cert")
