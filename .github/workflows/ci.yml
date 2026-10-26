@@ -112,6 +112,7 @@ jobs:
           go build -o /tmp/fleetdeck-cli-integration .
           sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/cli-isolation.sh
           sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/backup-restore.sh
+          sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/database-backup.sh
 
   integration-ssh:
     runs-on: ubuntu-24.04
