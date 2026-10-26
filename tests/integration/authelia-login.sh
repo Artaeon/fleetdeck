@@ -85,7 +85,7 @@ identity_providers:
         key: |
 '''+ '\n'.join('  '+line for line in key.splitlines())+'\n')
 fleet=(p/'setup/fleetdeck-oidc.toml').read_text().replace(str(p),'/work')
-(p/'fleetdeck.toml').write_text('[server]\nbase_path = "/work/projects"\n[audit]\nenabled = false\n'+fleet)
+(p/'fleetdeck.toml').write_text(fleet.replace('[server]\n', '[server]\nbase_path = "/work/projects"\n', 1)+'\n[audit]\nenabled = false\n')
 PY
 cat > "$base/Caddyfile" <<'CADDY'
 {
