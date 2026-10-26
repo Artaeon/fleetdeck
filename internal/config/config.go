@@ -37,6 +37,7 @@ type ServerConfig struct {
 	Domain        string `toml:"domain"`
 	EncryptionKey string `toml:"encryption_key"`
 	APIToken      string `toml:"api_token"`
+	MetricsToken  string `toml:"metrics_token"`
 	WebhookSecret string `toml:"webhook_secret"`
 
 	// MaxConcurrentDeploys caps how many deploys the HTTP server will
@@ -450,6 +451,9 @@ func applyLocalBasePath(cfg *Config) {
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("FLEETDECK_API_TOKEN"); v != "" {
 		cfg.Server.APIToken = v
+	}
+	if v := os.Getenv("FLEETDECK_METRICS_TOKEN"); v != "" {
+		cfg.Server.MetricsToken = v
 	}
 	if v := os.Getenv("FLEETDECK_WEBHOOK_SECRET"); v != "" {
 		cfg.Server.WebhookSecret = v
