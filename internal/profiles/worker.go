@@ -17,6 +17,11 @@ func init() {
     image: {{.Name}}:local
     container_name: {{.Name}}-worker
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     deploy:
       resources:
         limits:
@@ -38,6 +43,11 @@ func init() {
     image: redis:7-alpine
     container_name: {{.Name}}-redis
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - ./redis_data:/data
@@ -53,6 +63,11 @@ func init() {
     image: postgres:{{.PostgresVersion}}
     container_name: {{.Name}}-postgres
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

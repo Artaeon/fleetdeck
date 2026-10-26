@@ -19,6 +19,11 @@ services:
     image: {{.Name}}:local
     container_name: {{.Name}}-app
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=fleetdeck-{{.Name}}-edge"

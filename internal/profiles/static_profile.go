@@ -17,6 +17,11 @@ services:
     image: nginx:alpine
     container_name: {{.Name}}-nginx
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     deploy:
       resources:
         limits:
