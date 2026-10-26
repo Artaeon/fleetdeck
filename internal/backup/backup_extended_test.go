@@ -1701,3 +1701,21 @@ func TestRestoreStopsBeforeChangingFilesWhenDockerFails(t *testing.T) {
 		t.Fatal("restore changed files while containers may still be running")
 	}
 }
+
+func TestBackupVolumesExcludesReadOnlyDependencies(t *testing.T) {
+	projectDir, backupDir := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(projectDir, "models"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte("services:\n  app:\n    image: example\n    volumes:\n      - ./models:/models:ro\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	putFakeDockerOnPath(t, "exit 0\n")
+	components, err := BackupVolumes(projectDir, backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(components) != 0 {
+		t.Fatalf("read-only dependencies were archived: %v", components)
+	}
+}
