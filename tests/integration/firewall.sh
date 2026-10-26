@@ -2,7 +2,7 @@
 # Run as root on Linux: tests/integration/firewall.sh
 # All interfaces and firewall tables live in disposable network/mount namespaces.
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 if [ "${1:-}" != --inside ]; then
     exec unshare --net --mount "$0" --inside
 fi
