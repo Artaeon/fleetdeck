@@ -6,7 +6,8 @@ source_dir=$(cd "$(dirname "$0")" && pwd)
 base=$(mktemp -d)
 name="fleetdeck-oidc-$$"
 authelia=authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54
-browser=mcr.microsoft.com/playwright:v1.64.1-noble
+browser=mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+proxy=caddy:2@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
 cleanup() {
   local status=$?
   if [ "$status" -ne 0 ]; then
@@ -46,6 +47,9 @@ authentication_backend:
     path: /work/users.yml
 access_control:
   default_policy: deny
+  rules:
+    - domain: admin.example.test
+      policy: two_factor
 session:
   secret: "'''+secrets.token_hex(32)+'''"
   cookies:
@@ -107,7 +111,7 @@ docker run -d --name "$name-auth" --network "container:$name-browser" --read-onl
   authelia --config /work/authelia.yml --config /work/setup/authelia-client.yml >/dev/null
 docker run -d --name "$name-proxy" --network "container:$name-browser" --read-only \
   --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=64 --memory=128m \
-  --tmpfs /data --tmpfs /config -v "$base:/work:ro" caddy:2 \
+  --tmpfs /data --tmpfs /config -v "$base:/work:ro" "$proxy" \
   caddy run --config /work/Caddyfile --adapter caddyfile >/dev/null
 docker exec "$name-browser" npm install --prefix /work/npm --ignore-scripts --no-audit --no-fund playwright@1.64.1 >/dev/null
 docker exec "$name-browser" node -e 'const https=require("https"),fs=require("fs");let n=0;function check(){https.get("https://auth.example.test:8443/.well-known/openid-configuration",{ca:fs.readFileSync("/work/tls.pem")},r=>{r.resume();if(r.statusCode===200)process.exit(0);retry()}).on("error",retry)}function retry(){if(++n>100)process.exit(1);setTimeout(check,200)}check()'
