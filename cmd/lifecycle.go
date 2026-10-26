@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
@@ -50,10 +51,15 @@ var startCmd = &cobra.Command{
 			return err
 		}
 
-		// Wait for containers to become healthy (up to 30s)
+		// Wait for the operator-selected readiness deadline.
 		ui.Info("Waiting for services to become healthy...")
-		report := health.WaitForHealthy(p.ProjectPath, 30*time.Second)
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		report := health.WaitForHealthy(p.ProjectPath, timeout)
 		printHealthReport(report)
+		if report == nil || !report.Healthy {
+			_ = d.UpdateProjectStatus(p.Name, "error")
+			return fmt.Errorf("project %s did not become healthy before the readiness deadline", p.Name)
+		}
 
 		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
 			ui.Warn("Could not update status: %v", err)
@@ -115,10 +121,15 @@ var restartCmd = &cobra.Command{
 			return err
 		}
 
-		// Wait for containers to become healthy (up to 30s)
+		// Wait for the operator-selected readiness deadline.
 		ui.Info("Waiting for services to become healthy...")
-		report := health.WaitForHealthy(p.ProjectPath, 30*time.Second)
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		report := health.WaitForHealthy(p.ProjectPath, timeout)
 		printHealthReport(report)
+		if report == nil || !report.Healthy {
+			_ = d.UpdateProjectStatus(p.Name, "error")
+			return fmt.Errorf("project %s did not become healthy before the readiness deadline", p.Name)
+		}
 
 		if err := d.UpdateProjectStatus(p.Name, "running"); err != nil {
 			ui.Warn("Could not update status: %v", err)
@@ -153,6 +164,8 @@ func printHealthReport(report *health.HealthReport) {
 }
 
 func init() {
+	startCmd.Flags().Duration("timeout", 30*time.Second, "Maximum wait for readiness")
+	restartCmd.Flags().Duration("timeout", 30*time.Second, "Maximum wait for readiness")
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
