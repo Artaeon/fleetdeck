@@ -31,8 +31,13 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 
 	for serviceName, svc := range compose.Services {
 		for _, vol := range svc.Volumes {
-			parts := strings.SplitN(vol, ":", 2)
+			parts := strings.SplitN(vol, ":", 3)
 			if len(parts) < 2 {
+				continue
+			}
+			// Read-only dependencies (models, certificates, immutable assets) are
+			// provisioned separately, never restored as writable project data.
+			if len(parts) == 3 && strings.Contains(","+parts[2]+",", ",ro,") {
 				continue
 			}
 			hostPath := parts[0]
