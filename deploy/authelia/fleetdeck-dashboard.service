@@ -7,6 +7,7 @@ ConditionPathExists=/etc/fleetdeck/admin-auth/dashboard-ready
 [Service]
 Type=simple
 Environment=FLEETDECK_TRUST_PROXY_IPS=127.0.0.1
+BindReadOnlyPaths=-/etc/fleetdeck/admin-auth/hosts:/etc/hosts
 ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/admin-auth/dashboard.toml dashboard --addr 127.0.0.1:8420
 Restart=on-failure
 RestartSec=10
