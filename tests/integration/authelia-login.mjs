@@ -31,7 +31,7 @@ try {
   for(let i=0;i<100;i++) {
     if(existsSync('/work/data/notifications.txt')) {
       const message=readFileSync('/work/data/notifications.txt','utf8');
-      code=message.match(/\b[A-Z0-9]{8}\b/)?.[0];
+      code=message.match(/^([A-Z0-9]{6,32})\s*$/m)?.[1];
       if(code)break;
     }
     await new Promise(resolve=>setTimeout(resolve,100));
