@@ -567,14 +567,14 @@ func TestRestoreDatabaseMySQLError(t *testing.T) {
 	}
 }
 
-func TestRestoreDatabaseUnknownTypeNoError(t *testing.T) {
+func TestRestoreDatabaseUnknownTypeFails(t *testing.T) {
 	projectDir := t.TempDir()
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte(""), 0644)
 
-	// Unknown database type (not PostgreSQL or MySQL) should return nil
+	// Unsupported database types must not report a successful import.
 	err := restoreDatabase("/tmp/nonexistent.sql.gz", projectDir, "redis (Redis)")
-	if err != nil {
-		t.Errorf("expected no error for unknown database type, got: %v", err)
+	if err == nil {
+		t.Error("expected error for unknown database type")
 	}
 }
 
