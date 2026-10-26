@@ -53,3 +53,19 @@ Installation automation must additionally pin the expected repository,
 version, workflow identity and artifact checksum. A valid signature proves
 origin and integrity; it does not replace review, CI, staging or rollback
 checks.
+
+## Ongoing vulnerability checks
+
+The Security workflow checks the current Go vulnerability database on pull
+requests, main-branch pushes, and daily scheduled runs. The release workflow
+also checks before signing artifacts. Builds read the exact toolchain from
+`go.mod`, so CI and release pins cannot drift apart. Dependabot proposes Go
+module and GitHub Actions updates for review; updates are not automatically
+merged or deployed. Scheduled workflows take effect after reaching the default
+branch and remain subject to GitHub Actions availability and repository settings.
+
+`govulncheck` detects known reachable Go vulnerabilities; it does not audit Docker
+images, application dependencies, operating-system packages, operator settings,
+or unknown vulnerabilities. Keep those components under separate update and
+verification procedures. A module-level warning for unused packages is not the
+same as an exploitable call path in FleetDeck.
