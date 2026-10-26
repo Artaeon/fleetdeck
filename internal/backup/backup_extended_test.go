@@ -182,8 +182,8 @@ func TestCreateBackupManifestDomain(t *testing.T) {
 }
 
 func TestCreateBackupWithDBEnabled(t *testing.T) {
-	// When DB backup runs, even without docker, the bash pipeline creates an empty gzip
-	// file, so the function succeeds. Verify the backup completes and records a component.
+	// A successful database dump must be included in the recorded backup.
+	withFakeDocker(t)
 	database := newTestDB(t)
 	p := createProject(t, database, "create-dbfail")
 
@@ -202,8 +202,7 @@ func TestCreateBackupWithDBEnabled(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Backup.BasePath = t.TempDir()
 
-	// Don't skip DB — the bash pipeline "docker exec ... | gzip > file" will create
-	// an empty gzip even when docker fails, so the backup succeeds with a component.
+	// Include the logical database dump.
 	opts := Options{SkipDB: false, SkipVolumes: true}
 
 	record, err := CreateBackup(cfg, database, p, "manual", "user", opts)
@@ -216,11 +215,12 @@ func TestCreateBackupWithDBEnabled(t *testing.T) {
 		t.Fatalf("read manifest: %v", err)
 	}
 
-	// The backup should succeed (the bash pipeline creates a file regardless)
 	if record.ID == "" {
 		t.Error("expected non-empty backup ID")
 	}
-	_ = manifest
+	if len(manifest.Components) != 2 || manifest.Components[1].Type != "database" {
+		t.Fatalf("database dump missing: %#v", manifest.Components)
+	}
 }
 
 func TestCreateBackupWithVolumesNoDocker(t *testing.T) {
@@ -672,8 +672,8 @@ func TestBackupDatabasesMySQLNoDBName(t *testing.T) {
 	os.WriteFile(filepath.Join(projectDir, ".env"), []byte("MYSQL_ROOT_PASSWORD=secret\n"), 0644)
 
 	components, err := BackupDatabases(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("BackupDatabases should not return error: %v", err)
+	if err == nil {
+		t.Fatal("missing database name must fail the backup")
 	}
 	// dumpMySQL should fail with "no MySQL database name found"
 	if len(components) != 0 {
@@ -710,8 +710,8 @@ func TestBackupDatabasesNoComposeFile(t *testing.T) {
 	backupDir := t.TempDir()
 
 	components, err := BackupDatabases(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("BackupDatabases: %v", err)
+	if err == nil {
+		t.Fatal("missing Compose file must fail database detection")
 	}
 	if components != nil && len(components) != 0 {
 		t.Errorf("expected nil or empty components, got %d", len(components))
