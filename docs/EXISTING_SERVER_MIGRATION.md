@@ -67,6 +67,31 @@ readiness and database contents after rollback; CLI completion is not a readines
 or data-loss guarantee. The disposable SQLite drill is
 `tests/integration/backup-restore.sh`.
 
+## Logical database backup failures
+
+A failed detected PostgreSQL/MySQL dump, missing database configuration, or
+unreadable/invalid Compose file now fails the backup command. FleetDeck removes
+the incomplete snapshot and records no successful backup. A required safety
+snapshot with such a failure also aborts rollback before stopping the project.
+Successful dump files have mode `0600`. Fix the database connection/configuration
+and retry; `--skip-db` explicitly omits logical dumps and requires another tested
+database recovery method.
+
+PostgreSQL imports stop at the first SQL error and ignore psql startup files;
+both PostgreSQL and MySQL imports report decompression failures. An import error
+leaves application services stopped, although the database service started for
+the import can remain running. Earlier SQL statements may already have changed
+data: this is error detection, not transactional rollback. Restore into a clean,
+compatible database and validate the result before returning traffic. Existing
+objects can cause a plain SQL dump to fail, and FleetDeck does not automatically
+drop or replace the whole database.
+
+Database discovery still depends on the supported image names and `.env`
+settings. Custom image names, external databases, service-specific credentials
+and additional databases need an explicit recovery plan; a successful command
+does not prove that every data store was discovered. The isolated PostgreSQL
+drill is `tests/integration/database-backup.sh`.
+
 ## Restore path checks
 
 Verification rejects absolute and traversal paths, linked or non-regular backup
