@@ -92,6 +92,35 @@ and additional databases need an explicit recovery plan; a successful command
 does not prove that every data store was discovered. The isolated PostgreSQL
 drill is `tests/integration/database-backup.sh`.
 
+## Writable volume coverage
+
+Volume backups require Docker Compose and use its resolved configuration, including
+environment interpolation, short/long mount syntax and actual project-scoped,
+custom or external volume names. Shared named volumes are archived once. Explicit
+writable directories named `tmp`, `.cache` or `node_modules` are included too;
+read-only dependencies and tmpfs mounts are omitted.
+
+A missing or unreadable writable mount, failed archive command, anonymous volume,
+unsupported mount type, file bind mount or bind directory outside the project now
+fails the backup. Project bind paths cannot contain symlinks. FleetDeck removes
+the incomplete snapshot instead of reporting success with omitted data. Move
+required bind directories into the project or arrange a separately tested recovery
+method before opting to skip volume backups. Coverage follows declared Compose
+mounts; implicit image volumes and undeclared external data require their own plan.
+
+Named-volume readers have no network, a read-only root filesystem, a read-only
+data mount and no writable host-directory mount. They retain only the capability
+needed to read files owned by application users, with memory and process limits.
+Archive bytes stream into private `0600` files. New volume archives record SHA256
+digests, checked before restore; older archives without digests retain gzip
+validation. These digests detect replacement/corruption, not manifest authenticity.
+
+Stop every writer, including other projects sharing an external volume, before
+archiving file databases or other data requiring a consistent snapshot. Volume
+copying does not provide transactional consistency. Test recovery with the same
+ownership and mount layout used in deployment. The disposable Docker drill is
+`tests/integration/volume-backup.sh`.
+
 ## Restore path checks
 
 Verification rejects absolute and traversal paths, linked or non-regular backup
