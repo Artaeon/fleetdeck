@@ -244,7 +244,7 @@ func TestClientIPFromXForwardedForSingleIP(t *testing.T) {
 func TestClientIPIgnoresXForwardedForFromUntrustedPeer(t *testing.T) {
 	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "")
 	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "203.0.113.99:54321" // direct client, not a proxy
+	r.RemoteAddr = "203.0.113.99:54321"         // direct client, not a proxy
 	r.Header.Set("X-Forwarded-For", "10.0.0.1") // attacker-supplied
 
 	got := clientIP(r)
@@ -520,7 +520,7 @@ func TestSecurityHeadersMiddlewareDirectly(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	expectedHeaders := map[string]string{
-		"X-Frame-Options":        "DENY",
+		"X-Frame-Options":         "DENY",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "strict-origin-when-cross-origin",
 		"Permissions-Policy":      "geolocation=(), microphone=(), camera=()",
@@ -756,7 +756,7 @@ func TestRequirePageAuthValidCookieAllows(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: "test-secret-token"})
+	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

@@ -40,6 +40,7 @@ type Server struct {
 	db            *db.DB
 	server        *http.Server
 	webhookSecret string
+	sessions      *sessionStore
 	apiToken      string
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
@@ -171,6 +172,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		db:             database,
 		webhookSecret:  cfg.Server.WebhookSecret,
 		apiToken:       cfg.Server.APIToken,
+		sessions:       newSessionStore(),
 		rateLimiter:    newIPLimiter(rate.Limit(10), 20),
 		metrics:        newMetrics(),
 		deploySem:      make(chan struct{}, maxDeploys),
@@ -252,9 +254,10 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	// Webhook routes (GitHub uses HMAC auth; manual deploy uses bearer token)
 	s.AddWebhookRoutes(mux)
 
-	// Dashboard UI (require auth via cookie or query param)
+	// Dashboard UI (requires an authenticated browser session)
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	mux.HandleFunc("POST /logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("GET /", s.requirePageAuth(s.handleDashboard))
 	mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
 	mux.HandleFunc("GET /static/app.js", s.handleJS)
@@ -309,7 +312,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check session cookie
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.apiToken)) == 1 {
+			if s.sessions.valid(cookie.Value) {
 				next(w, r)
 				return
 			}
@@ -328,7 +331,7 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.apiToken)) == 1 {
+			if s.sessions.valid(cookie.Value) {
 				next(w, r)
 				return
 			}
@@ -352,14 +355,23 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	token := r.FormValue("token")
 
 	if s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
+		session, err := s.sessions.create()
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "unable to create session")
+			return
+		}
+		// Reauthentication replaces the current browser session.
+		if previous, err := r.Cookie("fleetdeck_session"); err == nil {
+			s.sessions.revoke(previous.Value)
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     "fleetdeck_session",
-			Value:    s.apiToken,
+			Value:    session,
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
 			SameSite: http.SameSiteStrictMode,
-			MaxAge:   86400 * 7, // 7 days
+			MaxAge:   int(sessionLifetime.Seconds()),
 		})
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
@@ -368,6 +380,18 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	w.Write([]byte(loginErrorHTML))
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+		s.sessions.revoke(cookie.Value)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "fleetdeck_session", Value: "", Path: "/",
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+		MaxAge: -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (s *Server) Start() error {

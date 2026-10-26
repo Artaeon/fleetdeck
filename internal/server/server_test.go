@@ -344,7 +344,7 @@ func TestAPIAllowsValidCookie(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	req := httptest.NewRequest("GET", "/api/projects", nil)
-	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: "test-secret-token"})
+	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 
@@ -396,7 +396,7 @@ func TestLoginWithValidToken(t *testing.T) {
 	cookies := w.Result().Cookies()
 	found := false
 	for _, c := range cookies {
-		if c.Name == "fleetdeck_session" && c.Value == "test-secret-token" {
+		if c.Name == "fleetdeck_session" && c.Value != "test-secret-token" && srv.sessions.valid(c.Value) {
 			found = true
 			if !c.HttpOnly {
 				t.Error("session cookie should be HttpOnly")
@@ -598,8 +598,8 @@ func TestLoginCookieSecurityFlags(t *testing.T) {
 	if session.Path != "/" {
 		t.Errorf("cookie Path = %q, want /", session.Path)
 	}
-	if session.MaxAge != 86400*7 {
-		t.Errorf("cookie MaxAge = %d, want %d (7 days)", session.MaxAge, 86400*7)
+	if session.MaxAge != int(sessionLifetime.Seconds()) {
+		t.Errorf("cookie MaxAge = %d, want %d", session.MaxAge, int(sessionLifetime.Seconds()))
 	}
 }
 
@@ -993,11 +993,15 @@ func TestAuthRequiredForWriteEndpoints(t *testing.T) {
 // handler tests. Security tests use setupAuthTestServer and the real handler.
 func authenticateHandlerTests(srv *Server) {
 	srv.apiToken = strings.Repeat("handler-fixture-", 3)
+	session, err := srv.sessions.create()
+	if err != nil {
+		panic(err)
+	}
 	handler := srv.server.Handler
 	srv.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.Clone(r.Context())
 		r.Header.Set("Authorization", "Bearer "+srv.apiToken)
-		r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: srv.apiToken})
+		r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: session})
 		handler.ServeHTTP(w, r)
 	})
 }
