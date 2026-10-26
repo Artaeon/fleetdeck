@@ -5,7 +5,9 @@ binary=${FLEETDECK_BINARY:?Set FLEETDECK_BINARY to a built CLI}
 base=$(mktemp -d)
 pid=''
 cleanup() {
+  local status=$?
   if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
+  if [ "$status" -ne 0 ] && [ -f "$base/server.log" ]; then tail -n 30 "$base/server.log" >&2; fi
   rm -rf "$base"
 }
 trap cleanup EXIT
@@ -23,6 +25,7 @@ for name in server device-a device-b unlisted; do
   openssl x509 -req -in "$base/$name.csr" -CA "$base/ca.pem" -CAkey "$base/ca.key" \
     -CAcreateserial -days 1 -extfile "$base/extensions" -out "$base/$name.pem" >/dev/null 2>&1
 done
+mkdir -p "$base/projects"
 cat > "$base/config.toml" <<CONFIG
 [server]
 base_path = "$base/projects"
@@ -69,14 +72,16 @@ def request(device, path, token=None, cookie=None, form=None):
         return status, cookie, body
     finally:
         conn.close()
+last_error = None
 for _ in range(100):
     try:
         assert request('device-a', '/healthz')[0] == 200
         break
-    except (OSError, http.client.HTTPException):
+    except (OSError, http.client.HTTPException) as error:
+        last_error = error
         time.sleep(.1)
 else:
-    raise SystemExit('Dashboard did not become ready')
+    raise SystemExit('Dashboard did not become ready: '+str(last_error))
 admin, metrics = os.environ['FLEETDECK_API_TOKEN'], os.environ['FLEETDECK_METRICS_TOKEN']
 for device in [None, 'unlisted']:
     try: request(device, '/api/projects', token=admin)
