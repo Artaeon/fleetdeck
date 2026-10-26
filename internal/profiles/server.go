@@ -11,7 +11,10 @@ func init() {
 			{Name: "postgres", Image: "postgres:{{.PostgresVersion}}", Description: "PostgreSQL database", Required: true},
 			{Name: "redis", Image: "redis:7-alpine", Description: "Redis cache/queue", Required: false},
 		},
-		Compose: `services:
+		Compose: `x-fleetdeck:
+  edge-network: fleetdeck-{{.Name}}-edge
+
+services:
   app:
     build: .
     image: {{.Name}}:local
@@ -28,6 +31,7 @@ func init() {
       PORT: "{{.Port}}"
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.Name}}-edge"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
@@ -77,11 +81,12 @@ func init() {
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.Name}}-edge
     external: true
   {{.Name}}-internal:
     name: {{.Name}}-internal
     driver: bridge
+    internal: true
 `,
 		EnvTemplate: `POSTGRES_USER={{.Name}}
 POSTGRES_PASSWORD={{.Name}}_CHANGEME_$(openssl rand -hex 16)

@@ -8,14 +8,14 @@ import (
 
 // Profile defines a deployment profile with composable services.
 type Profile struct {
-	Name            string
-	Description     string
-	Services        []Service
-	Compose         string
-	EnvTemplate     string
-	Nginx           string // Optional nginx config for static/fullstack
-	DefaultCPU      string // Default CPU limit (e.g. "1.0")
-	DefaultMemory   string // Default memory limit (e.g. "512M")
+	Name          string
+	Description   string
+	Services      []Service
+	Compose       string
+	EnvTemplate   string
+	Nginx         string // Optional nginx config for static/fullstack
+	DefaultCPU    string // Default CPU limit (e.g. "1.0")
+	DefaultMemory string // Default memory limit (e.g. "512M")
 }
 
 // Service represents a single service within a profile.

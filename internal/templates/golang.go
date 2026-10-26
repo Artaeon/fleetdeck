@@ -18,7 +18,10 @@ COPY --from=builder /app/server .
 EXPOSE 8080
 CMD ["./server"]
 `,
-		Compose: `services:
+		Compose: `x-fleetdeck:
+  edge-network: fleetdeck-{{.Name}}-edge
+
+services:
   app:
     build: .
     image: {{.Name}}:local
@@ -29,6 +32,7 @@ CMD ["./server"]
       PORT: "8080"
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.Name}}-edge"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
@@ -61,11 +65,12 @@ CMD ["./server"]
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.Name}}-edge
     external: true
   {{.Name}}-internal:
     name: {{.Name}}-internal
     driver: bridge
+    internal: true
 `,
 		EnvTemplate: `POSTGRES_USER={{.Name}}
 POSTGRES_PASSWORD={{.Name}}_CHANGEME

@@ -17,12 +17,16 @@ type ComposeOptions struct {
 	AppType     detect.AppType
 }
 
-const composeTmpl = `services:
+const composeTmpl = `x-fleetdeck:
+  edge-network: fleetdeck-{{.ProjectName}}-edge
+
+services:
   app:
     build: .
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.ProjectName}}-edge"
       - "traefik.http.routers.{{.ProjectName}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.ProjectName}}.entrypoints=websecure"
       - "traefik.http.routers.{{.ProjectName}}.tls.certresolver=letsencrypt"
@@ -49,7 +53,7 @@ volumes:
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.ProjectName}}-edge
     external: true
 `
 

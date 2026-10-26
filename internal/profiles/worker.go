@@ -31,6 +31,7 @@ func init() {
       redis:
         condition: service_healthy
     networks:
+      - default
       - {{.Name}}-internal
 
   redis:
@@ -67,9 +68,12 @@ func init() {
       - {{.Name}}-internal
 
 networks:
+  default:
+    driver: bridge
   {{.Name}}-internal:
     name: {{.Name}}-internal
     driver: bridge
+    internal: true
 `,
 		EnvTemplate: `POSTGRES_USER={{.Name}}
 POSTGRES_PASSWORD={{.Name}}_CHANGEME_$(openssl rand -hex 16)

@@ -64,8 +64,8 @@ func TestRenderAllProfilesWithRealData(t *testing.T) {
 // staging subdomains, hyphens, and unusual TLDs.
 func TestRenderProfilesWithSpecialDomains(t *testing.T) {
 	domains := []struct {
-		name   string
-		domain string
+		name    string
+		domain  string
 		appName string
 	}{
 		{
@@ -385,7 +385,7 @@ func TestWorkerProfileHasNoTraefikLabels(t *testing.T) {
 	}
 
 	// Worker should not use the traefik_default network.
-	if strings.Contains(rendered, "traefik_default") {
+	if strings.Contains(rendered, "-edge") {
 		t.Error("worker profile should not reference traefik_default network")
 	}
 
@@ -680,12 +680,12 @@ func TestWorkerAndBareHaveDifferentNetworkSetups(t *testing.T) {
 	}
 
 	// Bare should reference traefik_default.
-	if !strings.Contains(bareRendered, "traefik_default") {
+	if !strings.Contains(bareRendered, "-edge") {
 		t.Error("bare profile should reference traefik_default network")
 	}
 
 	// Worker should NOT reference traefik_default.
-	if strings.Contains(workerRendered, "traefik_default") {
+	if strings.Contains(workerRendered, "-edge") {
 		t.Error("worker profile should NOT reference traefik_default network")
 	}
 
