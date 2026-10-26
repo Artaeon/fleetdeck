@@ -38,10 +38,10 @@ services:
       timeout: 2s
       retries: 30
   app:
-    image: postgres:17-alpine
+    image: python:3.14-alpine
     command: [sleep, '3600']
     network_mode: none
-    user: postgres
+    user: "65534"
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 32m
