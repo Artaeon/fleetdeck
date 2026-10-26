@@ -11,7 +11,8 @@ proxy=caddy:2@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f99
 cleanup() {
   local status=$?
   if [ "$status" -ne 0 ]; then
-    docker logs --tail 15 "$name-auth" >&2 2>/dev/null || true
+    docker logs --tail 25 "$name-auth" >&2 2>/dev/null || true
+    docker logs --tail 10 "$name-proxy" >&2 2>/dev/null || true
     if [ -f "$base/dashboard.log" ]; then tail -n 15 "$base/dashboard.log" >&2; fi
   fi
   docker rm -f "$name-proxy" "$name-auth" "$name-browser" >/dev/null 2>&1 || true
@@ -41,7 +42,7 @@ key='\n'.join('        '+line for line in (p/'signing.pem').read_text().splitlin
 (p/'authelia.yml').write_text('''server:
   address: tcp://127.0.0.1:9091/
 log:
-  level: warn
+  level: info
 authentication_backend:
   file:
     path: /work/users.yml
@@ -110,7 +111,7 @@ docker run -d --name "$name-auth" --network "container:$name-browser" --read-onl
   -v "$base:/work:ro" -v "$base/data:/data" "$authelia" \
   authelia --config /work/authelia.yml --config /work/setup/authelia-client.yml >/dev/null
 docker run -d --name "$name-proxy" --network "container:$name-browser" --read-only \
-  --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=64 --memory=128m \
+  --cap-drop=ALL --security-opt=no-new-privileges:true --cap-add=NET_BIND_SERVICE --pids-limit=64 --memory=128m \
   --tmpfs /data --tmpfs /config -v "$base:/work:ro" "$proxy" \
   caddy run --config /work/Caddyfile --adapter caddyfile >/dev/null
 docker exec "$name-browser" npm install --prefix /work/npm --ignore-scripts --no-audit --no-fund playwright@1.64.1 >/dev/null
