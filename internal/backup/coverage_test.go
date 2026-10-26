@@ -958,15 +958,15 @@ func TestVerifyBackupUnknownComponentType(t *testing.T) {
 		t.Fatalf("verify: %v", err)
 	}
 
-	// Unknown types should pass with existence check only
-	if HasFailures(results) {
-		t.Error("expected unknown type with existing file to pass verification")
+	// Unknown types must fail rather than being silently skipped by restore.
+	if !HasFailures(results) {
+		t.Error("expected unsupported type to fail verification")
 	}
 	if len(results) != 1 {
 		t.Errorf("expected 1 result, got %d", len(results))
 	}
-	if results[0].Status != VerifyOK {
-		t.Errorf("expected OK status, got %s", results[0].Status)
+	if results[0].Status != VerifyFailed {
+		t.Errorf("expected failed status, got %s", results[0].Status)
 	}
 }
 
@@ -1084,7 +1084,7 @@ func TestDirSizeNestedDirectories(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "a", "b", "c")
 	os.MkdirAll(sub, 0755)
-	os.WriteFile(filepath.Join(dir, "root.txt"), []byte("12345"), 0644)       // 5 bytes
+	os.WriteFile(filepath.Join(dir, "root.txt"), []byte("12345"), 0644)      // 5 bytes
 	os.WriteFile(filepath.Join(sub, "deep.txt"), []byte("1234567890"), 0644) // 10 bytes
 
 	size := dirSize(dir)
