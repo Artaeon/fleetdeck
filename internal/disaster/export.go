@@ -16,10 +16,10 @@ import (
 
 // StateManifest describes the contents of a full state export archive.
 type StateManifest struct {
-	ExportTimestamp string `json:"export_timestamp"`
+	ExportTimestamp  string `json:"export_timestamp"`
 	FleetDeckVersion string `json:"fleetdeck_version"`
-	ProjectCount    int    `json:"project_count"`
-	BackupCount     int    `json:"backup_count"`
+	ProjectCount     int    `json:"project_count"`
+	BackupCount      int    `json:"backup_count"`
 }
 
 // ExportState creates a tar.gz archive containing the full FleetDeck state:
@@ -30,11 +30,14 @@ func ExportState(cfg *config.Config, database *db.DB, outputPath string, version
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	outFile, err := os.Create(outputPath)
+	outFile, err := os.OpenFile(outputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("creating archive file: %w", err)
 	}
 	defer outFile.Close()
+	if err := outFile.Chmod(0600); err != nil {
+		return err
+	}
 
 	gw := gzip.NewWriter(outFile)
 	defer gw.Close()
@@ -57,21 +60,15 @@ func ExportState(cfg *config.Config, database *db.DB, outputPath string, version
 		return fmt.Errorf("adding database to archive: %w", err)
 	}
 
-	// 2. Copy config.toml
-	configPath := config.DefaultConfigPath
-	if _, err := os.Stat(configPath); err == nil {
-		if err := addFileToTar(tw, configPath, "config.toml"); err != nil {
-			return fmt.Errorf("adding config to archive: %w", err)
-		}
-	} else {
-		// Generate current config to include in the archive
-		configData, err := marshalConfig(cfg)
-		if err != nil {
-			return fmt.Errorf("marshaling config: %w", err)
-		}
-		if err := addBytesToTar(tw, configData, "config.toml"); err != nil {
-			return fmt.Errorf("adding config to archive: %w", err)
-		}
+	// Export the configuration actually supplied by the caller. Reading the
+	// host default path would mix another installation's secrets/settings into
+	// custom-config exports and into otherwise isolated test fixtures.
+	configData, err := marshalConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	if err := addBytesToTar(tw, configData, "config.toml"); err != nil {
+		return fmt.Errorf("adding config to archive: %w", err)
 	}
 
 	// 3. Include the latest backup for each project
@@ -123,8 +120,8 @@ func ExportState(cfg *config.Config, database *db.DB, outputPath string, version
 	manifest := StateManifest{
 		ExportTimestamp:  time.Now().UTC().Format(time.RFC3339),
 		FleetDeckVersion: version,
-		ProjectCount:    len(projects),
-		BackupCount:     backupCount,
+		ProjectCount:     len(projects),
+		BackupCount:      backupCount,
 	}
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -134,7 +131,13 @@ func ExportState(cfg *config.Config, database *db.DB, outputPath string, version
 		return fmt.Errorf("adding state manifest to archive: %w", err)
 	}
 
-	return nil
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	if err := gw.Close(); err != nil {
+		return err
+	}
+	return outFile.Close()
 }
 
 // addFileToTar reads a file from disk and writes it into the tar archive
