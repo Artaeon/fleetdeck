@@ -706,6 +706,7 @@ Don't skip items. Each one has saved someone's weekend at least once.
 | `fleetdeck profile <name>` | Inspect a profile (add `--compose` for template) |
 | **Server** | |
 | `fleetdeck server setup <user@host>` | Provision a fresh server |
+| `fleetdeck server origin-firewall preview / apply / confirm / rollback` | [Optional Cloudflare-only web ingress with timed recovery](docs/CLOUDFLARE.md) |
 | `fleetdeck init` | Initialize FleetDeck locally |
 | `fleetdeck upgrade` | Self-update to latest release |
 | **Projects** | |
