@@ -353,6 +353,10 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !safeTransport(r) {
+		writeError(w, http.StatusForbidden, "open the dashboard over HTTPS or direct loopback before signing in")
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(loginHTML))
 }
@@ -367,7 +371,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid form data")
 		return
 	}
-	token := r.FormValue("token")
+	token := r.PostForm.Get("token")
 
 	if s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
 		session, err := s.sessions.create()
