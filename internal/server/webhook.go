@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"io"
 	"log"
 	"net/http"
@@ -145,8 +146,6 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "deploying", "project": p.Name})
 }
 
-
-
 // runStep wraps exec.CommandContext with a per-step timeout and
 // appends its output to logBuf regardless of outcome. Returns the
 // error from the command (including context.DeadlineExceeded on
@@ -159,6 +158,11 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 func runStep(ctx context.Context, dir string, timeout time.Duration, logBuf *strings.Builder, name string, args ...string) error {
 	stepCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if name == "docker" && len(args) >= 2 && args[0] == "compose" && args[1] == "up" {
+		if err := edge.Prepare(dir, "", edge.LocalRunner{Context: stepCtx}); err != nil {
+			return err
+		}
+	}
 	cmd := exec.CommandContext(stepCtx, name, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
@@ -184,7 +188,7 @@ func runStep(ctx context.Context, dir string, timeout time.Duration, logBuf *str
 // that a genuinely hung step doesn't burn a webhook worker slot
 // for the life of the process.
 const (
-	stepTimeoutGitPull     = 2 * time.Minute
+	stepTimeoutGitPull      = 2 * time.Minute
 	stepTimeoutComposeBuild = 15 * time.Minute
 	stepTimeoutComposeUp    = 5 * time.Minute
 	stepTimeoutComposeExec  = 10 * time.Minute

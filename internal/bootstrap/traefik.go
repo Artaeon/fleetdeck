@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"regexp"
 	"strings"
 )
@@ -63,7 +64,7 @@ func setupTraefik(runner CommandRunner, domain, email, network string) error {
 		return fmt.Errorf("starting traefik: %w", err)
 	}
 
-	return nil
+	return edge.Reconnect(runner)
 }
 
 func composeFile(_ string, email, network string) string {
@@ -71,6 +72,8 @@ func composeFile(_ string, email, network string) string {
   traefik:
     image: traefik:v3
     restart: unless-stopped
+    labels:
+      io.fleetdeck.proxy: "true"
     command:
       - "--api=false"
       - "--entrypoints.web.address=:80"

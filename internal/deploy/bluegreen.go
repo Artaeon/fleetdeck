@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -16,6 +17,9 @@ type BlueGreenStrategy struct{}
 func (s *BlueGreenStrategy) Deploy(ctx context.Context, opts DeployOptions) (*DeployResult, error) {
 	start := time.Now()
 	result := &DeployResult{}
+	if err := edge.Prepare(opts.ProjectPath, opts.ComposeFile, edge.LocalRunner{Context: ctx}); err != nil {
+		return result, err
+	}
 
 	newProject := opts.ProjectName + "-new"
 	timeout := opts.Timeout
