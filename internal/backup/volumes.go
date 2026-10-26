@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -80,7 +81,7 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 					"--cap-drop=ALL", "--cap-add=DAC_OVERRIDE", "--security-opt=no-new-privileges:true",
 					"--pids-limit=32", "--memory=128m",
 					"--mount", "type=volume,src="+volume.Name+",dst=/data,readonly",
-					"alpine", "tar", "czf", "-", "-C", "/data", ".")
+					"alpine", "tar", "cf", "-", "-C", "/data", ".")
 				if err := writeVolumeArchive(cmd, filepath.Join(volDir, archiveName)); err != nil {
 					return nil, fmt.Errorf("archiving volume %s: %w", volume.Name, err)
 				}
@@ -106,7 +107,7 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 }
 
 func archiveDirectory(srcDir, archivePath string) error {
-	cmd := exec.Command("tar", "czf", "-", "-C", filepath.Dir(srcDir), filepath.Base(srcDir))
+	cmd := exec.Command("tar", "cf", "-", "-C", filepath.Dir(srcDir), filepath.Base(srcDir))
 	cmd.Env = append(os.Environ(), "COPYFILE_DISABLE=1")
 	return writeVolumeArchive(cmd, archivePath)
 }
@@ -119,15 +120,20 @@ func writeVolumeArchive(cmd *exec.Cmd, path string) error {
 		return err
 	}
 	complete := false
+	compressed := gzip.NewWriter(output)
 	defer func() {
+		compressed.Close()
 		output.Close()
 		if !complete {
 			_ = os.Remove(path)
 		}
 	}()
-	cmd.Stdout = output
+	cmd.Stdout = compressed
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("archive command failed: %w", err)
+	}
+	if err := compressed.Close(); err != nil {
+		return err
 	}
 	if err := output.Close(); err != nil {
 		return err
