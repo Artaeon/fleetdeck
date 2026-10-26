@@ -198,7 +198,11 @@ for unit in docker caddy nginx; do
 done
 systemctl daemon-reload
 systemctl enable fleetdeck-origin-firewall.service
-systemctl restart fleetdeck-origin-firewall.service
+if systemctl is-active --quiet fleetdeck-origin-firewall.service; then
+ systemctl reload fleetdeck-origin-firewall.service
+else
+ systemctl start fleetdeck-origin-firewall.service
+fi
 systemctl stop fleetdeck-origin-rollback.timer
 # A timer already dispatched at the deadline must not roll back confirmed state.
 systemctl stop --no-block fleetdeck-origin-rollback.service 2>/dev/null || true
