@@ -107,7 +107,7 @@ docker run -d --name "$name-browser" --network "$name" \
 docker run --rm --network none -v "$base:/work:ro" -v "$base/data:/data" \
   "$authelia" authelia config validate --config /work/authelia.yml --config /work/setup/authelia-client.yml
 docker run -d --name "$name-auth" --network "container:$name-browser" --read-only \
-  --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=128 --memory=256m \
+  --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=128 --memory=256m --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   -v "$base:/work:ro" -v "$base/data:/data" "$authelia" \
   authelia --config /work/authelia.yml --config /work/setup/authelia-client.yml >/dev/null
 docker run -d --name "$name-proxy" --network "container:$name-browser" --read-only \
