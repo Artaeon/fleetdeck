@@ -25,7 +25,7 @@ type composeService struct {
 	Environment interface{} `yaml:"environment"`
 	Container   string      `yaml:"container_name"`
 	Labels      interface{} `yaml:"labels"`
-	Volumes     []string    `yaml:"volumes"`
+	Volumes     []yaml.Node `yaml:"volumes"`
 }
 
 func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {

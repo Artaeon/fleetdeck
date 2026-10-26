@@ -248,6 +248,7 @@ func TestCreateBackupWithVolumesNoDocker(t *testing.T) {
 	// Don't skip volumes — bind mounts should work, named volumes (docker) will fail
 	opts := Options{SkipDB: true, SkipVolumes: false}
 
+	fakeBindMounts(t, projectDir, "uploads")
 	record, err := CreateBackup(cfg, database, p, "manual", "user", opts)
 	if err != nil {
 		t.Fatalf("CreateBackup: %v", err)
@@ -750,21 +751,14 @@ func TestBackupNamedVolumesDockerFails(t *testing.T) {
 
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte("services:\n  app:\n    image: myapp:latest\n"), 0644)
 
-	// backupNamedVolumes calls docker compose config --volumes which will fail
-	components, err := backupNamedVolumes(projectDir, volDir)
-	if err == nil {
-		// If docker is somehow available, components might be non-nil
-		// Otherwise it returns an error
-		_ = components
-	} else {
-		// Expected: docker not available
-		if components != nil && len(components) > 0 {
-			t.Error("expected no components when docker fails")
-		}
+	putFakeDockerOnPath(t, "exit 1\n")
+	components, err := BackupVolumes(projectDir, volDir)
+	if err == nil || len(components) != 0 {
+		t.Fatal("Docker config failure ignored")
 	}
 }
 
-func TestBackupVolumesSkipsAllEphemeral(t *testing.T) {
+func TestBackupVolumesIncludesAllExplicitWritableMounts(t *testing.T) {
 	projectDir := t.TempDir()
 	backupDir := t.TempDir()
 
@@ -786,13 +780,14 @@ func TestBackupVolumesSkipsAllEphemeral(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "node_modules", ".git", ".cache", "tmp", "__pycache__")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatalf("BackupVolumes: %v", err)
 	}
 
-	if len(components) != 0 {
-		t.Errorf("expected 0 components (all ephemeral), got %d", len(components))
+	if len(components) != 5 {
+		t.Errorf("expected 5 explicitly mounted directories, got %d", len(components))
 		for _, c := range components {
 			t.Logf("  unexpected: %s", c.Name)
 		}
@@ -814,12 +809,13 @@ func TestBackupVolumesFileNotDir(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte(composeContent), 0644)
 
+	fakeBindMounts(t, projectDir, "config.json")
 	components, err := BackupVolumes(projectDir, backupDir)
-	if err != nil {
-		t.Fatalf("BackupVolumes: %v", err)
+	if err == nil {
+		t.Fatal("incomplete volume inventory was accepted")
 	}
 
-	// Files (non-directories) should be skipped
+	// Unsupported writable file mounts must fail the backup.
 	if len(components) != 0 {
 		t.Errorf("expected 0 components (file, not dir), got %d", len(components))
 	}
@@ -1710,7 +1706,7 @@ func TestBackupVolumesExcludesReadOnlyDependencies(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte("services:\n  app:\n    image: example\n    volumes:\n      - ./models:/models:ro\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	putFakeDockerOnPath(t, "exit 0\n")
+	fakeVolumeModel(t, map[string]any{"services": map[string]any{"app": map[string]any{"volumes": []composeMount{{Type: "bind", Source: filepath.Join(projectDir, "models"), ReadOnly: true}}}}}, "exit 1\n")
 	components, err := BackupVolumes(projectDir, backupDir)
 	if err != nil {
 		t.Fatal(err)

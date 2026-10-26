@@ -9,87 +9,91 @@ import (
 	"strings"
 )
 
-var skipVolumeDirs = map[string]bool{
-	"node_modules": true,
-	".git":         true,
-	".cache":       true,
-	"tmp":          true,
-	"__pycache__":  true,
-}
-
 func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 	volDir := filepath.Join(backupDir, "volumes")
 	if err := os.MkdirAll(volDir, 0700); err != nil {
 		return nil, err
 	}
-
-	compose, err := parseComposeFile(projectPath)
+	config, err := resolveVolumeConfig(projectPath)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
-
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	absoluteProject, err := filepath.Abs(projectPath)
+	if err != nil {
+		return nil, err
+	}
 	var components []ComponentInfo
-
-	for serviceName, svc := range compose.Services {
-		for _, vol := range svc.Volumes {
-			parts := strings.SplitN(vol, ":", 3)
-			if len(parts) < 2 {
+	seen := make(map[string]bool)
+	for _, service := range volumeServiceNames(config) {
+		for _, mount := range config.Services[service].Volumes {
+			if mount.ReadOnly || mount.Type == "tmpfs" {
 				continue
 			}
-			// Read-only dependencies (models, certificates, immutable assets) are
-			// provisioned separately, never restored as writable project data.
-			if len(parts) == 3 && strings.Contains(","+parts[2]+",", ",ro,") {
-				continue
+			var component ComponentInfo
+			var archiveName, key string
+			switch mount.Type {
+			case "bind":
+				source := mount.Source
+				if source == "" {
+					return nil, fmt.Errorf("bind mount for %s has no source", service)
+				}
+				if !filepath.IsAbs(source) {
+					source = filepath.Join(absoluteProject, source)
+				}
+				relative, err := filepath.Rel(absoluteProject, source)
+				if err != nil {
+					return nil, err
+				}
+				if err := checkPath(root, relative, true, false); err != nil {
+					return nil, fmt.Errorf("writable bind for %s must be an existing real directory inside the project: %w", service, err)
+				}
+				key = "bind:" + relative
+				if seen[key] {
+					continue
+				}
+				digest := sha256.Sum256([]byte(relative))
+				archiveName = fmt.Sprintf("bind_%x.tar.gz", digest[:])
+				if err := archiveDirectory(source, filepath.Join(volDir, archiveName)); err != nil {
+					return nil, err
+				}
+				component = ComponentInfo{Type: "volume", Name: service + "/" + filepath.Base(relative), RestorePath: relative}
+			case "volume":
+				volume, ok := config.Volumes[mount.Source]
+				if mount.Source == "" || !ok || !dockerObjectName.MatchString(volume.Name) {
+					return nil, fmt.Errorf("writable volume for %s has no valid resolved Docker name (anonymous volumes are unsupported)", service)
+				}
+				key = "volume:" + volume.Name
+				if seen[key] {
+					continue
+				}
+				if err := exec.Command("docker", "volume", "inspect", volume.Name).Run(); err != nil {
+					return nil, fmt.Errorf("required volume %s is unavailable: %w", volume.Name, err)
+				}
+				digest := sha256.Sum256([]byte(volume.Name))
+				archiveName = fmt.Sprintf("namedvol_%x.tar.gz", digest[:])
+				cmd := exec.Command("docker", "run", "--rm", "-v", volume.Name+":/data:ro", "-v", volDir+":/backup", "alpine", "tar", "czf", "/backup/"+archiveName, "-C", "/data", ".")
+				if _, err := cmd.CombinedOutput(); err != nil {
+					return nil, fmt.Errorf("archiving volume %s: %w", volume.Name, err)
+				}
+				component = ComponentInfo{Type: "volume", Name: volume.Name + " (named volume)"}
+			default:
+				return nil, fmt.Errorf("unsupported writable mount type %q for %s", mount.Type, service)
 			}
-			hostPath := parts[0]
-
-			// Resolve relative paths
-			if !filepath.IsAbs(hostPath) {
-				hostPath = filepath.Join(projectPath, hostPath)
-			}
-
-			// Skip non-existent paths and ephemeral directories
-			info, err := os.Stat(hostPath)
-			if err != nil || !info.IsDir() {
-				continue
-			}
-			if skipVolumeDirs[filepath.Base(hostPath)] {
-				continue
-			}
-
-			relative, err := filepath.Rel(projectPath, hostPath)
-			if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-				return nil, fmt.Errorf("writable bind mount must be a directory inside the project: %s", hostPath)
-			}
-			digest := sha256.Sum256([]byte(relative))
-			archiveName := fmt.Sprintf("%s_%s_%x.tar.gz", serviceName, sanitizeName(filepath.Base(hostPath)), digest[:6])
-			archivePath := filepath.Join(volDir, archiveName)
-
-			if err := archiveDirectory(hostPath, archivePath); err != nil {
-				return nil, err
-			}
-
-			archiveInfo, err := os.Stat(archivePath)
+			info, err := os.Stat(filepath.Join(volDir, archiveName))
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("checking volume archive: %w", err)
 			}
-
-			components = append(components, ComponentInfo{
-				Type:        "volume",
-				Name:        fmt.Sprintf("%s/%s", serviceName, filepath.Base(parts[0])),
-				Path:        filepath.Join("volumes", archiveName),
-				SizeBytes:   archiveInfo.Size(),
-				RestorePath: relative,
-			})
+			component.Path = filepath.Join("volumes", archiveName)
+			component.SizeBytes = info.Size()
+			components = append(components, component)
+			seen[key] = true
 		}
 	}
-
-	// Also detect Docker named volumes via docker compose
-	namedVolComponents, err := backupNamedVolumes(projectPath, volDir)
-	if err == nil {
-		components = append(components, namedVolComponents...)
-	}
-
 	return components, nil
 }
 
@@ -100,57 +104,6 @@ func archiveDirectory(srcDir, archivePath string) error {
 		return fmt.Errorf("tar: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
-}
-
-func backupNamedVolumes(projectPath, volDir string) ([]ComponentInfo, error) {
-	// Get named volumes from docker compose config
-	cmd := exec.Command("docker", "compose", "config", "--volumes")
-	cmd.Dir = projectPath
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	var components []ComponentInfo
-	for _, volName := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		volName = strings.TrimSpace(volName)
-		if volName == "" {
-			continue
-		}
-
-		// Check if this volume exists as a Docker volume
-		checkCmd := exec.Command("docker", "volume", "inspect", volName)
-		if err := checkCmd.Run(); err != nil {
-			continue
-		}
-
-		archiveName := fmt.Sprintf("namedvol_%s.tar.gz", sanitizeName(volName))
-		archivePath := filepath.Join(volDir, archiveName)
-
-		// Use a temporary container to archive the volume
-		tarCmd := exec.Command("docker", "run", "--rm",
-			"-v", volName+":/data:ro",
-			"-v", volDir+":/backup",
-			"alpine",
-			"tar", "czf", "/backup/"+archiveName, "-C", "/data", ".")
-		if _, err := tarCmd.CombinedOutput(); err != nil {
-			continue
-		}
-
-		archiveInfo, err := os.Stat(archivePath)
-		if err != nil {
-			continue
-		}
-
-		components = append(components, ComponentInfo{
-			Type:      "volume",
-			Name:      volName + " (named volume)",
-			Path:      filepath.Join("volumes", archiveName),
-			SizeBytes: archiveInfo.Size(),
-		})
-	}
-
-	return components, nil
 }
 
 func sanitizeName(name string) string {
