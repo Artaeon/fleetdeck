@@ -1,8 +1,11 @@
 package server
 
 import (
+	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -88,5 +91,43 @@ func TestBearerAPIRejectsRemotePlaintext(t *testing.T) {
 	srv.server.Handler.ServeHTTP(w, r)
 	if w.Code != 403 {
 		t.Fatal("remote plaintext bearer request accepted")
+	}
+}
+
+func TestLocalBrowserLoginAndLogoutWithCookieJar(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+	endpoint := httptest.NewServer(srv.server.Handler)
+	defer endpoint.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := endpoint.Client()
+	client.Jar = jar
+	response, err := client.PostForm(endpoint.URL+"/login", url.Values{"token": {srv.apiToken}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Request.URL.Path != "/" {
+		t.Fatal("local browser did not retain login session")
+	}
+	target, _ := url.Parse(endpoint.URL)
+	cookies := jar.Cookies(target)
+	if len(cookies) != 1 {
+		t.Fatal("expected one browser session")
+	}
+	session := cookies[0].Value
+	request, _ := http.NewRequest("POST", endpoint.URL+"/logout", nil)
+	request.Header.Set("Origin", endpoint.URL)
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.Request.URL.Path != "/login" || len(jar.Cookies(target)) != 0 || srv.sessions.valid(session) {
+		t.Fatal("logout did not clear and revoke the browser session")
 	}
 }
