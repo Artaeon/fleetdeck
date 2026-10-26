@@ -205,14 +205,13 @@ func TestClassifyHealth_HealthFieldEmpty_StateStopped(t *testing.T) {
 	}
 }
 
-func TestClassifyHealth_HealthFieldUnrecognized(t *testing.T) {
-	// An unrecognized Health value should fall through to state-based logic.
-	e := composePSEntry{State: "running", Health: "starting"}
-	got := classifyHealth(e)
-	// "starting" is not "healthy" or "unhealthy", so it falls through.
-	// State is "running", so it should be "healthy".
-	if got != "healthy" {
-		t.Errorf("classifyHealth(running, starting) = %q, want %q", got, "healthy")
+func TestClassifyHealth_StartingIsNotReady(t *testing.T) {
+	report, err := ParseHealthReport(`{"Name":"app","State":"running","Health":"starting"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Healthy || report.Services[0].Health != "starting" {
+		t.Fatal("starting healthcheck reported ready")
 	}
 }
 

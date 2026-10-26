@@ -34,7 +34,7 @@ type composePSEntry struct {
 // CheckProject inspects the running containers for the compose project at
 // projectPath and returns a health report.
 func CheckProject(projectPath string) (*HealthReport, error) {
-	cmd := exec.Command("docker", "compose", "ps", "--format", "json")
+	cmd := exec.Command("docker", "compose", "ps", "--all", "--format", "json")
 	cmd.Dir = projectPath
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -94,7 +94,7 @@ func ParseHealthReport(rawJSON string) (*HealthReport, error) {
 		report.Services = append(report.Services, svc)
 
 		switch health {
-		case "unhealthy", "restarting":
+		case "unhealthy", "restarting", "starting":
 			report.Healthy = false
 			report.Errors = append(report.Errors, fmt.Sprintf("%s is %s", e.Name, health))
 		case "unknown":
@@ -144,6 +144,13 @@ func parseComposeJSON(raw string) ([]composePSEntry, error) {
 // classifyHealth maps the compose container entry to one of the canonical
 // health strings: "healthy", "unhealthy", "restarting", "unknown".
 func classifyHealth(e composePSEntry) string {
+	state := strings.ToLower(e.State)
+	if state == "restarting" {
+		return "restarting"
+	}
+	if state != "running" {
+		return "unknown"
+	}
 	// Docker Compose v2 populates the Health field for containers with
 	// HEALTHCHECK configured. Use it when available.
 	switch strings.ToLower(e.Health) {
@@ -151,12 +158,10 @@ func classifyHealth(e composePSEntry) string {
 		return "healthy"
 	case "unhealthy":
 		return "unhealthy"
+	case "starting":
+		return "starting"
 	}
 
-	state := strings.ToLower(e.State)
-	if state == "restarting" {
-		return "restarting"
-	}
 	if state == "running" {
 		return "healthy"
 	}
