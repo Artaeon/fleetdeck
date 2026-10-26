@@ -671,7 +671,7 @@ func TestCountContainersNoDocker(t *testing.T) {
 func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	// With 127.0.0.1 in the trust list, the middleware honors XFF just
 	// like a real nginx -> fleetdeck setup.
-	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1")
+	t.Setenv("FLEETDECK_TRUST_PROXY_IPS", "127.0.0.1,10.0.0.1")
 
 	il := &ipLimiter{
 		limiters: make(map[string]*visitorLimiter),
@@ -768,8 +768,8 @@ func TestClientIPXForwardedForWithSpaces(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "  10.0.0.1  ,  10.0.0.2  ")
 
 	got := clientIP(r)
-	if got != "10.0.0.1" {
-		t.Errorf("expected trimmed '10.0.0.1', got %q", got)
+	if got != "10.0.0.2" {
+		t.Errorf("expected closest untrusted client '10.0.0.2', got %q", got)
 	}
 }
 

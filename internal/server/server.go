@@ -254,7 +254,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 
 	// Dashboard UI (requires an authenticated browser session)
 	mux.HandleFunc("GET /login", s.handleLogin)
-	mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	mux.HandleFunc("POST /login", loginRateLimit(s.handleLoginSubmit))
 	mux.HandleFunc("POST /logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("GET /", s.requirePageAuth(s.handleDashboard))
 	mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
