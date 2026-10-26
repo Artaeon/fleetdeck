@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -56,11 +57,16 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 				continue
 			}
 
-			archiveName := fmt.Sprintf("%s_%s.tar.gz", serviceName, sanitizeName(filepath.Base(hostPath)))
+			relative, err := filepath.Rel(projectPath, hostPath)
+			if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("writable bind mount must be a directory inside the project: %s", hostPath)
+			}
+			digest := sha256.Sum256([]byte(relative))
+			archiveName := fmt.Sprintf("%s_%s_%x.tar.gz", serviceName, sanitizeName(filepath.Base(hostPath)), digest[:6])
 			archivePath := filepath.Join(volDir, archiveName)
 
 			if err := archiveDirectory(hostPath, archivePath); err != nil {
-				continue
+				return nil, err
 			}
 
 			archiveInfo, err := os.Stat(archivePath)
@@ -69,10 +75,11 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 			}
 
 			components = append(components, ComponentInfo{
-				Type:      "volume",
-				Name:      fmt.Sprintf("%s/%s", serviceName, filepath.Base(parts[0])),
-				Path:      filepath.Join("volumes", archiveName),
-				SizeBytes: archiveInfo.Size(),
+				Type:        "volume",
+				Name:        fmt.Sprintf("%s/%s", serviceName, filepath.Base(parts[0])),
+				Path:        filepath.Join("volumes", archiveName),
+				SizeBytes:   archiveInfo.Size(),
+				RestorePath: relative,
 			})
 		}
 	}
@@ -88,6 +95,7 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 
 func archiveDirectory(srcDir, archivePath string) error {
 	cmd := exec.Command("tar", "czf", archivePath, "-C", filepath.Dir(srcDir), filepath.Base(srcDir))
+	cmd.Env = append(os.Environ(), "COPYFILE_DISABLE=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tar: %s: %w", strings.TrimSpace(string(out)), err)
 	}
