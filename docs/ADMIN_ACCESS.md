@@ -2,8 +2,10 @@
 
 FleetDeck's dashboard can perform privileged deployments and restore data. Its
 default listener is private `127.0.0.1:8420`; it is not started by installing the
-CLI. Keep it on a management network or use an SSH tunnel. There is no native
-WebAuthn/passkey enrollment, TOTP, per-user roles or account recovery yet. A long
+CLI. Keep it on a management network or use an SSH tunnel. The
+[Authelia OIDC integration](AUTHELIA.md) provides verified browser MFA and admin
+group authorization; enrollment and recovery are handled by Authelia. There is
+no native identity provider or granular per-project role system. A long
 API token plus a software client certificate is layered access control, not a
 claim of hardware-backed multi-factor authentication.
 
