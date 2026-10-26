@@ -83,7 +83,16 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 		dbName = user
 	}
 
+	if !dockerObjectName.MatchString(serviceName) {
+		return nil, fmt.Errorf("invalid database service name")
+	}
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.Remove(dumpFile)
+		}
+	}()
 
 	// `set -o pipefail` is essential: without it, `pg_dump ... | gzip > file`
 	// returns gzip's exit status, so a failing pg_dump (wrong container, auth
@@ -91,7 +100,7 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 	// and the command reports success — a silent empty backup that later passes
 	// verification. pipefail makes the pipeline fail if pg_dump fails.
 	cmd := exec.Command("bash", "-c",
-		"set -o pipefail; "+
+		"umask 077; set -o pipefail; "+
 			shellQuote("docker", "exec", containerName, "pg_dump", "-U", user, dbName)+
 			" | gzip > "+shellQuote(dumpFile))
 
@@ -111,6 +120,7 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 		return nil, fmt.Errorf("pg_dump for %s produced a suspiciously small dump (%d bytes); treating as failure", containerName, info.Size())
 	}
 
+	complete = true
 	return &ComponentInfo{
 		Type:      "database",
 		Name:      serviceName + " (PostgreSQL)",
@@ -129,7 +139,16 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 		return nil, fmt.Errorf("no MySQL database name found")
 	}
 
+	if !dockerObjectName.MatchString(serviceName) {
+		return nil, fmt.Errorf("invalid database service name")
+	}
 	dumpFile := filepath.Join(dbDir, serviceName+".sql.gz")
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.Remove(dumpFile)
+		}
+	}()
 
 	// Pass the password through the environment rather than argv. `docker exec
 	// -e MYSQL_PWD` without an `=value` tells docker to forward the variable
@@ -141,7 +160,7 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 	// --single-transaction flag takes a consistent InnoDB snapshot so the dump
 	// is coherent even while the database is being written; --routines and
 	// --triggers ensure stored programs are captured too.
-	dumpCmd := "set -o pipefail; docker exec"
+	dumpCmd := "umask 077; set -o pipefail; docker exec"
 	if password != "" {
 		dumpCmd += " -e MYSQL_PWD"
 	}
@@ -166,6 +185,7 @@ func dumpMySQL(containerName, serviceName string, envVars map[string]string, dbD
 		return nil, fmt.Errorf("mysqldump for %s produced a suspiciously small dump (%d bytes); treating as failure", containerName, info.Size())
 	}
 
+	complete = true
 	return &ComponentInfo{
 		Type:      "database",
 		Name:      serviceName + " (MySQL)",

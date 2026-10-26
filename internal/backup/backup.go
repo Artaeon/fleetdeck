@@ -49,6 +49,15 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		return nil, fmt.Errorf("creating backup directory: %w", err)
 	}
 
+	complete := false
+	defer func() {
+		if !complete {
+			if err := os.RemoveAll(backupDir); err != nil {
+				ui.Warn("Could not remove incomplete backup: %v", err)
+			}
+		}
+	}()
+
 	manifest := Manifest{
 		Version:     "1",
 		ProjectName: project.Name,
@@ -84,7 +93,6 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		ui.Step(step, totalSteps, "Dumping databases...")
 		dbComponents, err := BackupDatabases(project.ProjectPath, backupDir)
 		if err != nil {
-			os.RemoveAll(backupDir)
 			return nil, fmt.Errorf("database dump failed: %w", err)
 		} else if len(dbComponents) > 0 {
 			manifest.Components = append(manifest.Components, dbComponents...)
@@ -100,7 +108,6 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		ui.Step(step, totalSteps, "Backing up volumes...")
 		volComponents, err := BackupVolumes(project.ProjectPath, backupDir)
 		if err != nil {
-			os.RemoveAll(backupDir)
 			return nil, fmt.Errorf("volume backup failed: %w", err)
 		} else if len(volComponents) > 0 {
 			manifest.Components = append(manifest.Components, volComponents...)
@@ -135,10 +142,10 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 		// Database record failed — clean up orphaned backup directory
 		ui.Warn("Could not save backup record to database: %v", err)
 		ui.Warn("Cleaning up orphaned backup directory...")
-		os.RemoveAll(backupDir)
 		return nil, fmt.Errorf("saving backup record: %w", err)
 	}
 
+	complete = true
 	return record, nil
 }
 
