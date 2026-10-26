@@ -44,6 +44,28 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 
 	restoreAll := !opts.FilesOnly && !opts.VolumesOnly && !opts.DBOnly
 
+	source, err := os.OpenRoot(backupPath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	destination, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+	// Preflight every selected configuration target before stopping containers
+	// or writing any file, including targets later in the manifest.
+	if restoreAll || opts.FilesOnly {
+		for _, comp := range manifest.Components {
+			if comp.Type == "config" {
+				if err := checkPath(destination, comp.Name, false, true); err != nil {
+					return fmt.Errorf("unsafe configuration destination: %w", err)
+				}
+			}
+		}
+	}
+
 	totalSteps := 0
 	if restoreAll || opts.FilesOnly {
 		totalSteps++
@@ -87,16 +109,7 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 			if comp.Type != "config" {
 				continue
 			}
-			src := filepath.Join(backupPath, comp.Path)
-			dst := filepath.Join(projectPath, comp.Name)
-
-			if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-				ui.Warn("Could not create dir for %s: %v", comp.Name, err)
-				failures = append(failures, fmt.Sprintf("config %s: %v", comp.Name, err))
-				continue
-			}
-
-			if _, _, err := copyFileWithChecksum(src, dst); err != nil {
+			if err := restoreConfigFile(source, destination, comp); err != nil {
 				ui.Warn("Could not restore %s: %v", comp.Name, err)
 				failures = append(failures, fmt.Sprintf("config %s: %v", comp.Name, err))
 				continue
