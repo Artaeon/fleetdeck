@@ -354,7 +354,7 @@ func TestRenderCompose(t *testing.T) {
 		{name: "contains traefik enable", contains: "traefik.enable=true"},
 		{name: "contains services key", contains: "services:"},
 		{name: "contains networks key", contains: "networks:"},
-		{name: "contains traefik_default", contains: "traefik_default"},
+		{name: "contains traefik_default", contains: "-edge"},
 		{name: "contains router rule", contains: "traefik.http.routers.myapp.rule=Host"},
 		{name: "contains TLS config", contains: "traefik.http.routers.myapp.tls=true"},
 	}
@@ -408,10 +408,10 @@ func TestRenderEnv(t *testing.T) {
 
 func TestRenderWithSpecialChars(t *testing.T) {
 	tests := []struct {
-		name       string
-		data       ProfileData
+		name         string
+		data         ProfileData
 		wantInOutput []string
-		wantErr    bool
+		wantErr      bool
 	}{
 		{
 			name: "domain with subdomain",
@@ -607,7 +607,7 @@ func TestWorkerProfileNoTraefik(t *testing.T) {
 	}
 
 	// Worker should not be on the traefik_default network
-	if strings.Contains(rendered, "traefik_default") {
+	if strings.Contains(rendered, "-edge") {
 		t.Error("worker profile compose references traefik_default network but should not")
 	}
 

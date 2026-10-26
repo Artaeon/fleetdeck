@@ -17,7 +17,10 @@ COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 `,
-		Compose: `services:
+		Compose: `x-fleetdeck:
+  edge-network: fleetdeck-{{.Name}}-edge
+
+services:
   app:
     build: .
     image: {{.Name}}:local
@@ -28,6 +31,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
       PORT: "8000"
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.Name}}-edge"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
@@ -60,11 +64,12 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.Name}}-edge
     external: true
   {{.Name}}-internal:
     name: {{.Name}}-internal
     driver: bridge
+    internal: true
 `,
 		EnvTemplate: `POSTGRES_USER={{.Name}}
 POSTGRES_PASSWORD={{.Name}}_CHANGEME

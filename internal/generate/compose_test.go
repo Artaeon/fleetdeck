@@ -72,8 +72,8 @@ func TestCompose_HealthcheckUsesIP(t *testing.T) {
 func TestCompose_NetworkTraefikDefault(t *testing.T) {
 	out := Compose(baseOpts())
 
-	if !strings.Contains(out, "name: traefik_default") {
-		t.Errorf("expected network name traefik_default:\n%s", out)
+	if !strings.Contains(out, "name: fleetdeck-"+baseOpts().ProjectName+"-edge") {
+		t.Errorf("expected project-specific edge network:\n%s", out)
 	}
 	if !strings.Contains(out, "external: true") {
 		t.Errorf("expected external network:\n%s", out)

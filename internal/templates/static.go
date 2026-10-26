@@ -16,7 +16,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 `,
-		Compose: `services:
+		Compose: `x-fleetdeck:
+  edge-network: fleetdeck-{{.Name}}-edge
+
+services:
   app:
     build: .
     image: {{.Name}}:local
@@ -24,6 +27,7 @@ EXPOSE 80
     restart: always
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.Name}}-edge"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
@@ -34,7 +38,7 @@ EXPOSE 80
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.Name}}-edge
     external: true
 `,
 		EnvTemplate: `# No secrets needed for static sites

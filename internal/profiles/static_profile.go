@@ -9,7 +9,10 @@ func init() {
 		Services: []Service{
 			{Name: "nginx", Image: "nginx:alpine", Description: "Nginx web server", Required: true},
 		},
-		Compose: `services:
+		Compose: `x-fleetdeck:
+  edge-network: fleetdeck-{{.Name}}-edge
+
+services:
   nginx:
     image: nginx:alpine
     container_name: {{.Name}}-nginx
@@ -24,6 +27,7 @@ func init() {
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=fleetdeck-{{.Name}}-edge"
       - "traefik.http.routers.{{.Name}}.rule=Host(` + "`{{.Domain}}`" + `)"
       - "traefik.http.routers.{{.Name}}.entrypoints=websecure"
       - "traefik.http.routers.{{.Name}}.tls.certresolver=letsencrypt"
@@ -35,7 +39,7 @@ func init() {
 
 networks:
   default:
-    name: traefik_default
+    name: fleetdeck-{{.Name}}-edge
     external: true
 `,
 		EnvTemplate: `# Static site - no environment variables needed

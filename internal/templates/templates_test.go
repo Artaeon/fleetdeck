@@ -154,7 +154,7 @@ func TestRegisterCustomTemplate(t *testing.T) {
 		Description: "Test custom template",
 		Dockerfile:  "FROM alpine",
 		Compose:     "services: {}",
-		Workflow:     SharedWorkflow,
+		Workflow:    SharedWorkflow,
 		GitIgnore:   ".env",
 	}
 	Register(custom)
