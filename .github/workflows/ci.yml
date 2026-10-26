@@ -98,8 +98,13 @@ jobs:
           go-version-file: go.mod
       - name: Verify Docker
         run: docker version && docker compose version
+      - name: Verify firewall packets in disposable Linux namespaces
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nftables
+          sudo tests/integration/firewall.sh
       - name: Run deploy integration tests
-        run: go test -v -tags=integration -run TestIntegration ./internal/deploy/...
+        run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
           FLEETDECK_INTEGRATION: "true"
 

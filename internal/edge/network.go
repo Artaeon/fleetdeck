@@ -28,7 +28,7 @@ func (r LocalRunner) Run(command string) (string, error) {
 	return string(out), err
 }
 
-var networkName = regexp.MustCompile(`^fleetdeck-[a-z0-9][a-z0-9-]{0,50}-edge$`)
+var networkName = regexp.MustCompile(`^fleetdeck-[a-z0-9][a-z0-9-]{0,62}-edge$`)
 var containerID = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // Prepare is a no-op for operator Compose files without FleetDeck's extension.
