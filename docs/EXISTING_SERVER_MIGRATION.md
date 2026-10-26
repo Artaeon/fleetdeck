@@ -67,6 +67,29 @@ readiness and database contents after rollback; CLI completion is not a readines
 or data-loss guarantee. The disposable SQLite drill is
 `tests/integration/backup-restore.sh`.
 
+## Restore path checks
+
+Verification rejects absolute and traversal paths, linked or non-regular backup
+files, unknown component types, unsupported database names, and named-volume
+identifiers that could be interpreted as host bind mounts. Configuration targets
+and their existing parent directories must not be symbolic links. Restore checks
+all selected configuration targets before stopping containers; replace deliberate
+configuration symlinks with real files before restoring.
+
+Configuration writes use Go's directory-confined file operations and replace each
+file through a temporary inode, so an existing hard link cannot overwrite another
+file. The checksum is checked again while copying; `.env` stays private and other
+configuration retains its read permissions for unprivileged containers.
+
+These checks do not make arbitrary backups safe to execute. Restore only trusted,
+operator-controlled backups: Compose definitions can request privileged host
+access, SQL dumps execute database commands, and legacy volume archives retain
+their extraction behavior. Keep backup directories private and unchanged during
+verification and restore. Manifest checksums detect corruption, not authenticity;
+use authenticated encrypted storage for off-server copies. Restoring multiple
+components is not a transaction: a later failure leaves the project stopped and
+may require recovery from the separate safety snapshot.
+
 ## Cut over and prove the native fallback
 
 Stop native writers, take a final consistent copy, start the container against
