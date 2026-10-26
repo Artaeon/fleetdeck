@@ -82,3 +82,9 @@ Use a password manager to generate and store the token, and supply it through
 `FLEETDECK_API_TOKEN` or a protected operator configuration outside the repository.
 An explicit non-loopback `--addr` still requires authentication. Keep remote
 access behind HTTPS and restrict the network path to the reverse proxy.
+
+Browser sessions use independent random credentials, stored only as hashes in
+memory. They expire after eight hours and are revoked by `POST /logout` or a
+process restart. Logging in again replaces that browser's previous session.
+API tokens are accepted only as bearer credentials, never as session cookies.
+Existing browser cookies from older versions require a fresh login.

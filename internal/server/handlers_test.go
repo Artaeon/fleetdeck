@@ -686,7 +686,7 @@ func TestHandleProjectPageWithValidCookie(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
 	req := httptest.NewRequest("GET", "/project/anyapp", nil)
-	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: "test-secret-token"})
+	req.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: testSession(t, srv)})
 	w := httptest.NewRecorder()
 	srv.server.Handler.ServeHTTP(w, req)
 

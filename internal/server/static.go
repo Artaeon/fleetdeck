@@ -2054,7 +2054,7 @@ const appJS = `
         html += '<div class="card">';
         html += '<div class="card-header"><span class="card-title">Quick Actions</span></div>';
         html += '<div class="btn-group">';
-        html += '<a href="/login" class="btn btn-secondary">Logout</a>';
+        html += '<form method="post" action="/logout"><button type="submit" class="btn btn-secondary">Logout</button></form>';
         html += '</div>';
         html += '</div>';
 
