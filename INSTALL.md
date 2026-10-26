@@ -315,7 +315,9 @@ Sensitive values should be set via environment variables:
 
 ```bash
 export FLEETDECK_ENCRYPTION_KEY="your-strong-passphrase"
-export FLEETDECK_API_TOKEN="your-dashboard-token"
+# Random token of at least 32 characters, generated in your password manager.
+read -r -s -p "Dashboard token: " FLEETDECK_API_TOKEN
+export FLEETDECK_API_TOKEN
 export FLEETDECK_DNS_TOKEN="your-cloudflare-token"
 ```
 

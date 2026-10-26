@@ -13,7 +13,7 @@ Include: description, steps to reproduce, potential impact, and suggested fix if
 FleetDeck implements defense in depth across multiple layers:
 
 ### Authentication & Encryption
-- **API authentication** via bearer tokens
+- **API authentication** via bearer tokens; independent, expiring browser sessions
 - **Secret encryption** using AES-256-GCM with PBKDF2-derived keys (100,000 iterations)
 - **Webhook verification** via HMAC-SHA256 signatures
 - **SSH TOFU** -- Trust On First Use host key verification; keys saved to `~/.ssh/known_hosts` on first connect, verified on subsequent connections
