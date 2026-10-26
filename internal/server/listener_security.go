@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -88,4 +89,13 @@ func (s *Server) ConfigureListener(options ListenerOptions) error {
 	}
 	s.server.TLSConfig = config
 	return nil
+}
+
+// Only the verified TLS peer identifies a device, never proxy headers. Sessions
+// created in private HTTP mode cannot be replayed through a device TLS listener.
+func requestDevice(r *http.Request) string {
+	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(r.TLS.PeerCertificates[0].Raw))
 }

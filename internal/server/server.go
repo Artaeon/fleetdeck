@@ -316,7 +316,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check session cookie
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if s.sessions.valid(cookie.Value) {
+			if s.sessions.validForDevice(cookie.Value, requestDevice(r)) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
 					return
@@ -339,7 +339,7 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
-			if s.sessions.valid(cookie.Value) {
+			if s.sessions.validForDevice(cookie.Value, requestDevice(r)) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
 					return
@@ -375,7 +375,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	token := r.PostForm.Get("token")
 
 	if s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1 {
-		session, err := s.sessions.create()
+		session, err := s.sessions.createForDevice(requestDevice(r))
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "unable to create session")
 			return
