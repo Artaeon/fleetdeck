@@ -125,6 +125,11 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
+      - name: Verify encrypted identity backups
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+          python3 -B -m unittest discover -s deploy/authelia -p "*_test.py"
       - name: Verify real Authelia password and passkey login
         run: |
           go build -o /tmp/fleetdeck-auth-integration .
