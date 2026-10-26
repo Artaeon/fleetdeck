@@ -197,7 +197,7 @@ so you can always go back.`,
 			ui.Info("Creating snapshot of current state...")
 			_, err := backup.CreateBackup(cfg, d, p, "snapshot", "pre-restore", backup.Options{})
 			if err != nil {
-				ui.Warn("Could not create pre-restore snapshot: %v", err)
+				return fmt.Errorf("creating pre-restore snapshot: %w; restore aborted", err)
 			} else {
 				ui.Success("Pre-restore snapshot created")
 			}
