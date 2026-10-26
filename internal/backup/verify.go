@@ -80,6 +80,18 @@ func verifyComponent(backupPath string, comp ComponentInfo) VerifyResult {
 	if comp.Type == "config" {
 		return verifyConfigFile(f, comp)
 	}
+	// Older volume/database components have no digest. When one is present,
+	// validate it as well as gzip integrity: a different valid gzip is not the
+	// snapshot originally recorded in the manifest.
+	if comp.Checksum != "" {
+		result := verifyConfigFile(f, comp)
+		if result.Status != VerifyOK {
+			return result
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return failed(err)
+		}
+	}
 	return verifyGzipFile(f, comp)
 }
 

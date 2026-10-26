@@ -94,6 +94,10 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 			}
 			component.Path = filepath.Join("volumes", archiveName)
 			component.SizeBytes = info.Size()
+			component.Checksum, err = fileSHA256(filepath.Join(volDir, archiveName))
+			if err != nil {
+				return nil, fmt.Errorf("checksumming volume archive: %w", err)
+			}
 			components = append(components, component)
 			seen[key] = true
 		}

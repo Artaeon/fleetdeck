@@ -139,3 +139,41 @@ func TestVolumeArchiveIsPrivate(t *testing.T) {
 		t.Fatalf("archive is not private: %v %v", info, err)
 	}
 }
+
+func TestVolumeChecksumRejectsAnotherValidArchive(t *testing.T) {
+	project, backup := t.TempDir(), t.TempDir()
+	os.Mkdir(filepath.Join(project, "data"), 0700)
+	os.WriteFile(filepath.Join(project, "data", "proof"), []byte("original"), 0600)
+	fakeBindMounts(t, project, "data")
+	components, err := BackupVolumes(project, backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(components) != 1 || len(components[0].Checksum) != 64 {
+		t.Fatalf("missing checksum: %v", components)
+	}
+	writeSecurityManifest(t, backup, components...)
+	results, err := VerifyBackup(backup)
+	if err != nil || HasFailures(results) {
+		t.Fatalf("valid backup failed: %v %v", results, err)
+	}
+	os.WriteFile(filepath.Join(project, "data", "proof"), []byte("changed"), 0600)
+	archive := filepath.Join(backup, components[0].Path)
+	if err := os.Remove(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := archiveDirectory(filepath.Join(project, "data"), archive); err != nil {
+		t.Fatal(err)
+	}
+	results, err = VerifyBackup(backup)
+	if err != nil || !HasFailures(results) {
+		t.Fatalf("replaced valid archive passed: %v %v", results, err)
+	}
+	// Legacy archives retain gzip verification without a recorded SHA256.
+	components[0].Checksum = ""
+	writeSecurityManifest(t, backup, components...)
+	results, err = VerifyBackup(backup)
+	if err != nil || HasFailures(results) {
+		t.Fatalf("legacy archive rejected: %v %v", results, err)
+	}
+}
