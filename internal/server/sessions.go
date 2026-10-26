@@ -21,6 +21,7 @@ type sessionStore struct {
 type sessionEntry struct {
 	expires time.Time
 	device  string
+	subject string
 }
 
 func newSessionStore() *sessionStore {
@@ -32,6 +33,10 @@ func (s *sessionStore) create() (string, error) {
 }
 
 func (s *sessionStore) createForDevice(device string) (string, error) {
+	return s.createIdentity(device, "", s.now().Add(sessionLifetime))
+}
+
+func (s *sessionStore) createIdentity(device, subject string, expires time.Time) (string, error) {
 	token, err := GenerateAPIToken()
 	if err != nil {
 		return "", err
@@ -47,7 +52,10 @@ func (s *sessionStore) createForDevice(device string) (string, error) {
 	if len(s.entries) >= maxSessions {
 		return "", fmt.Errorf("session limit reached")
 	}
-	s.entries[sha256.Sum256([]byte(token))] = sessionEntry{expires: now.Add(sessionLifetime), device: device}
+	if !expires.After(now) {
+		return "", fmt.Errorf("session has already expired")
+	}
+	s.entries[sha256.Sum256([]byte(token))] = sessionEntry{expires: expires, device: device, subject: subject}
 	return token, nil
 }
 
@@ -56,6 +64,10 @@ func (s *sessionStore) valid(token string) bool {
 }
 
 func (s *sessionStore) validForDevice(token, device string) bool {
+	return s.validSession(token, device, false)
+}
+
+func (s *sessionStore) validSession(token, device string, requireIdentity bool) bool {
 	if len(token) != 64 {
 		return false
 	}
@@ -67,7 +79,7 @@ func (s *sessionStore) validForDevice(token, device string) bool {
 		delete(s.entries, hash)
 		return false
 	}
-	return entry.device == device
+	return entry.device == device && (!requireIdentity || entry.subject != "")
 }
 
 func (s *sessionStore) revoke(token string) {
