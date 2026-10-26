@@ -131,3 +131,23 @@ func TestLocalBrowserLoginAndLogoutWithCookieJar(t *testing.T) {
 		t.Fatal("logout did not clear and revoke the browser session")
 	}
 }
+
+func TestLoginNeverAcceptsCredentialsFromURL(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+	r := httptest.NewRequest("POST", "https://fleet.example.com/login?token="+url.QueryEscape(srv.apiToken), nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized || len(w.Result().Cookies()) != 0 {
+		t.Fatal("credential in URL was accepted")
+	}
+}
+
+func TestRemoteHTTPDoesNotRenderLoginForm(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+	r := httptest.NewRequest("GET", "http://fleet.example.com/login", nil)
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "<form") {
+		t.Fatal("insecure remote login form was rendered")
+	}
+}
