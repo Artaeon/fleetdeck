@@ -1,31 +1,19 @@
 package templates
 
-const SharedWorkflow = `name: Deploy
+// SharedWorkflow builds without distributing a root-equivalent Docker/SSH key.
+// Deployments remain an explicit action by the trusted FleetDeck administrator.
+const SharedWorkflow = `name: Build
 on:
   push:
     branches: [main, master]
+  pull_request:
+permissions:
+  contents: read
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Build images
         run: docker compose -f docker-compose.yml build
-      - name: Save images
-        run: docker save $(docker compose config --images) | gzip > images.tar.gz
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{"{{"}} secrets.SSH_PRIVATE_KEY {{"}}"}}
-      - name: Add host key
-        run: ssh-keyscan -H ${{"{{"}} secrets.DEPLOY_HOST {{"}}"}} >> ~/.ssh/known_hosts
-      - name: Deploy
-        run: |
-          scp docker-compose.yml ${{"{{"}} secrets.DEPLOY_USER {{"}}"}}@${{"{{"}} secrets.DEPLOY_HOST {{"}}"}}:~/docker-compose.yml
-          scp images.tar.gz ${{"{{"}} secrets.DEPLOY_USER {{"}}"}}@${{"{{"}} secrets.DEPLOY_HOST {{"}}"}}:~/
-          ssh ${{"{{"}} secrets.DEPLOY_USER {{"}}"}}@${{"{{"}} secrets.DEPLOY_HOST {{"}}"}} << 'EOF'
-            docker load < ~/images.tar.gz
-            rm ~/images.tar.gz
-            docker compose up -d
-          EOF
 `

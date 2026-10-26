@@ -19,8 +19,8 @@ var createCmd = &cobra.Command{
 	Short: "Create a new project",
 	Long: `Creates a new project with:
 - Linux user with minimal rights
-- SSH keypair for CI/CD
-- GitHub repository with deploy secrets
+- Private project directory, without Docker-daemon access
+- GitHub repository with build-only CI
 - Docker Compose configuration with Traefik labels
 - Generated .env file with secrets
 
@@ -86,9 +86,9 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 
 		projectPath := cfg.ProjectPath(name)
 		linuxUser := project.LinuxUserName(name)
-		totalSteps := 8
+		totalSteps := 6
 		if skipGithub {
-			totalSteps = 5
+			totalSteps = 4
 		}
 
 		// Cleanup-on-failure: track completed steps and roll back in reverse
@@ -152,30 +152,17 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 		// .env is inside projectPath — covered by directory cleanup
 		ui.Success("Environment file generated")
 
-		// Step 4: Generate SSH keypair
-		ui.Step(4, totalSteps, "Generating SSH keypair...")
-		privKeyPath, pubKey, err := project.GenerateSSHKeypair(projectPath)
-		if err != nil {
-			return fmt.Errorf("generating SSH keys: %w", err)
-		}
-		// SSH keys are inside projectPath — covered by directory cleanup
-		ui.Success("SSH keypair generated")
-
-		// Step 5: Set up authorized_keys and fix ownership
-		ui.Step(5, totalSteps, "Setting up SSH access...")
-		if err := project.SetupAuthorizedKeys(projectPath, pubKey); err != nil {
-			return fmt.Errorf("setting up authorized_keys: %w", err)
-		}
+		// Project accounts own their files but cannot administer Docker or log in.
+		ui.Step(4, totalSteps, "Setting project ownership...")
 		if err := project.ChownProjectDir(name, projectPath); err != nil {
 			return fmt.Errorf("setting ownership: %w", err)
 		}
-		// authorized_keys are inside projectPath — covered by directory cleanup
-		ui.Success("SSH access configured")
+		ui.Success("Project ownership configured; deployments use the trusted administrator")
 
 		repoFullName := ""
 		if !skipGithub {
 			// Step 6: Create GitHub repo
-			ui.Step(6, totalSteps, "Creating GitHub repository...")
+			ui.Step(5, totalSteps, "Creating GitHub repository...")
 			repoURL, err := project.CreateGitHubRepo(githubOrg, name, true)
 			if err != nil {
 				return fmt.Errorf("creating GitHub repo: %w", err)
@@ -193,32 +180,8 @@ automatically (user deleted, directories removed, GitHub repo deleted, etc).`,
 			})
 			ui.Success("Repository created: %s", repoURL)
 
-			// Step 7: Set GitHub secrets
-			ui.Step(7, totalSteps, "Setting GitHub secrets...")
-			serverIP, err := project.GetServerIP()
-			if err != nil {
-				return fmt.Errorf("getting server IP: %w", err)
-			}
-			privKeyData, err := os.ReadFile(privKeyPath)
-			if err != nil {
-				return fmt.Errorf("reading private key: %w", err)
-			}
-
-			secrets := map[string]string{
-				"DEPLOY_HOST":     serverIP,
-				"DEPLOY_USER":     linuxUser,
-				"SSH_PRIVATE_KEY": string(privKeyData),
-			}
-			for key, value := range secrets {
-				if err := project.SetGitHubSecret(repoFullName, key, value); err != nil {
-					return fmt.Errorf("setting secret %s: %w", key, err)
-				}
-			}
-			// GitHub secrets are part of the repo — covered by repo deletion cleanup
-			ui.Success("GitHub secrets configured")
-
-			// Step 8: Push initial code
-			ui.Step(8, totalSteps, "Pushing initial code...")
+			// CI validates builds without granting the repository host-admin credentials.
+			ui.Step(6, totalSteps, "Pushing initial code...")
 			gitURL := fmt.Sprintf("git@github.com:%s.git", repoFullName)
 			if err := project.InitAndPushRepo(projectPath, gitURL); err != nil {
 				ui.Warn("Could not push initial code: %v", err)

@@ -295,8 +295,8 @@ func TestRenderAllTemplateTypes(t *testing.T) {
 		if err != nil {
 			t.Errorf("render Workflow for %q: %v", name, err)
 		}
-		if !strings.Contains(result, "Deploy") {
-			t.Errorf("Workflow for %q should contain 'Deploy'", name)
+		if !strings.Contains(result, "Build") {
+			t.Errorf("Workflow for %q should contain 'Build'", name)
 		}
 
 		// Render EnvTemplate

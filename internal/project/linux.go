@@ -22,6 +22,8 @@ func CreateLinuxUser(projectName, projectPath string) error {
 
 	cmd := exec.Command("useradd",
 		"--system",
+		"--user-group",
+		"--key", "HOME_MODE=0750",
 		"--shell", "/usr/sbin/nologin",
 		"--home-dir", projectPath,
 		"--create-home",
@@ -29,11 +31,6 @@ func CreateLinuxUser(projectName, projectPath string) error {
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("creating user %s: %s: %w", username, strings.TrimSpace(string(out)), err)
-	}
-
-	cmd = exec.Command("usermod", "-aG", "docker", username)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("adding %s to docker group: %s: %w", username, strings.TrimSpace(string(out)), err)
 	}
 
 	return nil
