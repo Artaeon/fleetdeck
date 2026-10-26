@@ -24,7 +24,7 @@ func TestGetProfile(t *testing.T) {
 		{
 			name:        "saas profile",
 			profileName: "saas",
-			wantDesc:    "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + email relay + cron.",
+			wantDesc:    "Full SaaS stack: App + PostgreSQL + Redis + S3 (MinIO) + private test mailbox.",
 		},
 		{
 			name:        "static profile",
