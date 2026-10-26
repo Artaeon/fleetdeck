@@ -32,7 +32,11 @@ FLEETDECK_INTEGRATION=true go test -tags=integration -v ./internal/deploy/...
 go test -v ./internal/detect/...
 ```
 
-The project has **883 test functions** across **59 test files**. All tests must pass before submitting a PR.
+Ordinary tests do not start Docker containers. Tests that deploy real Compose
+projects use the `integration` build tag and the `FLEETDECK_INTEGRATION` opt-in.
+When explicitly requested, an unavailable Docker daemon is a failure, not a
+successful skip. CI runs these tests in its Docker integration job.
+All applicable checks must pass before submitting a PR.
 
 ## Code Style
 
