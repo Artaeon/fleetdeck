@@ -24,6 +24,11 @@ services:
   app:
     build: .
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=fleetdeck-{{.ProjectName}}-edge"

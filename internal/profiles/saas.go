@@ -22,6 +22,11 @@ services:
     image: {{.Name}}:local
     container_name: {{.Name}}-app
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     deploy:
       resources:
         limits:
@@ -60,6 +65,11 @@ services:
     image: postgres:{{.PostgresVersion}}
     container_name: {{.Name}}-postgres
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -78,6 +88,11 @@ services:
     image: redis:7-alpine
     container_name: {{.Name}}-redis
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - ./redis_data:/data
@@ -93,6 +108,11 @@ services:
     image: minio/minio:latest
     container_name: {{.Name}}-minio
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -120,6 +140,11 @@ services:
     image: axllent/mailpit:latest
     container_name: {{.Name}}-mailpit
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - NET_RAW
+    pids_limit: 512
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
