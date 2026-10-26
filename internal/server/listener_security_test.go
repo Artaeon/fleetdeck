@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,5 +186,50 @@ func TestDashboardDeviceAuthenticationOverTLS(t *testing.T) {
 	}
 	if err := reconfigured.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{device.cert}, VerifiedChains: [][]*x509.Certificate{{device.cert, ca.cert}}}); err == nil {
 		t.Fatal("removed device still authorized")
+	}
+}
+
+func TestBrowserSessionCannotMoveBetweenDevices(t *testing.T) {
+	ca := issueTestCertificate(t, nil, "ca", false)
+	a := issueTestCertificate(t, &ca, "client", false)
+	b := issueTestCertificate(t, &ca, "client", false)
+	srv, _ := setupAuthTestServer(t)
+	state := func(cert testCertificate) *tls.ConnectionState {
+		return &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert.cert}, VerifiedChains: [][]*x509.Certificate{{cert.cert, ca.cert}}}
+	}
+	login := httptest.NewRequest("POST", "https://admin.example.invalid/login", strings.NewReader(url.Values{"token": {srv.apiToken}}.Encode()))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	login.Header.Set("Origin", "https://admin.example.invalid")
+	login.TLS = state(a)
+	w := httptest.NewRecorder()
+	srv.handleLoginSubmit(w, login)
+	if w.Code != http.StatusFound {
+		t.Fatalf("login status %d", w.Code)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly {
+		t.Fatal("missing secure browser session")
+	}
+	for _, tc := range []struct {
+		name string
+		tls  *tls.ConnectionState
+		want int
+	}{
+		{"original device", state(a), http.StatusOK},
+		{"another authorized device", state(b), http.StatusUnauthorized},
+		{"no verified certificate", &tls.ConnectionState{}, http.StatusUnauthorized},
+		{"original remains valid after rejected replay", state(a), http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "https://admin.example.invalid/api/projects", nil)
+			r.TLS = tc.tls
+			r.AddCookie(cookies[0])
+			r.Header.Set("X-Client-Cert", requestDevice(login))
+			w := httptest.NewRecorder()
+			srv.server.Handler.ServeHTTP(w, r)
+			if w.Code != tc.want {
+				t.Fatalf("status %d, want %d", w.Code, tc.want)
+			}
+		})
 	}
 }
