@@ -1,0 +1,15 @@
+[Unit]
+Description=Encrypted Authelia configuration and consistent database snapshot
+ConditionPathExists=/var/lib/fleetdeck-authelia/db.sqlite3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/fleetdeck/authelia-backup.py --config /etc/fleetdeck/admin-auth --database /var/lib/fleetdeck-authelia/db.sqlite3 --recipient /etc/fleetdeck/admin-auth/backup-recipient --output /var/backups/fleetdeck-authelia
+UMask=0077
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/fleetdeck/admin-auth /var/lib/fleetdeck-authelia /var/backups/fleetdeck-authelia
+NoNewPrivileges=true
+TimeoutStartSec=3min

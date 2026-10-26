@@ -1,0 +1,20 @@
+# Apply before starting this network. Table is replaced atomically, not the ruleset.
+destroy table inet fleetdeck_auth_isolation
+table inet fleetdeck_auth_isolation {
+  chain input {
+    type filter hook input priority -25; policy accept;
+    ct state established,related accept
+    iifname "br-fd-auth" counter drop
+  }
+  chain forward {
+    type filter hook forward priority -25; policy accept;
+    ct state established,related accept
+    # No project, host-private, link-local or metadata destinations.
+    iifname "br-fd-auth" ip daddr { 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter drop
+    iifname "br-fd-auth" meta nfproto ipv6 counter drop
+    # SMTP with TLS, DNS, and clock validation only. Adapt SMTP port if needed.
+    iifname "br-fd-auth" tcp dport { 465, 587, 53 } accept
+    iifname "br-fd-auth" udp dport { 53, 123 } accept
+    iifname "br-fd-auth" counter drop
+  }
+}

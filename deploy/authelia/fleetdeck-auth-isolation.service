@@ -1,0 +1,11 @@
+[Unit]
+Description=Authelia container host and egress isolation
+After=nftables.service
+Before=fleetdeck-authelia.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/fleetdeck/admin-auth/isolation.nft
+ExecReload=/usr/sbin/nft -f /etc/fleetdeck/admin-auth/isolation.nft
+[Install]
+WantedBy=multi-user.target

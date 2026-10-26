@@ -1,0 +1,20 @@
+[Unit]
+Description=FleetDeck Authelia identity provider
+Requires=docker.service fleetdeck-auth-isolation.service
+After=docker.service network-online.target fleetdeck-auth-isolation.service
+Wants=network-online.target
+ConditionPathExists=/etc/fleetdeck/admin-auth/ready
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/fleetdeck-admin
+ExecStartPre=/usr/bin/docker compose -f compose.yml config --quiet
+ExecStart=/usr/bin/docker compose -f compose.yml up --no-build --pull never --abort-on-container-exit
+ExecStop=/usr/bin/docker compose -f compose.yml stop --timeout 30
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
