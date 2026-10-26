@@ -26,6 +26,7 @@ services:
     deploy:
       resources:
         limits:
+          pids: 512
           cpus: '{{.CPULimit}}'
           memory: {{.MemoryLimit}}
     environment:
