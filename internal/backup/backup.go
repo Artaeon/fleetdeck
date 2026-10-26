@@ -165,12 +165,22 @@ func copyFileWithChecksum(src, dst string) (int64, string, error) {
 		return 0, "", err
 	}
 
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	info, err := in.Stat()
+	if err != nil {
+		return 0, "", err
+	}
+	mode := info.Mode().Perm()
+	// Environment files may carry credentials. Other configuration can be
+	// mounted read-only by a non-root container and must retain its read bits.
+	if filepath.Base(dst) == ".env" {
+		mode = 0600
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return 0, "", err
 	}
 	defer out.Close()
-	if err := out.Chmod(0600); err != nil {
+	if err := out.Chmod(mode); err != nil {
 		return 0, "", err
 	}
 
