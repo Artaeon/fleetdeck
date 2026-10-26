@@ -21,11 +21,11 @@ type composeFile struct {
 }
 
 type composeService struct {
-	Image       string            `yaml:"image"`
-	Environment interface{}       `yaml:"environment"`
-	Container   string            `yaml:"container_name"`
-	Labels      interface{}       `yaml:"labels"`
-	Volumes     []string          `yaml:"volumes"`
+	Image       string      `yaml:"image"`
+	Environment interface{} `yaml:"environment"`
+	Container   string      `yaml:"container_name"`
+	Labels      interface{} `yaml:"labels"`
+	Volumes     []string    `yaml:"volumes"`
 }
 
 func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
@@ -36,7 +36,7 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 
 	compose, err := parseComposeFile(projectPath)
 	if err != nil {
-		return nil, nil // no compose file or parse error, skip silently
+		return nil, fmt.Errorf("reading database services: %w", err)
 	}
 
 	envVars := loadEnvFile(projectPath)
@@ -54,7 +54,7 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 		case strings.HasPrefix(image, "postgres"):
 			comp, err := dumpPostgres(containerName, serviceName, envVars, dbDir)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("database service %s: %w", serviceName, err)
 			}
 			if comp != nil {
 				components = append(components, *comp)
@@ -62,7 +62,7 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 		case strings.HasPrefix(image, "mysql") || strings.HasPrefix(image, "mariadb"):
 			comp, err := dumpMySQL(containerName, serviceName, envVars, dbDir)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("database service %s: %w", serviceName, err)
 			}
 			if comp != nil {
 				components = append(components, *comp)
@@ -188,12 +188,15 @@ func parseComposeFile(projectPath string) (*composeFile, error) {
 	for _, name := range names {
 		path := filepath.Join(projectPath, name)
 		data, err := os.ReadFile(path)
-		if err != nil {
+		if os.IsNotExist(err) {
 			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", name, err)
 		}
 		var cf composeFile
 		if err := yaml.Unmarshal(data, &cf); err != nil {
-			continue
+			return nil, fmt.Errorf("parsing %s: %w", name, err)
 		}
 		return &cf, nil
 	}
