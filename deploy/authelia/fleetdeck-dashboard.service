@@ -2,7 +2,7 @@
 Description=FleetDeck authenticated administration dashboard
 Requires=fleetdeck-authelia.service
 After=fleetdeck-authelia.service caddy.service network-online.target
-ConditionPathExists=/etc/fleetdeck/admin-auth/ready
+ConditionPathExists=/etc/fleetdeck/admin-auth/dashboard-ready
 
 [Service]
 Type=simple
