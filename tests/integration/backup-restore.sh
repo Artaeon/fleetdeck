@@ -60,6 +60,48 @@ with sqlite3.connect('/state/example.sqlite3') as db:
     assert db.execute('SELECT value FROM evidence').fetchall() == [('before',)]
 PY
 docker compose -f "$base/project/docker-compose.yml" exec -T --user 65534 app python3 -c "assert open('/etc/probe.conf').read() == 'public container configuration'"
+# Unsafe restore targets must fail before touching a live deployment or an
+# unrelated host file, even when all archived configuration checksums match.
+container=$(docker compose -f "$base/project/docker-compose.yml" ps -q app)
+assert_running() {
+  test "$(docker inspect --format '{{.State.Running}}' "$container")" = true
+}
+assert_rejected() {
+  if cli rollback "$name" --backup-id "$id" --no-snapshot; then
+    echo 'Unsafe restore was accepted' >&2
+    exit 1
+  fi
+  assert_running
+  test "$(cat "$base/outside")" = 'untouched'
+}
+printf 'untouched' > "$base/outside"
+mv "$base/project/nginx.conf" "$base/original-config"
+ln -s "$base/outside" "$base/project/nginx.conf"
+assert_rejected
+rm "$base/project/nginx.conf"
+mv "$base/original-config" "$base/project/nginx.conf"
+
+cp "$manifest" "$base/original-manifest.json"
+for attack in source-traversal target-traversal host-volume unknown-type; do
+  python3 - "$base/original-manifest.json" "$manifest" "$attack" <<'PYTHON'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+component = manifest['components'][0]
+attack = sys.argv[3]
+if attack == 'source-traversal':
+    component['path'] = '../outside'
+elif attack == 'target-traversal':
+    component['name'] = '../outside'
+elif attack == 'host-volume':
+    component.update(type='volume', name='/tmp (named volume)', path='volumes/namedvol_data.tar.gz')
+else:
+    component['type'] = 'unsupported'
+with open(sys.argv[2], 'w') as output:
+    json.dump(manifest, output)
+PYTHON
+  assert_rejected
+done
+cp "$base/original-manifest.json" "$manifest"
 # Corrupt backups must fail before stopping the current working deployment.
 printf 'corrupt' > "$(dirname "$manifest")/config/docker-compose.yml"
 if cli rollback "$name" --backup-id "$id" --no-snapshot; then
@@ -67,4 +109,4 @@ if cli rollback "$name" --backup-id "$id" --no-snapshot; then
   exit 1
 fi
 test "$(docker compose -f "$base/project/docker-compose.yml" ps -q --status running | wc -l | tr -d ' ')" = 1
-printf 'SQLite restore, stale-file removal and corrupt-backup rejection passed.\n'
+printf 'SQLite restore, stale-file removal, unsafe-path and corrupt-backup rejection passed.\n'
