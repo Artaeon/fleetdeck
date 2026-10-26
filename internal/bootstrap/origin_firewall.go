@@ -133,6 +133,10 @@ cd /run/fleetdeck-origin-pending
 nft -f rollback.nft
 if test -e old-config; then install -m 0644 old-config /etc/fleetdeck/origin-firewall.nft; else rm -f /etc/fleetdeck/origin-firewall.nft; fi
 if test -e old-unit; then install -m 0644 old-unit /etc/systemd/system/fleetdeck-origin-firewall.service; else rm -f /etc/systemd/system/fleetdeck-origin-firewall.service; fi
+for unit in docker caddy nginx; do
+ path=/etc/systemd/system/$unit.service.d/fleetdeck-origin.conf
+ if test -e old-$unit-dependency; then install -m 0644 old-$unit-dependency "$path"; else rm -f "$path"; fi
+done
 systemctl daemon-reload
 if test -e was-enabled; then systemctl enable fleetdeck-origin-firewall.service; else systemctl disable fleetdeck-origin-firewall.service 2>/dev/null || true; fi
 rm -rf /run/fleetdeck-origin-pending
@@ -158,13 +162,17 @@ if nft list table inet fleetdeck_origin > previous.nft 2>/dev/null; then cat pre
 nft --check -f rollback.nft
 if test -e /etc/fleetdeck/origin-firewall.nft; then cp /etc/fleetdeck/origin-firewall.nft old-config; fi
 if test -e /etc/systemd/system/fleetdeck-origin-firewall.service; then cp /etc/systemd/system/fleetdeck-origin-firewall.service old-unit; fi
+for unit in docker caddy nginx; do
+ path=/etc/systemd/system/$unit.service.d/fleetdeck-origin.conf
+ if test -e "$path"; then cp "$path" old-$unit-dependency; fi
+done
 if systemctl is-enabled --quiet fleetdeck-origin-firewall.service; then touch was-enabled; fi
 cat > rollback.sh <<'FLEETDECK_ROLLBACK'
 ` + originRollback + `FLEETDECK_ROLLBACK
 chmod 0700 rollback.sh
 systemctl stop fleetdeck-origin-rollback.timer 2>/dev/null || true
 systemctl reset-failed fleetdeck-origin-rollback.service 2>/dev/null || true
-systemd-run --unit=fleetdeck-origin-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh /run/fleetdeck-origin-pending/rollback.sh
+systemd-run --collect --unit=fleetdeck-origin-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh /run/fleetdeck-origin-pending/rollback.sh
 trap - EXIT
 nft -f candidate.nft
 printf 'Origin firewall trial active. Verify public HTTPS, direct denial and SSH, then run server origin-firewall confirm within five minutes. Otherwise automatic rollback will restore the previous policy.\n'
@@ -184,6 +192,10 @@ install -m 0644 candidate.nft /etc/fleetdeck/origin-firewall.nft.new
 mv /etc/fleetdeck/origin-firewall.nft.new /etc/fleetdeck/origin-firewall.nft
 cat > /etc/systemd/system/fleetdeck-origin-firewall.service <<'FLEETDECK_SERVICE'
 ` + originService + `FLEETDECK_SERVICE
+for unit in docker caddy nginx; do
+ install -d -m 0755 /etc/systemd/system/$unit.service.d
+ printf '[Unit]\nRequires=fleetdeck-origin-firewall.service\nAfter=fleetdeck-origin-firewall.service\n' > /etc/systemd/system/$unit.service.d/fleetdeck-origin.conf
+done
 systemctl daemon-reload
 systemctl enable fleetdeck-origin-firewall.service
 systemctl restart fleetdeck-origin-firewall.service
