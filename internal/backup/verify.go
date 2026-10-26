@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 )
 
 // VerifyStatus represents the outcome of verifying a single backup component.
@@ -37,37 +36,51 @@ func VerifyBackup(backupPath string) ([]VerifyResult, error) {
 		return nil, fmt.Errorf("reading manifest: %w", err)
 	}
 
+	return verifyManifest(backupPath, manifest), nil
+}
+
+func verifyManifest(backupPath string, manifest *Manifest) []VerifyResult {
 	var results []VerifyResult
 	for _, comp := range manifest.Components {
 		result := verifyComponent(backupPath, comp)
 		results = append(results, result)
 	}
 
-	return results, nil
+	return results
 }
 
 func verifyComponent(backupPath string, comp ComponentInfo) VerifyResult {
-	fullPath := filepath.Join(backupPath, comp.Path)
-
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		return VerifyResult{
-			Component: comp,
-			Status:    VerifyMissing,
-			Error:     fmt.Errorf("file not found: %s", comp.Path),
+	failed := func(err error) VerifyResult { return VerifyResult{Component: comp, Status: VerifyFailed, Error: err} }
+	if err := validateComponent(comp); err != nil {
+		return failed(err)
+	}
+	root, err := os.OpenRoot(backupPath)
+	if err != nil {
+		return failed(err)
+	}
+	defer root.Close()
+	if err := checkPath(root, comp.Path, false, false); err != nil {
+		if os.IsNotExist(err) {
+			return VerifyResult{Component: comp, Status: VerifyMissing, Error: err}
 		}
+		return failed(err)
 	}
-
-	switch comp.Type {
-	case "config":
-		return verifyConfigFile(fullPath, comp)
-	case "database":
-		return verifyGzipFile(fullPath, comp)
-	case "volume":
-		return verifyGzipFile(fullPath, comp)
-	default:
-		// Unknown type — just check existence (already passed above)
-		return VerifyResult{Component: comp, Status: VerifyOK}
+	f, err := root.Open(comp.Path)
+	if err != nil {
+		return failed(err)
 	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return failed(err)
+	}
+	if !info.Mode().IsRegular() {
+		return failed(fmt.Errorf("component is not a regular file"))
+	}
+	if comp.Type == "config" {
+		return verifyConfigFile(f, comp)
+	}
+	return verifyGzipFile(f, comp)
 }
 
 // verifyConfigFile recomputes the SHA256 checksum and compares it to the
@@ -75,7 +88,7 @@ func verifyComponent(backupPath string, comp ComponentInfo) VerifyResult {
 // verification failure, not a silent pass — otherwise an attacker who
 // tampered with both a config file AND the manifest (removing the
 // Checksum field) would sail through integrity checks.
-func verifyConfigFile(path string, comp ComponentInfo) VerifyResult {
+func verifyConfigFile(reader io.Reader, comp ComponentInfo) VerifyResult {
 	if comp.Checksum == "" {
 		return VerifyResult{
 			Component: comp,
@@ -84,7 +97,9 @@ func verifyConfigFile(path string, comp ComponentInfo) VerifyResult {
 		}
 	}
 
-	checksum, err := fileSHA256(path)
+	h := sha256.New()
+	_, err := io.Copy(h, reader)
+	checksum := hex.EncodeToString(h.Sum(nil))
 	if err != nil {
 		return VerifyResult{
 			Component: comp,
@@ -106,18 +121,8 @@ func verifyConfigFile(path string, comp ComponentInfo) VerifyResult {
 
 // verifyGzipFile opens the file and reads through the gzip stream to confirm
 // the archive is not corrupt.
-func verifyGzipFile(path string, comp ComponentInfo) VerifyResult {
-	f, err := os.Open(path)
-	if err != nil {
-		return VerifyResult{
-			Component: comp,
-			Status:    VerifyFailed,
-			Error:     fmt.Errorf("opening file: %w", err),
-		}
-	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
+func verifyGzipFile(reader io.Reader, comp ComponentInfo) VerifyResult {
+	gz, err := gzip.NewReader(reader)
 	if err != nil {
 		return VerifyResult{
 			Component: comp,

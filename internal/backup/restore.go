@@ -21,23 +21,14 @@ type RestoreOptions struct {
 }
 
 func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
-	manifestPath := filepath.Join(backupPath, "manifest.json")
-	data, err := os.ReadFile(manifestPath)
+	manifest, err := ReadManifest(backupPath)
 	if err != nil {
 		return fmt.Errorf("reading manifest: %w", err)
 	}
 
-	var manifest Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("parsing manifest: %w", err)
-	}
-
 	// Verify backup integrity before restoring
 	ui.Info("Verifying backup integrity before restore...")
-	results, err := VerifyBackup(backupPath)
-	if err != nil {
-		return fmt.Errorf("pre-restore verification failed: %w", err)
-	}
+	results := verifyManifest(backupPath, manifest)
 	if HasFailures(results) {
 		total, ok, failed, missing := CountResults(results)
 		for _, r := range results {
@@ -96,11 +87,6 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 			if comp.Type != "config" {
 				continue
 			}
-			// Validate paths to prevent path traversal
-			if strings.Contains(comp.Path, "..") || strings.Contains(comp.Name, "..") {
-				ui.Warn("Skipping suspicious path: %s", comp.Path)
-				continue
-			}
 			src := filepath.Join(backupPath, comp.Path)
 			dst := filepath.Join(projectPath, comp.Name)
 
@@ -127,10 +113,6 @@ func RestoreBackup(backupPath, projectPath string, opts RestoreOptions) error {
 		volCount := 0
 		for _, comp := range manifest.Components {
 			if comp.Type != "volume" {
-				continue
-			}
-			if strings.Contains(comp.Path, "..") || strings.Contains(comp.Name, "..") {
-				ui.Warn("Skipping suspicious path: %s", comp.Path)
 				continue
 			}
 			archivePath := filepath.Join(backupPath, comp.Path)
@@ -351,13 +333,21 @@ func extractNamedVolumeName(name string) string {
 }
 
 func ReadManifest(backupPath string) (*Manifest, error) {
-	data, err := os.ReadFile(filepath.Join(backupPath, "manifest.json"))
+	root, err := os.OpenRoot(backupPath)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	if err := checkPath(root, "manifest.json", false, false); err != nil {
+		return nil, err
+	}
+	data, err := root.ReadFile("manifest.json")
 	if err != nil {
 		return nil, err
 	}
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing manifest: %w", err)
 	}
 	return &m, nil
 }
