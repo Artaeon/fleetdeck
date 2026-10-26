@@ -56,6 +56,7 @@ func TestHandleHealthzUnhealthy(t *testing.T) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 
 	// Close the database to make Ping fail.
 	database.Close()
@@ -78,6 +79,7 @@ func TestHandleHealthzUnhealthy(t *testing.T) {
 }
 
 // TestHandleHealthzNoAuth verifies healthz does NOT require authentication.
+
 func TestHandleHealthzNoAuth(t *testing.T) {
 	srv, _ := setupAuthTestServer(t)
 
@@ -378,6 +380,7 @@ func TestCreateProjectSuccess(t *testing.T) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 
 	body := `{"name":"my-new-app","domain":"new.example.com","template":"custom"}`
 	req := httptest.NewRequest("POST", "/api/projects", strings.NewReader(body))
@@ -435,6 +438,7 @@ func TestCreateProjectDefaultTemplate(t *testing.T) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 
 	// No template specified - should default to "custom".
 	body := `{"name":"default-tmpl","domain":"dt.io"}`
@@ -467,6 +471,7 @@ func TestCreateProjectDuplicateName(t *testing.T) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, ":0")
+	authenticateHandlerTests(srv)
 
 	// Create first project.
 	body := `{"name":"dup-test","domain":"dup.io"}`
@@ -1303,7 +1308,7 @@ func TestValidUUIDRegex(t *testing.T) {
 		"not-a-uuid",
 		"12345678-abcd-ef01-2345",
 		"12345678-ABCD-EF01-2345-6789ABCDEF01", // uppercase
-		"12345678abcdef0123456789abcdef01",       // no dashes
+		"12345678abcdef0123456789abcdef01",     // no dashes
 	}
 	for _, id := range invalid {
 		if validUUID.MatchString(id) {
@@ -1329,6 +1334,7 @@ func TestServerShutdown(t *testing.T) {
 	cfg.Server.BasePath = dir
 
 	srv := New(cfg, database, "127.0.0.1:0")
+	authenticateHandlerTests(srv)
 
 	// Start in background, then shut down.
 	go srv.Start()
@@ -1370,7 +1376,7 @@ func TestHandleLoginGETContentType(t *testing.T) {
 
 func TestLoginSubmitNoAPITokenConfigured(t *testing.T) {
 	srv, _ := setupTestServer(t)
-	// setupTestServer has no APIToken set.
+	srv.apiToken = ""
 
 	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=anything"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

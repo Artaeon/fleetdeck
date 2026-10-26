@@ -388,8 +388,16 @@ Configure the rclone remote once with `rclone config` on the server. With `auto_
 ## Web Dashboard & API
 
 ```bash
-fleetdeck dashboard --addr :8420
+# Supply a random token from your password manager or environment.
+# At least 32 printable ASCII characters, without whitespace.
+fleetdeck dashboard
 ```
+
+The dashboard binds to `127.0.0.1:8420` by default and refuses to start without
+`FLEETDECK_API_TOKEN` (or `[server] api_token`). For remote browser access, keep
+this listener private behind an HTTPS reverse proxy with restricted access.
+Using `--addr` to expose another interface is an explicit operator choice;
+authentication remains required. HTTP API clients may use an SSH tunnel.
 
 Browser-based project management: real-time server stats, project grid, start/stop/restart controls, live log viewer, backup browser, deployment history, and GitHub webhook integration.
 

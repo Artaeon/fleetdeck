@@ -72,3 +72,13 @@ Existing installations are not changed by a binary upgrade: remove the old
 `routers.dashboard` labels and disable the API in the operator-owned Traefik
 Compose file, then recreate only the proxy during a planned maintenance window.
 Review custom proxy configuration before applying this migration.
+
+## Dashboard access
+
+The dashboard listens on loopback by default. A random API token of at least
+32 printable ASCII characters is required before opening the listener; an
+unconfigured authentication middleware also rejects protected requests.
+Use a password manager to generate and store the token, and supply it through
+`FLEETDECK_API_TOKEN` or a protected operator configuration outside the repository.
+An explicit non-loopback `--addr` still requires authentication. Keep remote
+access behind HTTPS and restrict the network path to the reverse proxy.
