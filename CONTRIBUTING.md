@@ -53,7 +53,7 @@ All applicable checks must pass before submitting a PR.
 2. Write tests for new functionality (aim for >80% coverage on new code)
 3. Run `make test-race` and ensure all tests pass
 4. Run `go vet ./...` with no warnings
-5. Run `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` and resolve
+5. Run `go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` and resolve
    every reachable finding
 6. Submit a PR with a clear description of what and why
 
