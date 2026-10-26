@@ -64,7 +64,9 @@ probe() {
 import socket, sys
 address, port, expected = sys.argv[1:]
 try:
-    with socket.create_connection((address, int(port)), timeout=1) as s:
+    # Allow fresh IPv6 neighbour discovery to finish on a loaded CI runner.
+    # Denial probes still fail immediately if a forbidden connection succeeds.
+    with socket.create_connection((address, int(port)), timeout=3) as s:
         s.sendall(b'GET / HTTP/1.0\r\n\r\n')
         ok = s.recv(16).startswith(b'HTTP/')
 except OSError:
@@ -74,10 +76,19 @@ if ok != (expected == 'allow'):
 print(f'PASS {address}:{port} {expected}')
 PY
 }
-# Bounded readiness check before enforcing rules; verify the forbidden port was reachable.
-i=0
-until probe outside 192.0.2.1 18080 allow >/dev/null 2>&1; do
-    i=$((i+1)); [ "$i" -lt 20 ] || exit 1; sleep 0.1
+# Prove both address families work before enforcing rules. An IPv4-only
+# readiness check can leave the first IPv6 assertion racing neighbour discovery.
+for address in 192.0.2.1 2001:db8:1::1; do
+    i=0
+    until probe outside "$address" 18080 allow >/dev/null 2>&1; do
+        i=$((i+1))
+        if [ "$i" -ge 10 ]; then
+            echo "Firewall fixture not ready: $address" >&2
+            ip -6 neigh show >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
 done
 nft -f "$ROOT/internal/bootstrap/docker-firewall.nft"
 nft -f "$ROOT/internal/bootstrap/docker-firewall.nft" # repeat must remain idempotent
