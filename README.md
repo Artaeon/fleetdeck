@@ -388,8 +388,10 @@ Configure the rclone remote once with `rclone config` on the server. With `auto_
 ## Web Dashboard & API
 
 ```bash
-# Supply a random token from your password manager or environment.
-# At least 32 printable ASCII characters, without whitespace.
+# Generate a random token in your password manager (at least 32 characters).
+# Paste it at this hidden prompt; it is not written to shell history.
+read -r -s -p "Dashboard token: " FLEETDECK_API_TOKEN
+export FLEETDECK_API_TOKEN
 fleetdeck dashboard
 ```
 
@@ -397,7 +399,18 @@ The dashboard binds to `127.0.0.1:8420` by default and refuses to start without
 `FLEETDECK_API_TOKEN` (or `[server] api_token`). For remote browser access, keep
 this listener private behind an HTTPS reverse proxy with restricted access.
 Using `--addr` to expose another interface is an explicit operator choice;
-authentication remains required. HTTP API clients may use an SSH tunnel.
+authentication remains required. For a simple private connection, run this on
+your workstation while the dashboard runs on the server:
+
+```bash
+ssh -N -L 8420:127.0.0.1:8420 deploy@example.com
+```
+
+Open `http://127.0.0.1:8420` locally and sign in with the same token. Direct
+loopback access supports browser sessions; remote access requires HTTPS. A
+trusted reverse proxy must preserve Host, overwrite forwarded headers, and set
+`X-Forwarded-Proto: https`; list its immediate IP in
+`FLEETDECK_TRUST_PROXY_IPS`.
 
 Browser-based project management: real-time server stats, project grid, start/stop/restart controls, live log viewer, backup browser, deployment history, and GitHub webhook integration.
 
@@ -732,7 +745,7 @@ Don't skip items. Each one has saved someone's weekend at least once.
 base_path = "/opt/fleetdeck"
 domain = "fleet.yourdomain.com"
 encryption_key = "your-strong-passphrase"
-api_token = "dashboard-auth-token"
+api_token = ""                     # Supply FLEETDECK_API_TOKEN before starting the dashboard
 webhook_secret = "github-webhook-secret"
 
 [traefik]
