@@ -1,10 +1,9 @@
 package backup
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -43,13 +42,11 @@ func TestNamedVolumeUsesResolvedNameAndDeduplicates(t *testing.T) {
 	if err := archiveDirectory(t.TempDir(), fixture); err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte("example_data"))
-	output := filepath.Join(backup, "volumes", fmt.Sprintf("namedvol_%x.tar.gz", digest[:]))
 	calls := filepath.Join(t.TempDir(), "calls")
 	fakeVolumeModel(t, namedVolumeModel(), `if [ "$1 $2" = 'volume inspect' ]; then test "$3" = example_data; exit $?; fi
 if [ "$1" = run ]; then
  echo run >> `+shellQuote(calls)+`
- cp `+shellQuote(fixture, output)+`
+ cat `+shellQuote(fixture)+`
  exit $?
 fi
 exit 99
@@ -119,5 +116,26 @@ func TestDatabaseDetectionAcceptsLongMountSyntax(t *testing.T) {
 	os.WriteFile(filepath.Join(project, "compose.yaml"), []byte("services:\n  app:\n    image: example/app\n    volumes:\n      - type: bind\n        source: ./data\n        target: /data\n"), 0600)
 	if _, err := BackupDatabases(project, t.TempDir()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVolumeArchiveFailureRemovesPartialFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "partial.tar.gz")
+	if err := writeVolumeArchive(exec.Command("sh", "-c", "printf partial; exit 1"), path); err == nil {
+		t.Fatal("partial archive accepted")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("partial archive remains")
+	}
+}
+
+func TestVolumeArchiveIsPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.tar.gz")
+	if err := archiveDirectory(t.TempDir(), path); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("archive is not private: %v %v", info, err)
 	}
 }

@@ -76,8 +76,12 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 				}
 				digest := sha256.Sum256([]byte(volume.Name))
 				archiveName = fmt.Sprintf("namedvol_%x.tar.gz", digest[:])
-				cmd := exec.Command("docker", "run", "--rm", "-v", volume.Name+":/data:ro", "-v", volDir+":/backup", "alpine", "tar", "czf", "/backup/"+archiveName, "-C", "/data", ".")
-				if _, err := cmd.CombinedOutput(); err != nil {
+				cmd := exec.Command("docker", "run", "--rm", "--network", "none", "--read-only",
+					"--cap-drop=ALL", "--cap-add=DAC_OVERRIDE", "--security-opt=no-new-privileges:true",
+					"--pids-limit=32", "--memory=128m",
+					"--mount", "type=volume,src="+volume.Name+",dst=/data,readonly",
+					"alpine", "tar", "czf", "-", "-C", "/data", ".")
+				if err := writeVolumeArchive(cmd, filepath.Join(volDir, archiveName)); err != nil {
 					return nil, fmt.Errorf("archiving volume %s: %w", volume.Name, err)
 				}
 				component = ComponentInfo{Type: "volume", Name: volume.Name + " (named volume)"}
@@ -98,11 +102,33 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 }
 
 func archiveDirectory(srcDir, archivePath string) error {
-	cmd := exec.Command("tar", "czf", archivePath, "-C", filepath.Dir(srcDir), filepath.Base(srcDir))
+	cmd := exec.Command("tar", "czf", "-", "-C", filepath.Dir(srcDir), filepath.Base(srcDir))
 	cmd.Env = append(os.Environ(), "COPYFILE_DISABLE=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tar: %s: %w", strings.TrimSpace(string(out)), err)
+	return writeVolumeArchive(cmd, archivePath)
+}
+
+// Stream to a private file on the client. The helper container only receives a
+// read-only data mount, never a writable host backup directory.
+func writeVolumeArchive(cmd *exec.Cmd, path string) error {
+	output, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
 	}
+	complete := false
+	defer func() {
+		output.Close()
+		if !complete {
+			_ = os.Remove(path)
+		}
+	}()
+	cmd.Stdout = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("archive command failed: %w", err)
+	}
+	if err := output.Close(); err != nil {
+		return err
+	}
+	complete = true
 	return nil
 }
 
