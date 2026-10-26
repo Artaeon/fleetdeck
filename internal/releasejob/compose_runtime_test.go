@@ -150,11 +150,7 @@ func composeRuntimeHarness(t *testing.T) (*ComposeRuntime, Request, *commandRunn
 
 func testReleasePreflightRuntime(t *testing.T) releasePreflightRuntime {
 	t.Helper()
-	parent := t.TempDir()
-	resolvedParent, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resolvedParent := resolvedTemporaryDirectory(t)
 	return releasePreflightRuntime{
 		directory: filepath.Join(resolvedParent, "release-preflight"),
 		ownerUID:  uint32(os.Geteuid()),
