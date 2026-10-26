@@ -1719,3 +1719,23 @@ func TestBackupVolumesExcludesReadOnlyDependencies(t *testing.T) {
 		t.Fatalf("read-only dependencies were archived: %v", components)
 	}
 }
+
+func TestRestoredConfigurationIsPrivate(t *testing.T) {
+	source, destination := filepath.Join(t.TempDir(), "source"), filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(source, []byte("TEST_SETTING=fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := copyFileWithChecksum(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("restored configuration permissions: %o", info.Mode().Perm())
+	}
+}

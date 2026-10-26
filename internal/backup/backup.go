@@ -165,11 +165,14 @@ func copyFileWithChecksum(src, dst string) (int64, string, error) {
 		return 0, "", err
 	}
 
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return 0, "", err
 	}
 	defer out.Close()
+	if err := out.Chmod(0600); err != nil {
+		return 0, "", err
+	}
 
 	hasher := sha256.New()
 	writer := io.MultiWriter(out, hasher)
@@ -178,6 +181,9 @@ func copyFileWithChecksum(src, dst string) (int64, string, error) {
 		return 0, "", err
 	}
 
+	if err := out.Close(); err != nil {
+		return 0, "", err
+	}
 	return size, hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
