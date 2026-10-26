@@ -88,7 +88,7 @@ func runRollback(cmd *cobra.Command, args []string) error {
 		ui.Info("Creating pre-rollback snapshot of %s...", ui.Bold(p.Name))
 		snapRecord, err := backup.CreateBackup(cfg, d, p, "snapshot", "pre-rollback", backup.Options{})
 		if err != nil {
-			ui.Warn("Could not create pre-rollback snapshot: %v", err)
+			return fmt.Errorf("creating pre-rollback snapshot: %w; restore aborted", err)
 		} else {
 			ui.Success("Pre-rollback snapshot created: %s", snapRecord.ID[:minInt(12, len(snapRecord.ID))])
 			fmt.Println()
