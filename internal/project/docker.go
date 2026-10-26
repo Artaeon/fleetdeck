@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"os/exec"
 	"strings"
 )
@@ -14,6 +15,9 @@ type ContainerStatus struct {
 }
 
 func ComposeUp(projectPath string) error {
+	if err := edge.Prepare(projectPath, "", edge.LocalRunner{}); err != nil {
+		return err
+	}
 	cmd := exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = projectPath
 	if out, err := cmd.CombinedOutput(); err != nil {

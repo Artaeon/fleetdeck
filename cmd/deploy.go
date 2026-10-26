@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"os"
 	"path/filepath"
 	"strings"
@@ -349,8 +350,8 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	insecure, _ := cmd.Flags().GetBool("insecure")
 	ui.Step(2, 5, "Connecting to %s@%s...", user, host)
 	var (
-		client   *remote.Client
-		connErr  error
+		client  *remote.Client
+		connErr error
 	)
 	var passphraseBytes []byte
 	if passphrase != "" {
@@ -412,6 +413,10 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 
 	// Step 4: Build and deploy
 	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
+
+	if err := edge.Prepare(dir, "", client); err != nil {
+		return fmt.Errorf("preparing project network: %w", err)
+	}
 
 	// Fresh deploy: tear down existing containers and volumes
 	if fresh {

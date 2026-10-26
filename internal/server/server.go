@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"log"
 	"net/http"
 	"os"
@@ -716,6 +717,11 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if err := edge.Prepare(p.ProjectPath, "", edge.LocalRunner{Context: r.Context()}); err != nil {
+		log.Printf("edge preparation failed for %s: %v", name, err)
+		writeError(w, http.StatusInternalServerError, "failed to prepare project network")
+		return
+	}
 	cmd := exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = p.ProjectPath
 	if out, err := cmd.CombinedOutput(); err != nil {
