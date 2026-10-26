@@ -35,11 +35,12 @@ restricted deployment; this is not yet an automatically installed monitoring sta
 
 [Authelia](https://www.authelia.com/overview/authentication/security-key/) supports
 security keys/passkeys and documents integration with reverse proxies such as
-[Caddy](https://www.authelia.com/integration/proxies/caddy/). It is a candidate for
-browser MFA rather than implementing another identity system inside FleetDeck.
-A FleetDeck-specific setup still needs enforced policies, protected direct
-access, recovery, session expiry and automation-route tests. It is not integrated
-or enabled by the device-certificate feature alone.
+[Caddy](https://www.authelia.com/integration/proxies/caddy/). FleetDeck uses it for
+browser MFA and delegates identity enrollment and recovery to the provider.
+FleetDeck now implements [OIDC login with required factors and an admin group](AUTHELIA.md),
+private client setup generation and bypass tests. Deploying/maintaining the
+identity provider, enrolling real keys and testing recovery remain operator
+responsibilities; device certificates alone do not enable OIDC login.
 
 The dashboard currently shows the local FleetDeck instance and a registered
 server list with connectivity checks. It is not yet a complete authenticated

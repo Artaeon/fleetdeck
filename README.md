@@ -413,8 +413,10 @@ trusted reverse proxy must preserve Host, overwrite forwarded headers, and set
 `FLEETDECK_TRUST_PROXY_IPS`.
 
 See [admin access and monitoring](docs/ADMIN_ACCESS.md) for device certificates,
-revocation and a separate read-only Prometheus credential. Native passkey/MFA
-enrollment and a complete multi-server control panel are not implemented; see the
+revocation and a separate read-only Prometheus credential. For browser MFA, use
+the [Authelia integration](docs/AUTHELIA.md), which verifies factors and admin
+membership and disables token-login bypasses. Enrollment/recovery belong to
+Authelia; a complete multi-server control panel is not implemented. See the
 [current application and integration coverage](docs/APPLICATION_COVERAGE.md).
 
 Browser-based project management: real-time server stats, project grid, start/stop/restart controls, live log viewer, backup browser, deployment history, and GitHub webhook integration.
