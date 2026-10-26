@@ -351,8 +351,8 @@ func TestImportStateRejectsCorruptDB(t *testing.T) {
 	manifest := StateManifest{
 		ExportTimestamp:  "2025-06-01T00:00:00Z",
 		FleetDeckVersion: "1.0.0",
-		ProjectCount:    0,
-		BackupCount:     0,
+		ProjectCount:     0,
+		BackupCount:      0,
 	}
 	manifestData, _ := json.Marshal(manifest)
 
@@ -757,8 +757,8 @@ func TestReadStateManifestValidArchive(t *testing.T) {
 	manifest := StateManifest{
 		ExportTimestamp:  "2025-12-25T12:00:00Z",
 		FleetDeckVersion: "3.0.0",
-		ProjectCount:    5,
-		BackupCount:     3,
+		ProjectCount:     5,
+		BackupCount:      3,
 	}
 	manifestData, _ := json.MarshalIndent(manifest, "", "  ")
 
@@ -813,5 +813,28 @@ func TestExportStateAlwaysIncludesConfig(t *testing.T) {
 	configData := readTarGzFile(t, outputPath, "config.toml")
 	if len(configData) == 0 {
 		t.Error("config.toml in archive should not be empty")
+	}
+}
+
+func TestExportUsesCallerConfigurationAndPrivatePermissions(t *testing.T) {
+	cfg, database, baseDir := setupCoverageEnv(t)
+	cfg.Server.Domain = "custom-installation.example.invalid"
+	output := filepath.Join(baseDir, "custom.tar.gz")
+	if err := os.WriteFile(output, []byte("old export"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExportState(cfg, database, output, "test"); err != nil {
+		t.Fatal(err)
+	}
+	data := readTarGzFile(t, output, "config.toml")
+	if !strings.Contains(string(data), cfg.Server.Domain) {
+		t.Fatal("export did not include the supplied configuration")
+	}
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("export permissions %o", info.Mode().Perm())
 	}
 }
