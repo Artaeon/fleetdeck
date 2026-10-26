@@ -30,8 +30,9 @@ sudo fleetdeck server firewall --docker-only
 The guard owns only the `inet fleetdeck` nftables table. An atomic ruleset load
 filters IPv4 and IPv6 forwarding before Docker's default filter chains. It allows
 established/related traffic, standard Docker bridge egress, and new external TCP
-connections whose original published host port is 80 or 443. Other forwarded
-connections, including direct routing into containers, are dropped. Matching the
+connections whose original published host port is 80 or 443. Other externally forwarded connections, including direct routing into containers,
+are dropped. Private published ports are also blocked when another container
+tries to reach them through a host address. Matching the
 original port prevents `18080:80` from being mistaken for public HTTP.
 
 This forwarding policy is for a dedicated Docker VPS with `docker0` and `br-*`
@@ -41,7 +42,8 @@ by the host firewall instead. UDP/HTTP3 and other publicly forwarded services
 need an explicit operator policy. Existing established connections are preserved.
 
 `fleetdeck-firewall.service` persists the guard across reboots. A Docker service
-drop-in requires it before Docker starts. Rules stay loaded when the oneshot
+drop-in requires it before Docker starts; the guard loads after UFW and the
+standard nftables service. Rules stay loaded when the oneshot
 service stops. Docker restarts do not replace this independent table. The guard
 must be reviewed and retested when changing Docker's firewall backend or global
 firewall management; never run a global `nft flush ruleset` on a live Docker host.
