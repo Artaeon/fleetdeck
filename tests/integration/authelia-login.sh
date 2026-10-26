@@ -22,6 +22,8 @@ cleanup() {
 trap cleanup EXIT
 umask 077
 mkdir -p "$base/projects" "$base/data"
+# Authelia updates this image-provided healthcheck file at startup.
+touch "$base/healthcheck.env"
 cp "$binary" "$base/fleetdeck"
 cp "$source_dir/authelia-login.mjs" "$base/test.mjs"
 "$binary" dashboard setup-authelia --issuer https://auth.example.test:8443 \
@@ -108,7 +110,7 @@ docker run --rm --network none -v "$base:/work:ro" -v "$base/data:/data" \
   "$authelia" authelia config validate --config /work/authelia.yml --config /work/setup/authelia-client.yml
 docker run -d --name "$name-auth" --network "container:$name-browser" --read-only \
   --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=128 --memory=256m --tmpfs /tmp:rw,noexec,nosuid,size=32m \
-  -v "$base:/work:ro" -v "$base/data:/data" "$authelia" \
+  -v "$base:/work:ro" -v "$base/data:/data" -v "$base/healthcheck.env:/app/.healthcheck.env" "$authelia" \
   authelia --config /work/authelia.yml --config /work/setup/authelia-client.yml >/dev/null
 docker run -d --name "$name-proxy" --network "container:$name-browser" --read-only \
   --cap-drop=ALL --security-opt=no-new-privileges:true --cap-add=NET_BIND_SERVICE --pids-limit=64 --memory=128m \
