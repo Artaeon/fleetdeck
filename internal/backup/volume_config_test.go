@@ -39,7 +39,11 @@ func namedVolumeModel() map[string]any {
 func TestNamedVolumeUsesResolvedNameAndDeduplicates(t *testing.T) {
 	project, backup := t.TempDir(), t.TempDir()
 	fixture := filepath.Join(t.TempDir(), "archive.tar.gz")
-	if err := archiveDirectory(t.TempDir(), fixture); err != nil {
+	raw, err := exec.Command("tar", "cf", "-", "-C", t.TempDir(), ".").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(t.TempDir(), "calls")
