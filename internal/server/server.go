@@ -418,8 +418,19 @@ func (s *Server) Start() error {
 	if err := ValidateAPIToken(s.apiToken); err != nil {
 		return err
 	}
+	if s.server.TLSConfig == nil {
+		if err := s.ConfigureListener(ListenerOptions{}); err != nil {
+			return err
+		}
+	}
 	log.Printf("FleetDeck dashboard starting on %s", s.server.Addr)
-	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	var err error
+	if s.server.TLSConfig != nil {
+		err = s.server.ListenAndServeTLS("", "")
+	} else {
+		err = s.server.ListenAndServe()
+	}
+	if err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
