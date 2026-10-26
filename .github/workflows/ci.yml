@@ -110,6 +110,7 @@ jobs:
       - name: Verify project accounts and CLI proxy routes
         run: |
           go build -o /tmp/fleetdeck-cli-integration .
+          env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/dashboard-device-auth.sh
           sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/cli-isolation.sh
           sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/backup-restore.sh
           sudo env FLEETDECK_BINARY=/tmp/fleetdeck-cli-integration tests/integration/database-backup.sh
