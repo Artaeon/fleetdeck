@@ -324,7 +324,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Check session cookie
-		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+		if cookie, err := r.Cookie(s.sessionCookieName()); err == nil {
 			if s.sessions.validSession(cookie.Value, requestDevice(r), s.cfg.Server.OIDC.Enabled) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
@@ -352,7 +352,7 @@ func (s *Server) requirePageAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+		if cookie, err := r.Cookie(s.sessionCookieName()); err == nil {
 			if s.sessions.validSession(cookie.Value, requestDevice(r), s.cfg.Server.OIDC.Enabled) {
 				if !safeCookieRequest(r) {
 					writeError(w, http.StatusForbidden, "invalid browser request origin or transport")
@@ -425,11 +425,11 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie("fleetdeck_session"); err == nil {
+	if cookie, err := r.Cookie(s.sessionCookieName()); err == nil {
 		s.sessions.revoke(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "fleetdeck_session", Value: "", Path: "/",
+		Name: s.sessionCookieName(), Value: "", Path: "/",
 		HttpOnly: true, Secure: !directLoopback(r) || requestHTTPS(r), SameSite: http.SameSiteStrictMode,
 		MaxAge: -1,
 	})
