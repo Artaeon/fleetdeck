@@ -143,11 +143,11 @@ func TestOIDCVerifiedLoginAndNoTokenBypass(t *testing.T) {
 	}
 	var session *http.Cookie
 	for _, c := range w.Result().Cookies() {
-		if c.Name == "fleetdeck_session" {
+		if c.Name == "__Host-fleetdeck_session" {
 			session = c
 		}
 	}
-	if session == nil || session.MaxAge > 120 || !session.Secure {
+	if session == nil || session.MaxAge > 120 || !session.Secure || session.Domain != "" || session.SameSite != http.SameSiteLaxMode {
 		t.Fatal("session missing or longer than ID token")
 	}
 	for _, tc := range []struct {
@@ -182,7 +182,7 @@ func TestOIDCVerifiedLoginAndNoTokenBypass(t *testing.T) {
 	}
 	legacy, _ := f.server.sessions.create()
 	r := httptest.NewRequest("GET", "https://admin.example.invalid/api/projects", nil)
-	r.AddCookie(&http.Cookie{Name: "fleetdeck_session", Value: legacy})
+	r.AddCookie(&http.Cookie{Name: f.server.sessionCookieName(), Value: legacy})
 	out := httptest.NewRecorder()
 	f.server.server.Handler.ServeHTTP(out, r)
 	if out.Code != 401 {
@@ -234,7 +234,7 @@ func TestOIDCRejectsInvalidIdentityProofs(t *testing.T) {
 				t.Fatalf("accepted invalid proof: %d", w.Code)
 			}
 			for _, c := range w.Result().Cookies() {
-				if c.Name == "fleetdeck_session" {
+				if c.Name == "__Host-fleetdeck_session" {
 					t.Fatal("issued session for invalid proof")
 				}
 			}

@@ -212,11 +212,21 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unable to create session")
 		return
 	}
-	if old, err := r.Cookie("fleetdeck_session"); err == nil {
+	if old, err := r.Cookie(s.sessionCookieName()); err == nil {
 		s.sessions.revoke(old.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: "fleetdeck_session", Value: session, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(time.Until(expires).Seconds())})
+	// Lax permits the OIDC top-level GET redirect across sites; unsafe requests
+	// still require the existing exact Origin check. The host prefix prevents
+	// sibling subdomains from injecting a Domain cookie with this name.
+	http.SetCookie(w, &http.Cookie{Name: s.sessionCookieName(), Value: session, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: int(time.Until(expires).Seconds())})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) sessionCookieName() string {
+	if s.cfg.Server.OIDC.Enabled {
+		return "__Host-fleetdeck_session"
+	}
+	return "fleetdeck_session"
 }
 
 func allowedAMR(amr []string, method string) bool {
