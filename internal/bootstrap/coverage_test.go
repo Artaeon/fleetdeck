@@ -125,47 +125,6 @@ func TestBootstrapSwapFailureNonFatal(t *testing.T) {
 	}
 }
 
-// TestBootstrapFirewallFailureNonFatal verifies that a firewall configuration
-// failure is non-fatal, Bootstrap continues, and FirewallConfigured=false.
-func TestBootstrapFirewallFailureNonFatal(t *testing.T) {
-	runner := newMockRunner()
-	runner.failOn["ufw"] = fmt.Errorf("ufw: command not found")
-
-	cfg := Config{
-		Host:   "10.0.0.1",
-		Domain: "example.com",
-		Email:  "admin@example.com",
-	}
-
-	result, err := Bootstrap(cfg, runner)
-	if err != nil {
-		t.Fatalf("expected Bootstrap to succeed despite firewall failure, got: %v", err)
-	}
-
-	if result.FirewallConfigured {
-		t.Error("expected FirewallConfigured=false when firewall fails")
-	}
-	if !result.DockerInstalled {
-		t.Error("expected DockerInstalled=true despite firewall failure")
-	}
-	if !result.TraefikConfigured {
-		t.Error("expected TraefikConfigured=true despite firewall failure")
-	}
-
-	foundFirewallError := false
-	for _, e := range result.Errors {
-		if strings.Contains(e, "firewall") {
-			foundFirewallError = true
-			break
-		}
-	}
-	if !foundFirewallError {
-		t.Errorf("expected firewall-related error in Result.Errors, got: %v", result.Errors)
-	}
-}
-
-// TestBootstrapDefaultNetwork verifies that when TraefikNetwork is empty,
-// the default "traefik" network name is used.
 func TestBootstrapDefaultNetwork(t *testing.T) {
 	runner := newMockRunner()
 
@@ -312,8 +271,8 @@ func TestBootstrapErrorsContainContext(t *testing.T) {
 	}
 
 	result, err := Bootstrap(cfg, runner)
-	if err != nil {
-		t.Fatalf("unexpected fatal error: %v", err)
+	if err == nil {
+		t.Fatal("expected fatal firewall error")
 	}
 
 	// Each recorded error should contain the step name as a prefix for context.

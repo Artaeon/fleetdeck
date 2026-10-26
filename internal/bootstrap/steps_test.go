@@ -467,7 +467,7 @@ func TestVerifyDockerComposeFailure(t *testing.T) {
 func TestConfigureFirewall(t *testing.T) {
 	runner := newMockRunner()
 
-	err := configureFirewall(runner)
+	err := configureFirewall(runner, "22")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestConfigureFirewallInstallFailure(t *testing.T) {
 	runner := newMockRunner()
 	runner.failOn["apt-get install"] = fmt.Errorf("E: Unable to locate package ufw")
 
-	err := configureFirewall(runner)
+	err := configureFirewall(runner, "22")
 	if err == nil {
 		t.Fatal("expected error when UFW installation fails")
 	}
@@ -542,7 +542,7 @@ func TestConfigureFirewallRuleFailure(t *testing.T) {
 	runner := newMockRunner()
 	runner.failOn["ufw allow 80/tcp"] = fmt.Errorf("ufw: error applying rule")
 
-	err := configureFirewall(runner)
+	err := configureFirewall(runner, "22")
 	if err == nil {
 		t.Fatal("expected error when firewall rule fails")
 	}
@@ -552,7 +552,7 @@ func TestConfigureFirewallEnableFailure(t *testing.T) {
 	runner := newMockRunner()
 	runner.failOn["ufw enable"] = fmt.Errorf("ufw: unable to enable")
 
-	err := configureFirewall(runner)
+	err := configureFirewall(runner, "22")
 	if err == nil {
 		t.Fatal("expected error when ufw enable fails")
 	}
@@ -564,7 +564,7 @@ func TestConfigureFirewallEnableFailure(t *testing.T) {
 func TestConfigureFirewallCommandOrder(t *testing.T) {
 	runner := newMockRunner()
 
-	err := configureFirewall(runner)
+	err := configureFirewall(runner, "22")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

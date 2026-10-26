@@ -8,9 +8,9 @@ import (
 
 // mockRunner records all commands run and allows configuring failures.
 type mockRunner struct {
-	commands     []string
-	failOn       map[string]error
-	outputFor    map[string]string
+	commands  []string
+	failOn    map[string]error
+	outputFor map[string]string
 }
 
 func newMockRunner() *mockRunner {
@@ -193,65 +193,40 @@ func TestBootstrapDockerVerifyFailure(t *testing.T) {
 	}
 }
 
-func TestBootstrapNonCriticalFailures(t *testing.T) {
+func TestBootstrapFirewallFailureStopsBeforeProxy(t *testing.T) {
 	runner := newMockRunner()
-
-	// Make swap and firewall fail - these are non-critical.
-	runner.failOn["fallocate"] = fmt.Errorf("not enough disk space")
 	runner.failOn["ufw"] = fmt.Errorf("ufw not available")
-
-	// Make swapon --show return empty so swap setup is attempted.
-	runner.outputFor["swapon --show --noheadings"] = ""
-
-	cfg := Config{
-		Host:       "10.0.0.1",
-		Domain:     "example.com",
-		Email:      "admin@example.com",
-		SwapSizeGB: 4,
+	result, err := Bootstrap(Config{Domain: "example.com", Email: "admin@example.com"}, runner)
+	if err == nil || result.FirewallConfigured || result.TraefikConfigured {
+		t.Fatalf("unsafe success: %+v, %v", result, err)
 	}
-
-	result, err := Bootstrap(cfg, runner)
-
-	if err != nil {
-		t.Fatalf("expected no fatal error for non-critical failures, got: %v", err)
-	}
-
-	// Docker and Traefik should succeed.
-	if !result.DockerInstalled {
-		t.Error("expected DockerInstalled=true")
-	}
-	if !result.TraefikConfigured {
-		t.Error("expected TraefikConfigured=true")
-	}
-
-	// Swap and firewall should have failed.
-	if result.SwapCreated {
-		t.Error("expected SwapCreated=false when swap fails")
-	}
-	if result.FirewallConfigured {
-		t.Error("expected FirewallConfigured=false when firewall fails")
-	}
-
-	// Errors should be recorded for swap and firewall.
-	if len(result.Errors) == 0 {
-		t.Fatal("expected non-empty Errors for swap/firewall failures")
-	}
-
-	foundSwapError := false
-	foundFirewallError := false
-	for _, e := range result.Errors {
-		if strings.Contains(e, "swap") {
-			foundSwapError = true
-		}
-		if strings.Contains(e, "firewall") {
-			foundFirewallError = true
+	for _, command := range runner.commands {
+		if strings.Contains(command, "/opt/traefik") {
+			t.Fatal("proxy configured after firewall failure")
 		}
 	}
-	if !foundSwapError {
-		t.Errorf("expected swap-related error in Errors, got: %v", result.Errors)
+}
+
+func TestBootstrapInvalidPortDoesNotMutateServer(t *testing.T) {
+	for _, port := range []string{"0", "65536", "22; touch /tmp/injected", "-1", "022"} {
+		runner := newMockRunner()
+		if _, err := Bootstrap(Config{Port: port}, runner); err == nil {
+			t.Errorf("accepted %q", port)
+		}
+		if len(runner.commands) != 0 {
+			t.Fatal("mutated server before validating port")
+		}
 	}
-	if !foundFirewallError {
-		t.Errorf("expected firewall-related error in Errors, got: %v", result.Errors)
+}
+
+func TestFirewallPreservesCustomSSHPort(t *testing.T) {
+	runner := newMockRunner()
+	if err := configureFirewall(runner, "2222"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(runner.commands, "\n")
+	if !strings.Contains(joined, "ufw allow 2222/tcp") || strings.Contains(joined, "ufw allow 22/tcp") {
+		t.Fatal(joined)
 	}
 }
 
@@ -522,10 +497,10 @@ func TestBootstrapCommandOrder(t *testing.T) {
 
 	// Verify high-level ordering by finding key commands.
 	phases := map[string]int{
-		"apt-get update":                     -1,
-		"docker version":                     -1,
-		"ufw":                                -1,
-		"mkdir -p /opt/traefik":              -1,
+		"apt-get update":        -1,
+		"docker version":        -1,
+		"ufw":                   -1,
+		"mkdir -p /opt/traefik": -1,
 	}
 
 	for i, cmd := range runner.commands {
