@@ -284,6 +284,9 @@ func startDBContainer(projectPath, componentName string) error {
 }
 
 func restoreDatabase(dumpPath, projectPath, componentName string) error {
+	if !databaseComponentName.MatchString(componentName) {
+		return fmt.Errorf("unsupported database component %q", componentName)
+	}
 	serviceName := strings.Fields(componentName)[0]
 	envVars := loadEnvFile(projectPath)
 
@@ -301,7 +304,7 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 
 		// Use shellQuote to prevent injection from env file values
 		cmd := exec.Command("bash", "-c",
-			"gunzip -c "+shellQuote(dumpPath)+" | docker compose -f "+shellQuote(composePath)+" exec -T "+shellQuote(serviceName)+" psql -U "+shellQuote(user)+" "+shellQuote(dbName))
+			"set -o pipefail; gunzip -c "+shellQuote(dumpPath)+" | docker compose -f "+shellQuote(composePath)+" exec -T "+shellQuote(serviceName)+" psql -X --set=ON_ERROR_STOP=on -U "+shellQuote(user)+" "+shellQuote(dbName))
 		cmd.Dir = projectPath
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("psql restore: %s: %w", strings.TrimSpace(string(out)), err)
@@ -311,6 +314,9 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 		dbName := envVars["MYSQL_DATABASE"]
 		if dbName == "" {
 			dbName = envVars["MYSQL_DB"]
+		}
+		if dbName == "" {
+			return fmt.Errorf("no MySQL database name found")
 		}
 
 		// Pass the password through MYSQL_PWD instead of '-p<password>' on
@@ -323,7 +329,7 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 		mysqlCmd += " " + shellQuote(serviceName) + " mysql -u root " + shellQuote(dbName)
 
 		cmd := exec.Command("bash", "-c",
-			"gunzip -c "+shellQuote(dumpPath)+" | "+mysqlCmd)
+			"set -o pipefail; gunzip -c "+shellQuote(dumpPath)+" | "+mysqlCmd)
 		cmd.Dir = projectPath
 		if password != "" {
 			cmd.Env = append(os.Environ(), "MYSQL_PWD="+password)

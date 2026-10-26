@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,5 +94,47 @@ func TestDatabaseDumpsArePrivate(t *testing.T) {
 		if err != nil || info.Mode().Perm() != 0600 {
 			t.Fatalf("dump not private: %v (%v)", info, err)
 		}
+	}
+}
+
+func TestRestoreRejectsFailedDecompressionEvenWhenClientSucceeds(t *testing.T) {
+	putFakeDockerOnPath(t, "cat >/dev/null\nexit 0\n")
+	for _, engine := range []string{"PostgreSQL", "MySQL"} {
+		t.Run(engine, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, ".env"), []byte("MYSQL_DATABASE=fixture\n"), 0600)
+			archive := filepath.Join(dir, "broken.sql.gz")
+			os.WriteFile(archive, []byte("not gzip"), 0600)
+			if err := restoreDatabase(archive, dir, "db ("+engine+")"); err == nil {
+				t.Fatal("gzip failure was hidden by successful client")
+			}
+		})
+	}
+}
+
+func TestPostgresRestoreDisablesStartupFilesAndStopsOnSQLError(t *testing.T) {
+	// Simulate psql's default success after a SQL error. It returns error 3
+	// only when error-stop is set and a startup file cannot override it.
+	putFakeDockerOnPath(t, `cat >/dev/null
+case " $* " in
+  *" psql -X --set=ON_ERROR_STOP=on "*) exit 3 ;;
+  *) exit 0 ;;
+esac
+`)
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "dump.sql.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	_, _ = gz.Write([]byte("SELECT missing_column;"))
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreDatabase(f.Name(), dir, "db (PostgreSQL)"); err == nil {
+		t.Fatal("SQL error reported as success")
 	}
 }
