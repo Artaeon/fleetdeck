@@ -176,14 +176,7 @@ func TestIPLimiterCleanupStaleEntries(t *testing.T) {
 	}
 	il.mu.Unlock()
 
-	// Simulate what cleanupLoop does (without waiting for ticker).
-	il.mu.Lock()
-	for ip, v := range il.limiters {
-		if time.Since(v.lastSeen) > 3*time.Minute {
-			delete(il.limiters, ip)
-		}
-	}
-	il.mu.Unlock()
+	il.getLimiter("new-ip")
 
 	il.mu.Lock()
 	_, staleExists := il.limiters["stale-ip"]
@@ -220,8 +213,8 @@ func TestClientIPFromXForwardedFor(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
 
 	got := clientIP(r)
-	if got != "203.0.113.50" {
-		t.Errorf("expected 203.0.113.50, got %s", got)
+	if got != "150.172.238.178" {
+		t.Errorf("expected closest untrusted client 150.172.238.178, got %s", got)
 	}
 }
 

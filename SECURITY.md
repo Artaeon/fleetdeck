@@ -96,3 +96,8 @@ headers supplied by clients and preserve the public Host header. Direct loopback
 HTTP (including SSH tunnels) remains available for local use; only that path uses
 a non-Secure session cookie. Browser mutations require a matching Origin header.
 Admin responses are marked `Cache-Control: no-store`.
+
+Login attempts have a separate per-client budget (burst five, then one attempt
+per twelve seconds). Client IPs are resolved from the nearest untrusted hop in
+an explicitly trusted proxy chain. Rate-limit visitor storage is bounded;
+overflow identities share a budget instead of allocating unbounded memory.
