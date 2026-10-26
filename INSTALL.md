@@ -186,6 +186,10 @@ repository's code as privileged host input.
 For existing servers, review [firewall, isolation and migration](docs/SERVER_SECURITY.md)
 before changing deployed networks or removing legacy CI credentials.
 
+If every public site on a host uses Cloudflare, the optional
+[origin firewall](docs/CLOUDFLARE.md) restricts direct web access with a timed
+rollback trial. Verify certificate renewal and long requests before enabling it.
+
 ---
 
 ## Daily Usage
