@@ -1,0 +1,8 @@
+# Non-secret service settings. Store real credentials outside the repository.
+[audit]
+enabled = false
+
+# To add email, load smtp.json with systemd LoadCredential and set its runtime
+# path here, or supply --smtp-config %d/smtp.json in the service ExecStart.
+[monitoring]
+# smtp_config_file = "/run/credentials/fleetdeck-alerts.service/smtp.json"
