@@ -10,7 +10,7 @@ A missing tool, stale package index or failed scan is **unknown**, never healthy
 | Check | Scope |
 | --- | --- |
 | FleetDeck releases | Compare a versioned binary with the repository's latest GitHub release. A development build, unreachable API or unsupported version is unknown. |
-| Host packages | Simulate APT upgrades on Linux. Require a successful index-refresh stamp less than 48 hours old. This is available-package detection, not a complete host CVE audit. |
+| Host packages | Simulate APT upgrades on Linux. Require a successful index-refresh stamp less than 48 hours old. Keep a separate warning while `/var/run/reboot-required` exists, even with no remaining upgrades. This is available-package detection, not a complete host CVE audit. |
 | Running images | Scan each distinct immutable local Docker image ID with Trivy for HIGH/CRITICAL vulnerabilities, including unfixed findings, and end-of-life OS status. |
 | Runtime settings | Report root/default startup user, missing `no-new-privileges`, privileged mode, host namespaces, added capabilities, unconfined settings and Docker socket mounts. |
 
@@ -95,3 +95,9 @@ verified backup and deploy through the protected update workflow. Test readiness
 and recovery. Some images legitimately start as root to initialize volumes;
 blindly forcing a UID can break databases. Untrusted customers need stronger
 separation than shared-kernel containers: see [the server boundary](SERVER_SECURITY.md).
+
+A reported required restart is never performed by the watcher. The marker is a
+distribution-provided signal, not a complete audit of processes using outdated
+libraries; also review the host package manager and `needrestart` output. A missing
+marker does not prove that every process uses patched code. Follow the
+[host maintenance procedure](HOST_MAINTENANCE.md).
