@@ -4,59 +4,46 @@
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Email: **raphael.lugmayr@stoicera.com**
+Use GitHub's [private vulnerability reporting](https://github.com/Artaeon/fleetdeck/security/advisories/new).
+Include the affected FleetDeck commit/version, a minimal reproduction, expected
+and actual behavior, and potential impact. Remove credentials, customer data and
+operator configuration. Maintainer availability varies; no response-time SLA is
+promised. For ordinary bugs, use public issues with sanitized examples.
 
-Include: description, steps to reproduce, potential impact, and suggested fix if any. You will receive a response within 48 hours.
+## Supported versions and security model
 
-## Security Model
+Use a reviewed release or commit and include `fleetdeck version --json` in a
+report. There is no long-term-support branch or promise that an arbitrary source
+build is current. Check [release verification](docs/RELEASE_SECURITY.md) before
+installing an update. A watcher result of **unknown** is not evidence of safety.
 
-FleetDeck implements defense in depth across multiple layers:
+FleetDeck controls Docker and therefore requires a trusted host administrator.
+Project accounts, networks and generated runtime defaults reduce accidental
+cross-project access; shared-kernel containers are not a boundary for hostile
+tenants. Existing Compose files and servers are not hardened retroactively by a
+binary upgrade. See [server security](docs/SERVER_SECURITY.md).
 
-### Authentication & Encryption
-- **API authentication** via bearer tokens; independent, expiring browser sessions
-- **Secret encryption** using AES-256-GCM with PBKDF2-derived keys (100,000 iterations)
-- **Webhook verification** via HMAC-SHA256 signatures
-- **SSH TOFU** -- Trust On First Use host key verification; keys saved to `~/.ssh/known_hosts` on first connect, verified on subsequent connections
+Choose the controls for your installation explicitly:
 
-### Process Isolation
-- **New project accounts** have private groups, 0750 homes, no login shell and no Docker-group membership (`fleetdeck-<name>`)
-- **Generated project networks** separate each project edge and its internal backend
-- **Trusted deployment administrator** controls Docker; new project CI builds without host SSH credentials
-- **Per-project deployment locks** prevent concurrent deploys
+- [SSH access](docs/SSH_ACCESS.md): pin and independently verify the host key,
+  require personal MFA, and keep a tested recovery path. Avoid `--insecure` in
+  routine use; accepting a first-seen key does not establish server identity.
+- [Admin access](docs/ADMIN_ACCESS.md) and [Authelia](docs/AUTHELIA.md): use HTTPS,
+  explicit trusted proxies and the configured OIDC factor policy. A synced
+  passkey is not proof of one physical device. A bearer API token is not MFA.
+- [Protected CI](docs/GITHUB_STAGING.md): use separate scoped deploy credentials
+  and fixed release targets, never a personal administrator key.
+- [Backups and upgrades](docs/PROJECT_DEPLOY.md): preserve private secrets, take
+  backups before updates and test restoration. A local backup is not disaster
+  recovery; application rollback does not undo an incompatible database migration.
+- [Security checks](docs/SECURITY_WATCHER.md): review vulnerabilities, runtime
+  settings and incomplete checks; the watcher does not patch applications.
 
-### Network Security
-- **Traefik TLS termination** with automatic Let's Encrypt certificates
-- **Host firewall** preserves the configured SSH port and existing UFW rules
-- **Docker forwarding guard** filters IPv4/IPv6 published ports independently of UFW
-- **Per-IP rate limiting** on API endpoints (10 req/s, 20 burst)
-- **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
-
-### Input Validation
-- **Shell injection prevention** -- all user input is validated against safe character regexes or shell-quoted before use in commands
-- **Path traversal protection** -- environment names, project names, and file paths are validated against strict patterns
-- **Domain/IP validation** -- DNS commands validate domain format and IP addresses before API calls
-- **Bootstrap input sanitization** -- domain, email, and network names validated before shell execution
-
-### Operational Security
-- **Structured audit logging** for all operations with auto-rotation
-- **Error message sanitization** in API responses (no system details leaked)
-- **Automatic rollback** on failed project creation
-- **Atomic file writes** for monitor state persistence (tmp + rename)
-
-## Supported Versions
-
-| Version | Supported |
-|---------|-----------|
-| Latest  | Yes       |
-
-## Best Practices
-
-1. Set secrets via environment variables (`FLEETDECK_ENCRYPTION_KEY`, etc.), not config files
-2. Use a strong encryption key (32+ characters)
-3. Enable audit logging and review regularly (`fleetdeck audit show`)
-4. Enable scheduled backups (`fleetdeck schedule enable`)
-5. Keep FleetDeck updated (`fleetdeck upgrade`)
-6. Use `--insecure` only for initial server setup -- subsequent connections verify host keys automatically
+Keep secrets in protected files outside Git or a secret manager. Review the
+configuration-specific file ownership requirements in each guide. Never paste
+raw environment files, authentication logs or private backup contents into an
+issue. Security tests provide evidence for their tested paths, not a guarantee
+that all code, inputs or deployments are secure.
 
 ## Public Repository Boundary
 
