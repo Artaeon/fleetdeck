@@ -93,12 +93,8 @@ func TestUseCaseCreateStagingEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading environment .env: %v", err)
 	}
-	if !strings.Contains(string(envData), "APP_DOMAIN="+stagingDomain) {
-		t.Errorf(".env APP_DOMAIN should be %s, got:\n%s", stagingDomain, string(envData))
-	}
-	// Non-domain values should be preserved.
-	if !strings.Contains(string(envData), "DATABASE_URL=postgres://localhost/mydb") {
-		t.Error(".env should preserve DATABASE_URL unchanged")
+	if string(envData) != "DOMAIN="+stagingDomain+"\n" {
+		t.Fatal("source environment configuration was inherited")
 	}
 
 	// Metadata (environment.json) should be persisted and loadable.
@@ -273,21 +269,10 @@ func TestUseCasePromoteStagingToProduction(t *testing.T) {
 		t.Error("production compose should NOT contain staging.app.com")
 	}
 
-	// Verify the .env has the production domain.
-	prodEnvData, err := os.ReadFile(filepath.Join(prodPath, ".env"))
-	if err != nil {
-		t.Fatalf("reading production .env: %v", err)
+	if _, err := os.Stat(filepath.Join(prodPath, ".env")); !os.IsNotExist(err) {
+		t.Fatal("promotion inherited staging secrets")
 	}
-	if !strings.Contains(string(prodEnvData), "production.app.com") {
-		t.Error("production .env should contain production.app.com")
-	}
-	if strings.Contains(string(prodEnvData), "staging.app.com") {
-		t.Error("production .env should NOT contain staging.app.com")
-	}
-	// Non-domain values should be preserved.
-	if !strings.Contains(string(prodEnvData), "DB_URL=postgres://localhost/mydb") {
-		t.Error("production .env should preserve DB_URL")
-	}
+
 }
 
 // TestUseCasePreviewBranch simulates creating a preview environment for a

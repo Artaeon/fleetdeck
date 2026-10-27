@@ -289,46 +289,27 @@ STRIPE_SECRET=whsec_test_secret
 	if !strings.Contains(string(stagingEnv), stagingDomain) {
 		t.Errorf("staging .env should contain staging domain %q", stagingDomain)
 	}
-	// Other values should be preserved.
-	if !strings.Contains(string(stagingEnv), "POSTGRES_USER=billing_user") {
-		t.Error("staging .env should preserve POSTGRES_USER")
+	for _, secret := range []string{"POSTGRES_USER=", "API_KEY=", "POSTGRES_PASSWORD=", "STRIPE_SECRET="} {
+		if strings.Contains(string(stagingEnv), secret) {
+			t.Fatal("inherited production configuration")
+		}
 	}
-	if !strings.Contains(string(stagingEnv), "API_KEY=sk_live_abc123xyz") {
-		t.Error("staging .env should preserve API_KEY")
+	productionPath := mgr.GetEnvPath(projectName, "production")
+	if err := os.MkdirAll(productionPath, 0700); err != nil {
+		t.Fatal(err)
 	}
-
-	// Promote to production.
+	existing := []byte("DATABASE_URL=separate-production-database\n")
+	if err := os.WriteFile(filepath.Join(productionPath, ".env"), existing, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := mgr.Promote(projectName, "staging", "production"); err != nil {
-		t.Fatalf("Promote: %v", err)
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(productionPath, ".env"))
+	if err != nil || string(got) != string(existing) {
+		t.Fatal("promotion changed destination credentials")
 	}
 
-	// Read production .env.
-	prodEnv, err := os.ReadFile(filepath.Join(mgr.GetEnvPath(projectName, "production"), ".env"))
-	if err != nil {
-		t.Fatalf("reading production .env: %v", err)
-	}
-	prodEnvStr := string(prodEnv)
-
-	// Domain should be updated to production.
-	expectedProdDomain := "production.billing.example.com"
-	if !strings.Contains(prodEnvStr, expectedProdDomain) {
-		t.Errorf("production .env should contain domain %q, got:\n%s", expectedProdDomain, prodEnvStr)
-	}
-	// Staging domain should NOT appear.
-	if strings.Contains(prodEnvStr, stagingDomain) {
-		t.Error("production .env should not contain staging domain")
-	}
-
-	// Non-domain values should be preserved.
-	if !strings.Contains(prodEnvStr, "POSTGRES_USER=billing_user") {
-		t.Error("production .env should preserve POSTGRES_USER")
-	}
-	if !strings.Contains(prodEnvStr, "API_KEY=sk_live_abc123xyz") {
-		t.Error("production .env should preserve API_KEY")
-	}
-	if !strings.Contains(prodEnvStr, "STRIPE_SECRET=whsec_test_secret") {
-		t.Error("production .env should preserve STRIPE_SECRET")
-	}
 }
 
 // ---------------------------------------------------------------------------

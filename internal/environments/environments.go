@@ -55,8 +55,11 @@ func NewManager(basePath string) *Manager {
 // project's docker-compose.yml into a dedicated directory, adjusting the
 // domain and environment variables for the target environment.
 func (m *Manager) Create(projectName, envName, domain, branch string) (*Environment, error) {
-	if projectName == "" {
-		return nil, fmt.Errorf("project name must not be empty")
+	if err := validateEnvName(projectName); err != nil {
+		return nil, fmt.Errorf("project name: %w", err)
+	}
+	if !regexp.MustCompile(`^[a-zA-Z0-9.-]+$`).MatchString(domain) {
+		return nil, fmt.Errorf("invalid environment domain")
 	}
 	if err := validateEnvName(envName); err != nil {
 		return nil, err
@@ -93,12 +96,11 @@ func (m *Manager) Create(projectName, envName, domain, branch string) (*Environm
 		return nil, fmt.Errorf("writing environment compose file: %w", err)
 	}
 
-	// Copy .env file if present, adjusting domain references.
-	srcEnv := filepath.Join(projectPath, ".env")
-	if data, err := os.ReadFile(srcEnv); err == nil {
-		envData := adjustEnvFile(string(data), domain)
-		if err := os.WriteFile(filepath.Join(envPath, ".env"), []byte(envData), 0644); err != nil {
-			return nil, fmt.Errorf("writing environment .env file: %w", err)
+	// Only seed the new domain. Credentials and service endpoints must be
+	// supplied independently; copying production values can leak live data.
+	if _, err := os.Stat(filepath.Join(projectPath, ".env")); err == nil {
+		if err := os.WriteFile(filepath.Join(envPath, ".env"), []byte("DOMAIN="+domain+"\n"), 0600); err != nil {
+			return nil, err
 		}
 	}
 
@@ -189,13 +191,8 @@ func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
 		return fmt.Errorf("writing destination compose file: %w", err)
 	}
 
-	// Copy .env if present.
-	if data, err := os.ReadFile(filepath.Join(fromPath, ".env")); err == nil {
-		envData := strings.ReplaceAll(string(data), srcMeta.Domain, toDomain)
-		if err := os.WriteFile(filepath.Join(toPath, ".env"), []byte(envData), 0644); err != nil {
-			return fmt.Errorf("writing destination .env file: %w", err)
-		}
-	}
+	// Destination secrets are operator-owned. Promotion never copies or
+	// overwrites them, including when the destination has no .env yet.
 
 	// Copy docker images by tagging from source to destination project.
 	copyImages(projectName, fromEnv, toEnv)
