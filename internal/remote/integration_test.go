@@ -3,6 +3,8 @@
 package remote
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,5 +145,21 @@ func TestIntegrationSSHUploadDir(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "file b" {
 		t.Errorf("remote subdir/b.txt = %q, want %q", strings.TrimSpace(out), "file b")
+	}
+}
+
+func TestIntegrationSSHInputStream(t *testing.T) {
+	host, port, user, key := sshTestConfig(t)
+	client, err := NewClientTOFU(host, port, user, key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	var out, stderr bytes.Buffer
+	if err = client.RunInput(context.Background(), "cat", strings.NewReader("source-stream-fixture"), &out, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "source-stream-fixture" {
+		t.Fatal("stream did not reach remote command")
 	}
 }
