@@ -16,6 +16,7 @@ import (
 
 type fakeRunner struct {
 	scanFails bool
+	aptOutput *string
 	scanID    string
 	scanJSON  []byte
 	calls     [][]string
@@ -26,6 +27,9 @@ var imageID = "sha256:" + strings.Repeat("a", 64)
 func (r *fakeRunner) Run(ctx context.Context, program string, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, append([]string{program}, args...))
 	if program == "apt-get" {
+		if r.aptOutput != nil {
+			return []byte(*r.aptOutput), nil
+		}
 		return []byte("Inst openssl [old] (new distribution-security)\n"), nil
 	}
 	if program == "docker" && args[0] == "ps" {
@@ -68,6 +72,7 @@ func testChecker(t *testing.T, installed string) (*Checker, *fakeRunner) {
 	checker.API = api.URL
 	checker.HostOS = "linux"
 	checker.IndexStamp = filepath.Join(t.TempDir(), "stamp")
+	checker.RebootMarker = filepath.Join(t.TempDir(), "reboot-required")
 	os.WriteFile(checker.IndexStamp, nil, 0600)
 	return checker, runner
 }
@@ -185,5 +190,49 @@ func TestNotificationsRetryOnlyFailedChannelsAndNeverRecoverOnUnknown(t *testing
 	os.Chmod(path, 0644)
 	if _, err = Load(path); err == nil {
 		t.Fatal("read public state")
+	}
+}
+
+func TestPendingRebootRemainsVisibleAfterPackagesAreCurrent(t *testing.T) {
+	c, runner := testChecker(t, "")
+	empty := "0 upgraded, 0 newly installed, 0 to remove\n"
+	runner.aptOutput = &empty
+	if got := c.host(context.Background()); got.Status != "up_to_date" || got.RebootRequired {
+		t.Fatal(got)
+	}
+	if err := os.WriteFile(c.RebootMarker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := c.host(context.Background())
+	if got.Status != "up_to_date" || !got.RebootRequired || got.Count != 0 {
+		t.Fatal(got)
+	}
+	report := Report{Host: got}
+	_, warnings, unknown := report.Counts()
+	if warnings != 1 || unknown != 0 {
+		t.Fatal(warnings, unknown)
+	}
+	p := &provider{name: "test"}
+	state := State{}
+	if err := Notify(&state, report, "test-server", []monitor.AlertProvider{p}); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.sent) != 1 || p.sent[0].Level != "warning" || !strings.Contains(p.sent[0].Message, "restart") {
+		t.Fatal(p.sent)
+	}
+	// Stale indexes remain unknown without losing the independently known reboot.
+	old := time.Now().Add(-72 * time.Hour)
+	os.Chtimes(c.IndexStamp, old, old)
+	got = c.host(context.Background())
+	if got.Status != "unknown" || !got.RebootRequired {
+		t.Fatal(got)
+	}
+	os.Remove(c.RebootMarker)
+	if err := os.Symlink(c.IndexStamp, c.RebootMarker); err != nil {
+		t.Fatal(err)
+	}
+	got = c.host(context.Background())
+	if got.Status != "unknown" || got.Code != "host_reboot_status_unverified" {
+		t.Fatal(got)
 	}
 }
