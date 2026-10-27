@@ -2,6 +2,7 @@
 # Disposable server-side source deployment and recovery test. No host setup,
 # firewall changes or real project data. Docker bind paths must exist on daemon host.
 set -eu
+umask 077
 : "${FLEETDECK_BINARY:?provide the tested Linux binary}"
 [ "$(id -u)" = 0 ] || exit 1
 base=$(mktemp -d "${FLEETDECK_TEST_ROOT:-/var/tmp}/fleetdeck-source.XXXXXXXX")
@@ -68,6 +69,7 @@ CMD ["sh", "-c", "while :; do sleep 60; done"]
 DOCKERFILE
 printf 'POSTGRES_PASSWORD=test-fixture-only\nSECRET=server-fixture\n' > "$base/source/.env"
 printf 'version-one\n' > "$base/source/release.txt"
+chmod 0644 "$base/source/compose.yaml" "$base/source/Dockerfile" "$base/source/release.txt"
 pack() { tar -C "$base/source" -cf "$base/source.tar" compose.yaml Dockerfile release.txt .env; }
 receive() { fd deploy receive --name "$name" --domain "$name.example.test" --timeout 8m < "$base/source.tar"; }
 pack

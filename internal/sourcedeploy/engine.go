@@ -232,6 +232,9 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 	if err = os.Mkdir(stage, 0755); err != nil {
 		return result, err
 	}
+	if err = os.Chmod(stage, 0755); err != nil {
+		return result, err
+	}
 	files, err := Extract(input, stage)
 	if err != nil {
 		return result, err
@@ -498,8 +501,22 @@ func copyRootFile(from, to *os.Root, name string, mode os.FileMode) error {
 	if mode == 0 {
 		mode = info.Mode().Perm() & 0777
 	}
-	if err = to.MkdirAll(filepath.Dir(name), 0755); err != nil {
-		return err
+	parts := strings.Split(filepath.ToSlash(filepath.Dir(name)), "/")
+	for i := range parts {
+		parent := strings.Join(parts[:i+1], "/")
+		if parent == "." {
+			continue
+		}
+		if _, err = to.Lstat(parent); os.IsNotExist(err) {
+			if err = to.Mkdir(parent, 0755); err != nil {
+				return err
+			}
+			if err = to.Chmod(parent, 0755); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
 	}
 	temp := filepath.Join(filepath.Dir(name), ".fleetdeck-copy-"+filepath.Base(name))
 	out, err := to.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
@@ -507,6 +524,10 @@ func copyRootFile(from, to *os.Root, name string, mode os.FileMode) error {
 		return err
 	}
 	defer to.Remove(temp)
+	if err = out.Chmod(mode); err != nil {
+		out.Close()
+		return err
+	}
 	_, err = io.Copy(out, in)
 	if err == nil {
 		err = out.Sync()

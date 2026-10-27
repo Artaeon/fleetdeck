@@ -350,12 +350,23 @@ func Extract(input io.Reader, dir string) ([]string, error) {
 		if err = root.MkdirAll(filepath.Dir(h.Name), 0755); err != nil {
 			return nil, err
 		}
+		// The enclosing staging directory is private. Preserve readable source
+		// directories for COPY into non-root images even with a 0077 umask.
+		for parent := filepath.Dir(h.Name); parent != "."; parent = filepath.Dir(parent) {
+			if err = root.Chmod(parent, 0755); err != nil {
+				return nil, err
+			}
+		}
 		mode := os.FileMode(h.Mode) & 0777
 		if h.Name == ".env" {
 			mode = 0600
 		}
 		f, err := root.OpenFile(h.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err != nil {
+			return nil, err
+		}
+		if err = f.Chmod(mode); err != nil {
+			f.Close()
 			return nil, err
 		}
 		_, copyErr := io.CopyN(f, tr, h.Size)
