@@ -409,41 +409,15 @@ func TestBootstrapCustomTraefikNetwork(t *testing.T) {
 	}
 }
 
-func TestBootstrapNonCriticalSSHFailure(t *testing.T) {
-	runner := newMockRunner()
-
-	// SSH configuration is non-critical.
-	runner.failOn["sshd_config"] = fmt.Errorf("permission denied")
-
-	cfg := Config{
-		Host:   "10.0.0.1",
-		Domain: "example.com",
-		Email:  "admin@example.com",
+func TestBootstrapStopsOnSSHFailure(t *testing.T) {
+	r := newMockRunner()
+	r.failOn["sshd_config"] = fmt.Errorf("invalid policy")
+	result, err := Bootstrap(Config{Host: "192.0.2.1", Domain: "example.com", Email: "operator@example.com"}, r)
+	if err == nil {
+		t.Fatal("SSH failure must stop setup")
 	}
-
-	result, err := Bootstrap(cfg, runner)
-	if err != nil {
-		t.Fatalf("expected no fatal error for SSH failure, got: %v", err)
-	}
-
-	// Everything else should still succeed.
-	if !result.DockerInstalled {
-		t.Error("expected DockerInstalled=true despite SSH failure")
-	}
-	if !result.TraefikConfigured {
-		t.Error("expected TraefikConfigured=true despite SSH failure")
-	}
-
-	// SSH error should be recorded.
-	foundSSHError := false
-	for _, e := range result.Errors {
-		if strings.Contains(e, "ssh") || strings.Contains(e, "SSH") {
-			foundSSHError = true
-			break
-		}
-	}
-	if !foundSSHError {
-		t.Errorf("expected SSH-related error in Errors, got: %v", result.Errors)
+	if result.TraefikConfigured || result.SSHTrial {
+		t.Fatal("continued after failed access policy")
 	}
 }
 

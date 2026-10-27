@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/bootstrap"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
@@ -99,6 +100,45 @@ The server must be accessible via SSH with key-based auth.`,
 		defer client.Close()
 		ui.Success("Connected to %s", host)
 
+		// Prove a separate administrator connection before removing root access.
+		if user == "root" {
+			adminUser, _ := cmd.Flags().GetString("admin-user")
+			adminKeyPath, _ := cmd.Flags().GetString("admin-key")
+			if adminKeyPath == "" {
+				return fmt.Errorf("root bootstrap requires --admin-key with the administrator public key; private keys remain in your agent")
+			}
+			publicKey, err := os.ReadFile(adminKeyPath)
+			if err != nil {
+				return fmt.Errorf("reading administrator public key: %w", err)
+			}
+			if err := bootstrap.PrepareAdmin(client, adminUser, publicKey); err != nil {
+				return err
+			}
+			verified, err := remote.NewClient(host, port, adminUser, keyData, passphraseBytes)
+			if err != nil {
+				return fmt.Errorf("new administrator login failed; root SSH policy has not been changed: %w", err)
+			}
+			defer verified.Close()
+			if result, err := verified.Run("sudo -n id -u"); err != nil || strings.TrimSpace(result) != "0" {
+				return fmt.Errorf("administrator sudo validation failed; root SSH policy has not been changed")
+			}
+			client = verified
+			user = adminUser
+			ui.Success("Independent administrator login and sudo verified")
+		} else {
+			if result, err := client.Run("sudo -n id -u"); err != nil || strings.TrimSpace(result) != "0" {
+				return fmt.Errorf("setup requires an independently authenticated non-root host administrator with sudo")
+			}
+		}
+
+		sshConfirmed := false
+		ownsSSHTrial := false
+		adminRunner := bootstrap.SudoRunner{Runner: client}
+		defer func() {
+			if ownsSSHTrial && !sshConfirmed {
+				_ = bootstrap.RollbackSSH(adminRunner)
+			}
+		}()
 		// Run bootstrap
 		ui.Step(2, 6, "Starting server provisioning...")
 		fmt.Println()
@@ -113,10 +153,27 @@ The server must be accessible via SSH with key-based auth.`,
 			TraefikNetwork: network,
 		}
 
-		result, err := bootstrap.Bootstrap(bCfg, client)
+		result, err := bootstrap.Bootstrap(bCfg, adminRunner)
+		if result != nil {
+			ownsSSHTrial = result.SSHTrial
+		}
 		if err != nil {
 			return fmt.Errorf("bootstrap failed: %w", err)
 		}
+
+		// A new login must work before cancelling the automatic recovery timer.
+		check, checkErr := remote.NewClient(host, port, user, keyData, passphraseBytes)
+		if checkErr != nil {
+			return fmt.Errorf("post-hardening SSH check failed; restoring previous policy: %w", checkErr)
+		}
+		defer check.Close()
+		if out, err := check.Run("sudo -n id -u"); err != nil || strings.TrimSpace(out) != "0" {
+			return fmt.Errorf("post-hardening administrator check failed; restoring previous policy")
+		}
+		if err := bootstrap.ConfirmSSH(bootstrap.SudoRunner{Runner: check}); err != nil {
+			return fmt.Errorf("confirming SSH policy: %w", err)
+		}
+		sshConfirmed = true
 
 		// Report results
 		fmt.Println()
@@ -167,6 +224,8 @@ func parseTarget(target string) (host, user string) {
 }
 
 func init() {
+	serverSetupCmd.Flags().String("admin-user", "fleetdeck-admin", "Dedicated host administrator created during root bootstrap")
+	serverSetupCmd.Flags().String("admin-key", "", "Public key for the new administrator; must match the current key/agent")
 	serverSetupCmd.Flags().String("port", "22", "SSH port")
 	serverSetupCmd.Flags().String("key", "", "Path to SSH private key")
 	serverSetupCmd.Flags().String("domain", "", "Domain for Traefik dashboard (required)")

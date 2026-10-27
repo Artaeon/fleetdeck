@@ -43,47 +43,6 @@ func TestBootstrapTimezoneFailureNonFatal(t *testing.T) {
 	}
 }
 
-// TestBootstrapSSHConfigFailureNonFatal verifies that an SSH configuration
-// failure is non-fatal and Bootstrap continues through remaining steps.
-func TestBootstrapSSHConfigFailureNonFatal(t *testing.T) {
-	runner := newMockRunner()
-	runner.failOn["sshd_config"] = fmt.Errorf("permission denied")
-
-	cfg := Config{
-		Host:       "10.0.0.1",
-		Domain:     "example.com",
-		Email:      "admin@example.com",
-		SwapSizeGB: 1,
-	}
-
-	result, err := Bootstrap(cfg, runner)
-	if err != nil {
-		t.Fatalf("expected Bootstrap to succeed despite SSH failure, got: %v", err)
-	}
-
-	if !result.DockerInstalled {
-		t.Error("expected DockerInstalled=true despite SSH failure")
-	}
-	if !result.TraefikConfigured {
-		t.Error("expected TraefikConfigured=true despite SSH failure")
-	}
-	if !result.FirewallConfigured {
-		t.Error("expected FirewallConfigured=true despite SSH failure")
-	}
-
-	// Verify SSH error is recorded.
-	foundSSHError := false
-	for _, e := range result.Errors {
-		if strings.Contains(e, "ssh") {
-			foundSSHError = true
-			break
-		}
-	}
-	if !foundSSHError {
-		t.Errorf("expected ssh-related error in Result.Errors, got: %v", result.Errors)
-	}
-}
-
 // TestBootstrapSwapFailureNonFatal verifies that a swap configuration failure
 // is non-fatal, Bootstrap continues, and SwapCreated=false.
 func TestBootstrapSwapFailureNonFatal(t *testing.T) {
@@ -278,7 +237,6 @@ func TestBootstrapErrorsContainContext(t *testing.T) {
 	// Each recorded error should contain the step name as a prefix for context.
 	expectedPrefixes := []string{
 		"set timezone:",
-		"configure ssh:",
 		"configure swap:",
 		"configure firewall:",
 	}

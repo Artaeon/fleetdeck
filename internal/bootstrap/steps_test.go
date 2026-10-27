@@ -257,69 +257,25 @@ func TestSetTimezoneFailure(t *testing.T) {
 // ---------- Test: configureSSH ----------
 
 func TestConfigureSSH(t *testing.T) {
-	runner := newMockRunner()
-
-	err := configureSSH(runner)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := newMockRunner()
+	if err := configureSSH(r); err != nil {
+		t.Fatal(err)
 	}
-
-	// Expect 2 sed commands + 1 service restart = 3 commands.
-	if len(runner.commands) != 3 {
-		t.Fatalf("expected 3 commands, got %d: %v", len(runner.commands), runner.commands)
-	}
-
-	// Verify PasswordAuthentication is disabled.
-	foundPasswordAuth := false
-	for _, cmd := range runner.commands {
-		if strings.Contains(cmd, "PasswordAuthentication no") && strings.Contains(cmd, "sshd_config") {
-			foundPasswordAuth = true
-			break
+	script := r.commands[0]
+	for _, required := range []string{"PermitRootLogin no", "PasswordAuthentication no", "KbdInteractiveAuthentication no", "sshd -t", "sshd -T", "--on-active=5m", "flock -x 9", "systemctl reload ssh.service"} {
+		if !strings.Contains(script, required) {
+			t.Errorf("missing security guarantee %s", required)
 		}
 	}
-	if !foundPasswordAuth {
-		t.Error("expected sed command to disable PasswordAuthentication")
-	}
-
-	// Verify PermitRootLogin is disabled.
-	foundRootLogin := false
-	for _, cmd := range runner.commands {
-		if strings.Contains(cmd, "PermitRootLogin prohibit-password") && strings.Contains(cmd, "sshd_config") {
-			foundRootLogin = true
-			break
-		}
-	}
-	if !foundRootLogin {
-		t.Error("expected sed command to disable PermitRootLogin")
-	}
-
-	// Verify service restart.
-	restartCmd := runner.commands[2]
-	if !strings.Contains(restartCmd, "restart sshd") && !strings.Contains(restartCmd, "ssh restart") {
-		t.Errorf("expected SSH service restart command, got %q", restartCmd)
+	if strings.Index(script, "systemd-run --quiet") > strings.Index(script, "cp \"$trial/candidate\" /etc/ssh/sshd_config") {
+		t.Fatal("rollback armed after mutation")
 	}
 }
-
-func TestConfigureSSHSedFailure(t *testing.T) {
-	runner := newMockRunner()
-	runner.failOn["sshd_config"] = fmt.Errorf("permission denied")
-
-	err := configureSSH(runner)
-	if err == nil {
-		t.Fatal("expected error when sed fails on sshd_config")
-	}
-}
-
-func TestConfigureSSHRestartFailure(t *testing.T) {
-	runner := newMockRunner()
-	runner.failOn["restart sshd"] = fmt.Errorf("systemctl: command not found")
-
-	err := configureSSH(runner)
-	if err == nil {
-		t.Fatal("expected error when sshd restart fails")
-	}
-	if !strings.Contains(err.Error(), "sshd") {
-		t.Errorf("expected error to mention sshd, got: %v", err)
+func TestConfigureSSHFailure(t *testing.T) {
+	r := newMockRunner()
+	r.failOn["sshd_config"] = fmt.Errorf("invalid policy")
+	if err := configureSSH(r); err == nil {
+		t.Fatal("security failure ignored")
 	}
 }
 
