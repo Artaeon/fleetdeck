@@ -66,6 +66,7 @@ PY
 cat > /usr/local/bin/systemctl <<'SH'
 #!/bin/sh
 case "$1" in
+enable|disable|daemon-reload) exit 0;;
 reload) kill -HUP "$(cat /run/sshd.pid)";;
 is-active) test -e /run/test-mfa-timer;;
 stop) if test -e /run/test-mfa-timer; then kill "$(cat /run/test-mfa-timer)" 2>/dev/null || true; rm -f /run/test-mfa-timer; fi;;
@@ -124,7 +125,7 @@ PY`)
 	if err := ConfirmSSHMFA(r); err != nil {
 		t.Fatal(err)
 	}
-	run("test ! -e /run/test-mfa-timer; test ! -e /run/fleetdeck-ssh-mfa-trial")
+	run("test ! -e /run/test-mfa-timer; test ! -e /var/lib/fleetdeck/ssh-mfa-trial")
 	run(`cp /run/original-sshd /etc/ssh/sshd_config; cp /run/original-pam /etc/pam.d/sshd; systemctl reload ssh.service; mv /etc/fleetdeck/ssh-mfa/testoperator /run/enrolled-secret`)
 	if err := ApplySSHMFA(r, "testoperator"); err == nil {
 		t.Fatal("applied without enrollment")
@@ -136,7 +137,7 @@ PY`)
 	}
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := r.Run("test ! -e /run/fleetdeck-ssh-mfa-trial"); err == nil {
+		if _, err := r.Run("test ! -e /var/lib/fleetdeck/ssh-mfa-trial"); err == nil {
 			break
 		}
 		time.Sleep(250 * time.Millisecond)

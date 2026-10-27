@@ -20,7 +20,8 @@ func ApplySSHMFA(runner CommandRunner, user string) error {
 exec 9>/run/fleetdeck-ssh.lock
 flock -x 9
 test ! -e /run/fleetdeck-ssh-trial
-test ! -e /run/fleetdeck-ssh-mfa-trial
+test ! -e /var/lib/fleetdeck/ssh-mfa-trial
+test ! -e /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
 name=` + quoteShell(user) + `
 id "$name" >/dev/null
 dpkg-query -W -f='${Status}' libpam-google-authenticator | grep -qx 'install ok installed'
@@ -52,7 +53,8 @@ pam=pathlib.Path('/etc/pam.d/sshd').read_text()
 auth=[line.strip() for line in pam.splitlines() if re.match(r'\s*(auth\s|@include\s+common-auth)',line)]
 if auth!=['@include common-auth']: raise SystemExit('Custom PAM authentication stack needs manual integration')
 CHECK
-trial=/run/fleetdeck-ssh-mfa-trial
+trial=/var/lib/fleetdeck/ssh-mfa-trial
+install -d -m 0700 /var/lib/fleetdeck
 mkdir -m 0700 "$trial"
 cp -p /etc/ssh/sshd_config "$trial/sshd.previous"
 cp -p /etc/pam.d/sshd "$trial/pam.previous"
@@ -63,17 +65,34 @@ cat > "$trial/rollback.sh" <<'ROLLBACK'
 set -eu
 exec 9>/run/fleetdeck-ssh.lock
 flock -x 9
-trial=/run/fleetdeck-ssh-mfa-trial
+trial=/var/lib/fleetdeck/ssh-mfa-trial
 if test -f "$trial/sshd.previous"; then
  cp -p "$trial/sshd.previous" /etc/ssh/sshd_config
  cp -p "$trial/pam.previous" /etc/pam.d/sshd
  /usr/sbin/sshd -t
- systemctl reload ssh.service || systemctl reload sshd.service
+ if systemctl is-active --quiet ssh.service; then systemctl reload ssh.service;
+ elif systemctl is-active --quiet sshd.service; then systemctl reload sshd.service; fi
+ systemctl disable fleetdeck-ssh-mfa-recovery.service || true
+ rm -f /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
+ systemctl daemon-reload
  rm -rf "$trial"
 fi
 ROLLBACK
 chmod 0700 "$trial/rollback.sh"
 trap 'flock -u 9; sh "$trial/rollback.sh"; systemctl stop fleetdeck-ssh-mfa-rollback.timer || true' EXIT
+cat > /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service <<'BOOT'
+[Unit]
+Description=Restore an unconfirmed FleetDeck SSH MFA trial after reboot
+Before=ssh.service sshd.service
+ConditionPathExists=/var/lib/fleetdeck/ssh-mfa-trial/sshd.previous
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /var/lib/fleetdeck/ssh-mfa-trial/rollback.sh
+[Install]
+WantedBy=multi-user.target
+BOOT
+systemctl daemon-reload
+systemctl enable fleetdeck-ssh-mfa-recovery.service
 systemd-run --quiet --collect --unit=fleetdeck-ssh-mfa-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh "$trial/rollback.sh"
 cp "$trial/sshd.previous" "$trial/candidate"
 printf '%s' ` + quoteShell(settings) + ` >> "$trial/candidate"
@@ -101,7 +120,7 @@ func ConfirmSSHMFA(runner CommandRunner) error {
 	_, err := runner.Run(`set -eu
 exec 9>/run/fleetdeck-ssh.lock
 flock -x 9
-trial=/run/fleetdeck-ssh-mfa-trial
+trial=/var/lib/fleetdeck/ssh-mfa-trial
 test -f "$trial/user"
 systemctl is-active --quiet fleetdeck-ssh-mfa-rollback.timer
 name=$(cat "$trial/user")
@@ -109,9 +128,9 @@ name=$(cat "$trial/user")
 python3 - <<'VERIFY'
 import json,subprocess
 from pathlib import Path
-root=Path('/run/fleetdeck-ssh-mfa-trial')
+root=Path('/var/lib/fleetdeck/ssh-mfa-trial')
 user=(root/'user').read_text().strip()
-result=subprocess.run(['journalctl','--no-pager','--output=json','--since', (root/'since').read_text().strip(),'_UID=0','SYSLOG_IDENTIFIER=sshd','SYSLOG_IDENTIFIER=sshd-session'],capture_output=True,check=True,timeout=15)
+result=subprocess.run(['journalctl','--no-pager','--output=json','--lines=50','--grep=^Accepted keyboard-interactive/pam for '+user+' from ','--since', (root/'since').read_text().strip(),'_UID=0','SYSLOG_IDENTIFIER=sshd','SYSLOG_IDENTIFIER=sshd-session'],capture_output=True,check=True,timeout=15)
 accepted=False
 for line in result.stdout.splitlines():
     event=json.loads(line)
@@ -119,6 +138,9 @@ for line in result.stdout.splitlines():
 if not accepted: raise SystemExit('A fresh successful SSH MFA login is required before confirmation')
 VERIFY
 systemctl stop fleetdeck-ssh-mfa-rollback.timer
+systemctl disable fleetdeck-ssh-mfa-recovery.service
+rm -f /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
+systemctl daemon-reload
 rm -rf "$trial"
 `)
 	if err != nil {
@@ -128,6 +150,6 @@ rm -rf "$trial"
 }
 
 func RollbackSSHMFA(runner CommandRunner) error {
-	_, err := runner.Run(`if test -f /run/fleetdeck-ssh-mfa-trial/rollback.sh; then sh /run/fleetdeck-ssh-mfa-trial/rollback.sh; systemctl stop fleetdeck-ssh-mfa-rollback.timer; fi`)
+	_, err := runner.Run(`if test -f /var/lib/fleetdeck/ssh-mfa-trial/rollback.sh; then sh /var/lib/fleetdeck/ssh-mfa-trial/rollback.sh; systemctl stop fleetdeck-ssh-mfa-rollback.timer; fi`)
 	return err
 }
