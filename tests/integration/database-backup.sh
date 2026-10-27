@@ -10,6 +10,9 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$base/project" "$base/control"
+# An opaque local image ID must retain logical backup coverage via its label.
+docker pull postgres:17-alpine >/dev/null
+db_image=$(docker image inspect --format '{{.Id}}' postgres:17-alpine)
 cat > "$base/config.toml" <<CONFIG
 [server]
 base_path = "$base/control"
@@ -23,7 +26,9 @@ cat > "$base/project/docker-compose.yml" <<COMPOSE
 name: $name
 services:
   db:
-    image: postgres:17-alpine
+    image: $db_image
+    labels:
+      io.fleetdeck.backup.database: postgres
     container_name: $name-db
     environment:
       POSTGRES_DB: fixture

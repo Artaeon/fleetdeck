@@ -42,8 +42,11 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 	var components []ComponentInfo
 
 	for serviceName, svc := range compose.Services {
-		image := strings.ToLower(svc.Image)
-		if !strings.HasPrefix(image, "postgres") && !strings.HasPrefix(image, "mysql") && !strings.HasPrefix(image, "mariadb") {
+		kind, err := DatabaseKind(svc.Image, svc.Labels)
+		if err != nil {
+			return nil, fmt.Errorf("database service %s: %w", serviceName, err)
+		}
+		if kind == "" {
 			continue
 		}
 		containerName, envVars, err := databaseEnvironment(projectPath, serviceName)
@@ -51,8 +54,8 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 			return nil, fmt.Errorf("database service %s: %w", serviceName, err)
 		}
 
-		switch {
-		case strings.HasPrefix(image, "postgres"):
+		switch kind {
+		case "postgres":
 			comp, err := dumpPostgres(containerName, serviceName, envVars, dbDir)
 			if err != nil {
 				return nil, fmt.Errorf("database service %s: %w", serviceName, err)
@@ -60,7 +63,7 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 			if comp != nil {
 				components = append(components, *comp)
 			}
-		case strings.HasPrefix(image, "mysql") || strings.HasPrefix(image, "mariadb"):
+		case "mysql", "mariadb":
 			comp, err := dumpMySQL(containerName, serviceName, envVars, dbDir)
 			if err != nil {
 				return nil, fmt.Errorf("database service %s: %w", serviceName, err)
