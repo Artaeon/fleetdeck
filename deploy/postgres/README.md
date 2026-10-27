@@ -30,12 +30,20 @@ Before using the image for an existing project:
    vulnerabilities. Review [finding triage](../../docs/SECURITY_TRIAGE.md).
 2. Stop application writers, take and verify a database/configuration backup,
    then restore it into an isolated candidate database. Keep the original image.
-3. Record the candidate's immutable local image ID (or push to your registry and
+3. Use an updated FleetDeck build with explicit database backup labels. Add
+   `labels: {io.fleetdeck.backup.database: postgres}` to the database service in
+   the private Compose file. This is required for opaque image IDs and custom
+   registry names; an older binary recognizes databases only by image name.
+   Record the candidate's immutable local image ID (or push to your registry and
    record its digest). Update only the database service's image reference in the
    private operator Compose file. Preserve credentials, UID, mounts and networks.
 4. Recreate that service, test database and application readiness, and restart
    application writers. For a failed image-only change, restore the previous
    image reference; data rollback requires a separate reviewed decision.
+
+Create and verify another FleetDeck backup after the image change. Its manifest
+must contain a PostgreSQL database component, not a live copy of the database
+volume. See [database identification](../../docs/PROJECT_DEPLOY.md#custom-database-images).
 
 This is an operator-maintained derived image. FleetDeck does not publish it,
 automatically rebuild it, or silently replace database images. Review new
