@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 var envNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
@@ -90,6 +92,11 @@ func (m *Manager) Create(projectName, envName, domain, branch string) (*Environm
 		return nil, fmt.Errorf("reading source compose file: %w", err)
 	}
 
+	var parsed map[string]any
+	if err := yaml.Unmarshal(composeData, &parsed); err != nil || parsed == nil {
+		return nil, fmt.Errorf("invalid source Compose document")
+	}
+
 	adjusted := adjustComposeForEnv(string(composeData), projectName, envName, domain)
 	dstCompose := filepath.Join(envPath, "docker-compose.yml")
 	if err := os.WriteFile(dstCompose, []byte(adjusted), 0644); err != nil {
@@ -99,8 +106,17 @@ func (m *Manager) Create(projectName, envName, domain, branch string) (*Environm
 	// Only seed the new domain. Credentials and service endpoints must be
 	// supplied independently; copying production values can leak live data.
 	if _, err := os.Stat(filepath.Join(projectPath, ".env")); err == nil {
-		if err := os.WriteFile(filepath.Join(envPath, ".env"), []byte("DOMAIN="+domain+"\n"), 0600); err != nil {
+		file, err := os.OpenFile(filepath.Join(envPath, ".env"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
 			return nil, err
+		}
+		_, writeErr := file.WriteString("DOMAIN=" + domain + "\n")
+		closeErr := file.Close()
+		if writeErr != nil {
+			return nil, writeErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
 		}
 	}
 
@@ -123,6 +139,9 @@ func (m *Manager) Create(projectName, envName, domain, branch string) (*Environm
 
 // List returns all environments for the given project.
 func (m *Manager) List(projectName string) ([]Environment, error) {
+	if err := validateEnvName(projectName); err != nil {
+		return nil, fmt.Errorf("project name: %w", err)
+	}
 	envsDir := filepath.Join(m.basePath, projectName, "environments")
 	entries, err := os.ReadDir(envsDir)
 	if err != nil {
@@ -149,6 +168,9 @@ func (m *Manager) List(projectName string) ([]Environment, error) {
 // Promote copies configuration and images from one environment to another.
 // Typically used for staging → production promotion.
 func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
+	if err := validateEnvName(projectName); err != nil {
+		return fmt.Errorf("project name: %w", err)
+	}
 	if err := validateEnvName(fromEnv); err != nil {
 		return fmt.Errorf("source environment: %w", err)
 	}
@@ -211,6 +233,9 @@ func (m *Manager) Promote(projectName, fromEnv, toEnv string) error {
 
 // Delete removes an environment and stops its containers.
 func (m *Manager) Delete(projectName, envName string) error {
+	if err := validateEnvName(projectName); err != nil {
+		return fmt.Errorf("project name: %w", err)
+	}
 	if err := validateEnvName(envName); err != nil {
 		return fmt.Errorf("invalid environment name: %w", err)
 	}
@@ -265,12 +290,6 @@ func adjustComposeForEnv(compose, projectName, envName, domain string) string {
 	// Replace any Host rule references with the environment domain.
 	result := compose
 
-	// Set the compose project name so containers are namespaced.
-	projectPrefix := fmt.Sprintf("name: %s-%s\n", envName, projectName)
-	if !strings.Contains(result, "name:") {
-		result = projectPrefix + result
-	}
-
 	// Replace domain references. The source compose typically has the
 	// production domain; we swap it with the environment-specific one.
 	// This is a best-effort text replacement — templates use Host(`domain`).
@@ -282,7 +301,16 @@ func adjustComposeForEnv(compose, projectName, envName, domain string) string {
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	var document map[string]any
+	if yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &document) != nil || document == nil {
+		return ""
+	}
+	document["name"] = envName + "-" + projectName
+	data, err := yaml.Marshal(document)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // replaceHostRule replaces the domain inside a Traefik Host() rule with the
