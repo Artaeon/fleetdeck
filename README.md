@@ -20,13 +20,15 @@
 
 ---
 
-**FleetDeck** is a single-binary deployment platform that takes your application from code to production with one command. It detects your stack, provisions your server, deploys with zero downtime, sets up HTTPS, generates build CI, monitors health, and handles backups. No Kubernetes. No YAML hell. Just ship.
+**FleetDeck** is a command-line deployment tool for Docker Compose applications on Linux servers. It provides stack detection, server setup, HTTPS routing, health checks, deployment and recovery commands. Templates give supported applications a starting point; each application's build, secrets, persistent data and migrations still need configuration and testing.
 
 ```bash
 fleetdeck deploy ./my-saas --server fleetdeck-admin@server.ip --domain myapp.com --profile saas
 ```
 
-That one command connects to your server, detects your app (Next.js, Go, Python, whatever), generates a Docker Compose stack with PostgreSQL + Redis + S3 + email, configures Traefik for automatic HTTPS, deploys your containers. New projects created with `fleetdeck create` receive build-only GitHub Actions CI; deployments use a trusted administrator.
+For a compatible, configured application, this command connects to your server, detects the stack, generates the selected Compose profile and deploys it behind Traefik. The `saas` profile includes PostgreSQL, Redis, MinIO and a development mailbox; real outbound mail requires an SMTP provider. New projects created with `fleetdeck create` receive build-only GitHub Actions CI; deployments use a trusted administrator.
+
+Before a production rollout, review [application coverage and limits](docs/APPLICATION_COVERAGE.md), [backup and recovery requirements](docs/EXISTING_SERVER_MIGRATION.md), and [admin access](docs/ADMIN_ACCESS.md). A successful deployment is not proof of data recovery, application security or high availability. Offsite backup delivery, an external uptime observer, administrator enrollment and multi-server failover are not automatically completed by this command.
 
 ---
 
@@ -45,7 +47,7 @@ Every new project is the same 30-minute ritual:
 9. Configure backups
 10. Pray nothing breaks
 
-Now multiply that by every project you ship. **FleetDeck eliminates all of it.**
+FleetDeck automates common parts of this setup and makes reviewed deployment settings reusable across projects.
 
 ## What Makes FleetDeck Different
 
@@ -92,7 +94,7 @@ fleetdeck deploy ./my-app \
   --profile saas
 ```
 
-**Step 3:** There is no step 3. Your app is live at `https://myapp.yourdomain.com`.
+**Step 3:** Verify the application at `https://myapp.yourdomain.com`, including its important user flows. Confirm persistent storage, recovery and monitoring before replacing an existing production deployment. Use a separate preview hostname while doing these checks.
 
 ### Already Have a Server?
 
@@ -167,7 +169,7 @@ fleetdeck profile saas       # Inspect a specific profile
 
 ### The `saas` Profile
 
-Everything you need for a production SaaS, generated in one command:
+A starting infrastructure stack for a SaaS application:
 
 - **Your app** with Traefik routing and automatic HTTPS
 - **PostgreSQL** with health checks, persistent storage, `pg_isready` probes
