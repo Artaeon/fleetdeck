@@ -53,25 +53,77 @@ func setTimezone(runner CommandRunner) error {
 	return nil
 }
 
-// configureSSH hardens the SSH daemon by disabling password authentication.
-// Root login is restricted to key-based auth only (prohibit-password) rather
-// than fully disabled, because FleetDeck itself connects as root for server
-// management.
+// configureSSH applies a validated, reversible key-only policy. Confirmation
+// must follow a new authenticated connection, never an existing SSH session.
 func configureSSH(runner CommandRunner) error {
-	sedCmds := []string{
-		"sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config",
-		"sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
+	_, err := runner.Run(sshTrialScript)
+	if err != nil {
+		return fmt.Errorf("applying SSH policy: %w", err)
 	}
-	for _, cmd := range sedCmds {
-		if _, err := runner.Run(cmd); err != nil {
-			return fmt.Errorf("running %q: %w", cmd, err)
-		}
-	}
-
-	// Restart SSH daemon. Try systemctl first; fall back to service command.
-	if _, err := runner.Run("systemctl restart sshd || service ssh restart"); err != nil {
-		return fmt.Errorf("restarting sshd: %w", err)
-	}
-
 	return nil
 }
+
+func ConfirmSSH(runner CommandRunner) error {
+	_, err := runner.Run(`set -eu
+ exec 9>/run/fleetdeck-ssh.lock
+ flock -x 9
+ test -f /run/fleetdeck-ssh-trial/previous
+ systemctl is-active --quiet fleetdeck-ssh-rollback.timer
+ systemctl stop fleetdeck-ssh-rollback.timer
+ rm -rf /run/fleetdeck-ssh-trial
+`)
+	return err
+}
+
+func RollbackSSH(runner CommandRunner) error {
+	_, err := runner.Run(`if test -f /run/fleetdeck-ssh-trial/rollback.sh; then sh /run/fleetdeck-ssh-trial/rollback.sh; fi`)
+	return err
+}
+
+const sshTrialScript = `set -eu
+exec 9>/run/fleetdeck-ssh.lock
+flock -x 9
+trial=/run/fleetdeck-ssh-trial
+# Never overwrite another operator's pending access trial.
+mkdir -m 0700 "$trial"
+cp -p /etc/ssh/sshd_config "$trial/previous"
+cat > "$trial/rollback.sh" <<'ROLLBACK'
+#!/bin/sh
+set -eu
+exec 9>/run/fleetdeck-ssh.lock
+flock -x 9
+if test -f /run/fleetdeck-ssh-trial/previous; then
+ cp -p /run/fleetdeck-ssh-trial/previous /etc/ssh/sshd_config
+ /usr/sbin/sshd -t
+ systemctl reload ssh.service || systemctl reload sshd.service
+ rm -rf /run/fleetdeck-ssh-trial
+fi
+ROLLBACK
+chmod 0700 "$trial/rollback.sh"
+trap 'flock -u 9; sh "$trial/rollback.sh"; systemctl stop fleetdeck-ssh-rollback.timer || true' EXIT
+# Arm rollback BEFORE modifying active policy.
+systemd-run --quiet --collect --unit=fleetdeck-ssh-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh "$trial/rollback.sh"
+{
+ cat <<'POLICY'
+# BEGIN FLEETDECK SSH POLICY
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+X11Forwarding no
+AllowAgentForwarding no
+# END FLEETDECK SSH POLICY
+POLICY
+ sed '/^# BEGIN FLEETDECK SSH POLICY$/,/^# END FLEETDECK SSH POLICY$/d' "$trial/previous"
+} > "$trial/candidate"
+chmod 0600 "$trial/candidate"
+/usr/sbin/sshd -t -f "$trial/candidate"
+/usr/sbin/sshd -T -f "$trial/candidate" -C user=root,host=localhost,addr=127.0.0.1 | grep -qx 'permitrootlogin no'
+/usr/sbin/sshd -T -f "$trial/candidate" | grep -qx 'passwordauthentication no'
+/usr/sbin/sshd -T -f "$trial/candidate" | grep -qx 'kbdinteractiveauthentication no'
+cp "$trial/candidate" /etc/ssh/sshd_config
+/usr/sbin/sshd -t
+systemctl reload ssh.service || systemctl reload sshd.service
+trap - EXIT
+`

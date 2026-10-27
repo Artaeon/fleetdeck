@@ -22,6 +22,7 @@ type Config struct {
 
 // Result tracks what the bootstrap process accomplished.
 type Result struct {
+	SSHTrial           bool
 	DockerInstalled    bool
 	TraefikConfigured  bool
 	FirewallConfigured bool
@@ -45,11 +46,6 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 
 	if err := setTimezone(runner); err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("set timezone: %v", err))
-		// Non-fatal, continue.
-	}
-
-	if err := configureSSH(runner); err != nil {
-		res.Errors = append(res.Errors, fmt.Sprintf("configure ssh: %v", err))
 		// Non-fatal, continue.
 	}
 
@@ -81,6 +77,12 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 		res.FirewallConfigured = true
 	}
 
+	if err := configureSSH(runner); err != nil {
+		res.Errors = append(res.Errors, fmt.Sprintf("configure ssh: %v", err))
+		return res, fmt.Errorf("hardening SSH: %w", err)
+	}
+
+	res.SSHTrial = true
 	// 5. Traefik
 	network := cfg.TraefikNetwork
 	if network == "" {
