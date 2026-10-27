@@ -14,12 +14,15 @@ import (
 // explicitly supplied. No agent socket is forwarded to the server.
 func authentication(privateKey, passphrase []byte) ([]ssh.AuthMethod, func(), error) {
 	noop := func() {}
+	if mode := os.Getenv("FLEETDECK_SSH_MFA"); mode != "" && mode != "totp" {
+		return nil, noop, fmt.Errorf("FLEETDECK_SSH_MFA must be empty or totp")
+	}
 	if len(privateKey) > 0 {
 		signer, err := ParsePrivateKey(privateKey, passphrase)
 		if err != nil {
 			return nil, noop, err
 		}
-		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, noop, nil
+		return withMFA([]ssh.AuthMethod{ssh.PublicKeys(signer)}), noop, nil
 	}
 	socket := os.Getenv("SSH_AUTH_SOCK")
 	if socket == "" {
@@ -53,5 +56,5 @@ func authentication(privateKey, passphrase []byte) ([]ssh.AuthMethod, func(), er
 		}
 		return allowed, nil
 	}
-	return []ssh.AuthMethod{ssh.PublicKeysCallback(callback)}, cleanup, nil
+	return withMFA([]ssh.AuthMethod{ssh.PublicKeysCallback(callback)}), cleanup, nil
 }
