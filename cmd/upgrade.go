@@ -202,7 +202,7 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		asJSON, _ := cmd.Flags().GetBool("json")
 		if asJSON {
-			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"version": Version, "commit": Commit, "os": runtime.GOOS, "arch": runtime.GOARCH})
+			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"version": Version, "commit": Commit, "os": runtime.GOOS, "arch": runtime.GOARCH, "source_deploy_protocol": "1"})
 			return
 		}
 		fmt.Printf("fleetdeck %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
