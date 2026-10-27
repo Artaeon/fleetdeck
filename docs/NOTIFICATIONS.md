@@ -119,3 +119,53 @@ produce FleetDeck audit events are not automatically covered.
 
 References: [Telegram Bot API](https://core.telegram.org/bots/api),
 [bot setup](https://core.telegram.org/bots/tutorial#obtain-your-bot-token).
+
+## Cloudflare challenges and monitoring visibility
+
+A response with `cf-mitigated: challenge` means Cloudflare presented a browser
+challenge to the probe. FleetDeck records `failure_kind: cloudflare_challenge`
+and leaves `healthy` false, even if that response has the expected HTTP status.
+A challenge on a redirect also stops the probe. Ordinary 403 responses remain
+failed checks; a Cloudflare server header alone does not establish a challenge.
+See [Cloudflare's response detection contract](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/).
+
+After the configured failure threshold, a blocked probe sends a **warning** that
+application health is unknown. It does not assert a server outage or send a
+recovery notification. A subsequent expected response is required for recovery.
+A stable change from blocked to failed checks (or vice versa) updates the alert
+after the same threshold. Mixed failures still open an incident. Delivery remains
+best effort; this change does not introduce durable health notification retries.
+
+Do not count a challenge as application uptime or broadly disable protection to
+make a monitor green. Keep separate public-edge and private application-readiness
+checks, with at least one observer outside the managed VPS. A local successful
+check cannot establish that the public site is accessible, and a challenged
+external probe cannot establish that the origin application is working.
+
+### Admin-panel monitoring view
+
+Point the monitor and dashboard at the same operator-owned state file using their
+explicit private configuration:
+
+```toml
+[monitoring]
+state_file = "/var/lib/fleetdeck-monitor/state.json"
+```
+
+An explicit `monitor start --state-file` overrides this setting for that process;
+configure the dashboard to read the actual selected file. Without this setting,
+the dashboard shows monitoring as unconfigured. Existing monitor defaults remain
+unchanged. Keep the file private and grant read access only to the dashboard's
+service identity; do not make it world-readable or publish it through a web server.
+
+The **Monitoring** page and authenticated `GET /api/monitor` show named checks,
+HTTP status and check time. They omit endpoint URLs, raw errors and response
+headers. The endpoint only reads the configured local file; callers cannot select
+a path or trigger arbitrary URL probes. A metrics token does not grant access.
+
+Results older than three target intervals plus the request timeout (at least one
+minute) are **stale**, never green. Missing results and timestamps over one minute
+in the future are **unknown**. Missing, invalid or oversized state files show an
+unavailable state instead of an empty healthy overview. The UI refreshes every
+15 seconds and clears prior results if that refresh fails. This is the local
+monitor's last observation, not historical uptime or a multi-server control plane.
