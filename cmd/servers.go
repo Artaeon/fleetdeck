@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/db"
@@ -78,17 +80,21 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("SSH connection failed: %w", err)
 		}
+		version := remote.ReadVersion(client)
 		client.Close()
 		ui.Success("Connection successful")
 
 		// Store in database
 		s := &db.Server{
-			Name:    name,
-			Host:    host,
-			Port:    port,
-			User:    user,
-			KeyPath: keyFile,
-			Status:  "active",
+			Name:             name,
+			Host:             host,
+			Port:             port,
+			User:             user,
+			KeyPath:          keyFile,
+			Status:           "active",
+			FleetDeckVersion: version.Version,
+			FleetDeckCommit:  version.Commit,
+			VersionCheckedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true},
 		}
 		if err := d.CreateServer(s); err != nil {
 			return fmt.Errorf("saving server: %w", err)
@@ -116,15 +122,25 @@ var serverListCmd = &cobra.Command{
 			return nil
 		}
 
-		headers := []string{"Name", "Host", "Port", "User", "Status", "Key"}
+		headers := []string{"Name", "Host", "Port", "User", "Status", "FleetDeck", "Checked", "Key"}
 		var rows [][]string
 		for _, s := range servers {
+			version := s.FleetDeckVersion
+			if version == "" {
+				version = "unknown"
+			}
+			checked := "never"
+			if s.VersionCheckedAt.Valid {
+				checked = s.VersionCheckedAt.Time.UTC().Format(time.RFC3339)
+			}
 			rows = append(rows, []string{
 				s.Name,
 				s.Host,
 				s.Port,
 				s.User,
 				s.Status,
+				version,
+				checked,
 				s.KeyPath,
 			})
 		}
@@ -212,6 +228,7 @@ var serverStatusCmd = &cobra.Command{
 
 			// Quick test: run hostname
 			hostname, err := client.Run("hostname")
+			version := remote.ReadVersion(client)
 			client.Close()
 			if err != nil {
 				ui.Error("  Connected but command failed: %v", err)
@@ -220,6 +237,9 @@ var serverStatusCmd = &cobra.Command{
 			}
 
 			d.UpdateServerStatus(s.Name, "active")
+			if err := d.UpdateServerVersion(s.Name, version.Version, version.Commit); err != nil {
+				return err
+			}
 			ui.Success("  %s is reachable (hostname: %s)", s.Name, strings.TrimSpace(hostname))
 		}
 

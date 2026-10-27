@@ -10,15 +10,18 @@ import (
 
 // Server represents a registered remote server for deployments.
 type Server struct {
-	ID        string
-	Name      string
-	Host      string
-	Port      string
-	User      string
-	KeyPath   string
-	Status    string // "active", "unreachable", "setup-pending"
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID               string
+	Name             string
+	Host             string
+	Port             string
+	User             string
+	KeyPath          string
+	Status           string // "active", "unreachable", "setup-pending"
+	FleetDeckVersion string
+	FleetDeckCommit  string
+	VersionCheckedAt sql.NullTime
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func (db *DB) CreateServer(s *Server) error {
@@ -36,9 +39,9 @@ func (db *DB) CreateServer(s *Server) error {
 	}
 
 	_, err := db.conn.Exec(
-		`INSERT INTO servers (id, name, host, port, user, key_path, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.Host, s.Port, s.User, s.KeyPath, s.Status, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO servers (id, name, host, port, user, key_path, status, created_at, updated_at, fleetdeck_version, fleetdeck_commit, version_checked_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.Host, s.Port, s.User, s.KeyPath, s.Status, s.CreatedAt, s.UpdatedAt, s.FleetDeckVersion, s.FleetDeckCommit, s.VersionCheckedAt,
 	)
 	return err
 }
@@ -46,9 +49,9 @@ func (db *DB) CreateServer(s *Server) error {
 func (db *DB) GetServer(name string) (*Server, error) {
 	s := &Server{}
 	err := db.conn.QueryRow(
-		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at
+		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at, fleetdeck_version, fleetdeck_commit, version_checked_at
 		 FROM servers WHERE name = ?`, name,
-	).Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt, &s.FleetDeckVersion, &s.FleetDeckCommit, &s.VersionCheckedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("server %q not found", name)
 	}
@@ -58,9 +61,9 @@ func (db *DB) GetServer(name string) (*Server, error) {
 func (db *DB) GetServerByID(id string) (*Server, error) {
 	s := &Server{}
 	err := db.conn.QueryRow(
-		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at
+		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at, fleetdeck_version, fleetdeck_commit, version_checked_at
 		 FROM servers WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt, &s.FleetDeckVersion, &s.FleetDeckCommit, &s.VersionCheckedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("server with id %q not found", id)
 	}
@@ -69,7 +72,7 @@ func (db *DB) GetServerByID(id string) (*Server, error) {
 
 func (db *DB) ListServers() ([]*Server, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at
+		`SELECT id, name, host, port, user, key_path, status, created_at, updated_at, fleetdeck_version, fleetdeck_commit, version_checked_at
 		 FROM servers ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -80,12 +83,27 @@ func (db *DB) ListServers() ([]*Server, error) {
 	var servers []*Server
 	for rows.Next() {
 		s := &Server{}
-		if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.User, &s.KeyPath, &s.Status, &s.CreatedAt, &s.UpdatedAt, &s.FleetDeckVersion, &s.FleetDeckCommit, &s.VersionCheckedAt); err != nil {
 			return nil, err
 		}
 		servers = append(servers, s)
 	}
 	return servers, rows.Err()
+}
+
+func (db *DB) UpdateServerVersion(name, version, commit string) error {
+	result, err := db.conn.Exec(`UPDATE servers SET fleetdeck_version=?, fleetdeck_commit=?, version_checked_at=? WHERE name=?`, version, commit, time.Now().UTC(), name)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("server not found")
+	}
+	return nil
 }
 
 func (db *DB) UpdateServerStatus(name, status string) error {
