@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/audit"
+	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/releasejob"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +17,26 @@ import (
 // entry. Never interpolate SSH_ORIGINAL_COMMAND into a shell or arguments.
 var releaseReceiveCmd = &cobra.Command{
 	Use: "receive", Short: "Receive a bounded staging job for one fixed CI target", Args: cobra.NoArgs,
+	// Keep the machine protocol on stdout even when journald is unavailable.
+	// Release jobs do not use custom source templates.
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		cfg, err = config.Load(cfgFile)
+		if err != nil {
+			return err
+		}
+		if cfg.Audit.Enabled {
+			if err = audit.Init(cfg.Audit.LogPath); err != nil {
+				return err
+			}
+			if cfg.Audit.Journal {
+				if err = audit.EnableJournal(); err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Audit journal unavailable; file auditing remains active")
+				}
+			}
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		target, _ := cmd.Flags().GetString("target")
 		policy, err := releasejob.ReceiverPolicy(cfg, target)
