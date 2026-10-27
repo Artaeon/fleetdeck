@@ -90,3 +90,27 @@ func TestDynamicPrivateReferencesFailClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractForcesPrivateEnvironmentAndUsableSourceDirectories(t *testing.T) {
+	var b bytes.Buffer
+	tw := tar.NewWriter(&b)
+	for _, name := range []string{".env", "nested/source.txt"} {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0777, Size: 1, Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		tw.Write([]byte("x"))
+	}
+	tw.Close()
+	dir := t.TempDir()
+	if _, err := Extract(&b, dir); err != nil {
+		t.Fatal(err)
+	}
+	secret, _ := os.Stat(filepath.Join(dir, ".env"))
+	nested, _ := os.Stat(filepath.Join(dir, "nested"))
+	if secret.Mode().Perm() != 0600 {
+		t.Fatal("environment file is not private")
+	}
+	if nested.Mode().Perm()&0005 != 0005 {
+		t.Fatal("non-root image users cannot read copied source")
+	}
+}

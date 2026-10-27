@@ -50,6 +50,8 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 func (LocalRunner) Run(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	c := exec.CommandContext(ctx, "docker", args...)
 	c.Dir = dir
+	// The legacy builder ignores Dockerfile-specific secret exclusions.
+	c.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	var out boundedOutput
 	c.Stdout = &out
 	c.Stderr = io.Discard
@@ -221,11 +223,15 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 		return result, err
 	}
 	defer lock.Release()
-	stage, err := os.MkdirTemp(base, ".source-stage-*")
+	stageRoot, err := os.MkdirTemp(base, ".source-stage-*")
 	if err != nil {
 		return result, err
 	}
-	defer os.RemoveAll(stage)
+	defer os.RemoveAll(stageRoot)
+	stage := filepath.Join(stageRoot, "source")
+	if err = os.Mkdir(stage, 0755); err != nil {
+		return result, err
+	}
 	files, err := Extract(input, stage)
 	if err != nil {
 		return result, err
@@ -242,6 +248,9 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 			return result, fmt.Errorf("existing Compose overrides require an explicit migration")
 		}
 	}
+	if err = validateComposeIdentity(stage, compose, o.Name); err != nil {
+		return result, err
+	}
 	oldCompose, oldPrivate, oldErr := Protected(path)
 	existing := oldErr == nil
 	if !existing && !result.Created {
@@ -255,6 +264,11 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 			if entry.Name() != ".fleetdeck.lock" && !sensitive(entry.Name()) {
 				return result, fmt.Errorf("existing project has no readable Compose model; refusing an unprotected update")
 			}
+		}
+	}
+	if existing {
+		if err = validateComposeIdentity(path, oldCompose, o.Name); err != nil {
+			return result, err
 		}
 	}
 	if existing && oldCompose != compose {
@@ -306,12 +320,23 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 			return result, fmt.Errorf("preserving private project configuration: %w", err)
 		}
 	}
+	if err = validateComposeEnvironment(stage); err != nil {
+		return result, err
+	}
 	m, err := e.model(ctx, stage, o.Name, compose)
 	if err != nil {
 		return result, err
 	}
 	if err = validateRuntime(m, stage); err != nil {
 		return result, err
+	}
+	for _, service := range m.Services {
+		if service.Build != nil {
+			if _, err = e.Runner.Run(ctx, stage, "buildx", "version"); err != nil {
+				return result, fmt.Errorf("source builds require the Docker Buildx plugin and BuildKit")
+			}
+			break
+		}
 	}
 	ignores, err := protectBuildContexts(stage, m, private)
 	if err != nil {

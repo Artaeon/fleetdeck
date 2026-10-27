@@ -70,6 +70,7 @@ func (e *Engine) saveRuntime(ctx context.Context, path, name, file string, recor
 		return err
 	}
 	services := map[string]map[string]string{}
+	previousIDs := map[string]string{}
 	if len(strings.Fields(string(ids))) > 0 {
 		args := []string{"inspect", "--format", "{{.Image}} {{index .Config.Labels \"com.docker.compose.service\"}}"}
 		args = append(args, strings.Fields(string(ids))...)
@@ -83,13 +84,14 @@ func (e *Engine) saveRuntime(ctx context.Context, path, name, file string, recor
 				return fmt.Errorf("invalid previous image identity")
 			}
 			service := fields[1]
+			if previous, ok := previousIDs[service]; ok && previous != fields[0] {
+				return fmt.Errorf("multiple old images for one service require manual migration")
+			}
+			previousIDs[service] = fields[0]
 			digest := sha256.Sum256([]byte(service))
 			tag := fmt.Sprintf("fleetdeck-rollback/%s:%s-%x", name, record.ID, digest[:6])
 			if _, err = e.Runner.Run(ctx, path, "image", "tag", fields[0], tag); err != nil {
 				return fmt.Errorf("cannot retain previous image: %w", err)
-			}
-			if previous, ok := services[service]; ok && previous["image"] != tag {
-				return fmt.Errorf("multiple old images for one service require manual migration")
 			}
 			services[service] = map[string]string{"image": tag, "pull_policy": "never"}
 		}
