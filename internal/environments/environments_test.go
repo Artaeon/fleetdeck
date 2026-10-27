@@ -408,15 +408,14 @@ func TestCreateEnvironmentEnvFileAdjustment(t *testing.T) {
 
 	content := string(envData)
 
-	// Lines with DOMAIN in the key should have the domain replaced.
-	if !strings.Contains(content, "APP_DOMAIN=staging.example.com") {
-		t.Errorf("APP_DOMAIN should be updated to staging domain, got:\n%s", content)
+	if content != "DOMAIN=staging.example.com\n" {
+		t.Fatalf("unexpected inherited configuration: %q", content)
+	}
+	info, err := os.Stat(filepath.Join(m.GetEnvPath("myapp", "staging"), ".env"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("environment credentials are not private")
 	}
 
-	// Non-DOMAIN lines should remain unchanged.
-	if !strings.Contains(content, "DB_HOST=localhost") {
-		t.Error("DB_HOST should remain unchanged")
-	}
 }
 
 func TestCreateEnvironmentNoEnvFile(t *testing.T) {

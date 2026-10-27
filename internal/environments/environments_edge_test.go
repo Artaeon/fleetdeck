@@ -71,20 +71,8 @@ services:
 		t.Error("production compose file still contains staging project name prefix")
 	}
 
-	// Verify the .env file was adjusted.
-	prodEnvData, err := os.ReadFile(filepath.Join(prodPath, ".env"))
-	if err != nil {
-		t.Fatalf("failed to read production .env: %v", err)
-	}
-	if strings.Contains(string(prodEnvData), "staging.app.example.com") {
-		t.Error("production .env still contains staging domain")
-	}
-	if !strings.Contains(string(prodEnvData), "production.app.example.com") {
-		t.Error("production .env does not contain production domain")
-	}
-	// Non-domain lines should be preserved.
-	if !strings.Contains(string(prodEnvData), "DATABASE_URL=postgres://localhost/myapp") {
-		t.Error("production .env lost non-domain line DATABASE_URL")
+	if _, err := os.Stat(filepath.Join(prodPath, ".env")); !os.IsNotExist(err) {
+		t.Fatal("promotion copied staging credentials")
 	}
 
 	// Verify metadata was saved correctly.
@@ -287,12 +275,12 @@ LOG_LEVEL=debug
 	lines := strings.Split(result, "\n")
 
 	expectations := map[string]string{
-		"APP_DOMAIN":     "new.example.com",
-		"DATABASE_URL":   "postgres://localhost:5432/mydb",
-		"REDIS_URL":      "redis://localhost:6379",
-		"MY_DOMAIN_VAR":  "new.example.com",
-		"SECRET_KEY":     "supersecret",
-		"LOG_LEVEL":      "debug",
+		"APP_DOMAIN":    "new.example.com",
+		"DATABASE_URL":  "postgres://localhost:5432/mydb",
+		"REDIS_URL":     "redis://localhost:6379",
+		"MY_DOMAIN_VAR": "new.example.com",
+		"SECRET_KEY":    "supersecret",
+		"LOG_LEVEL":     "debug",
 	}
 
 	for _, line := range lines {
