@@ -1,10 +1,23 @@
 package monitor
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestAlertExcludesPrivateTransportDetails(t *testing.T) {
+	p := &mockAlertProvider{}
+	manager := NewAlertManager([]AlertProvider{p}, 1)
+	result := makeResult("web", false, 0)
+	result.Error = "GET https://private.example/path?token=private-marker failed"
+	manager.Process(result)
+	alerts := p.getAlerts()
+	if len(alerts) != 1 || strings.Contains(alerts[0].Message, "private-marker") || strings.Contains(alerts[0].Message, "private.example") {
+		t.Fatal("transport detail escaped into notification")
+	}
+}
 
 // mockAlertProvider records all alerts sent to it for later inspection.
 type mockAlertProvider struct {
