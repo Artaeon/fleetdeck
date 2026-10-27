@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/syslog"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -31,7 +32,24 @@ var (
 	mu      sync.Mutex
 	logFile *os.File
 	logPath string
+	journal *syslog.Writer
 )
+
+// EnableJournal forwards only action/outcome metadata to the local journal.
+// Delivery to external providers belongs to the separate alert relay.
+func EnableJournal() error {
+	mu.Lock()
+	defer mu.Unlock()
+	if journal != nil {
+		return nil
+	}
+	writer, err := syslog.New(syslog.LOG_AUTHPRIV|syslog.LOG_INFO, "fleetdeck-audit")
+	if err != nil {
+		return fmt.Errorf("local audit journal unavailable")
+	}
+	journal = writer
+	return nil
+}
 
 // Init opens or creates the audit log file at the given path.
 func Init(path string) error {
@@ -90,6 +108,13 @@ func Log(action, project, details string, success bool) {
 	data = append(data, '\n')
 
 	_, _ = logFile.Write(data)
+	if journal != nil {
+		minimal, _ := json.Marshal(struct {
+			Action  string `json:"action"`
+			Success bool   `json:"success"`
+		}{action, success})
+		_ = journal.Info(string(minimal))
+	}
 
 	// Check if rotation is needed
 	if info, err := logFile.Stat(); err == nil && info.Size() >= maxFileSize {
@@ -101,6 +126,10 @@ func Log(action, project, details string, success bool) {
 func Close() {
 	mu.Lock()
 	defer mu.Unlock()
+	if journal != nil {
+		journal.Close()
+		journal = nil
+	}
 
 	if logFile != nil {
 		logFile.Close()

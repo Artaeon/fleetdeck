@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/fleetdeck/fleetdeck/internal/audit"
 	"github.com/fleetdeck/fleetdeck/internal/config"
 	"golang.org/x/oauth2"
 )
@@ -130,6 +131,8 @@ func (s *Server) beginOIDC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
+	authenticated := false
+	defer func() { audit.Log("auth.login", "", "", authenticated) }()
 	fail := func(reason string) {
 		// Only fixed local reason codes belong here. Provider errors, tokens,
 		// callback parameters and identity claims can contain private values.
@@ -252,6 +255,7 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := now.Add(oidcSessionLifetime)
+	authenticated = true
 	if id.Expiry.Before(expires) {
 		expires = id.Expiry
 	}
