@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/smtp"
 	"strings"
 	"time"
 )
@@ -95,46 +94,6 @@ func (p *SlackProvider) Send(alert Alert) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("slack returned status %d", resp.StatusCode)
-	}
-	return nil
-}
-
-// EmailProvider sends alerts via SMTP.
-type EmailProvider struct {
-	Host     string // SMTP host
-	Port     int    // SMTP port
-	Username string
-	Password string
-	From     string
-	To       []string
-}
-
-func (p *EmailProvider) Name() string { return "email" }
-
-func (p *EmailProvider) Send(alert Alert) error {
-	subject := fmt.Sprintf("[FleetDeck/%s] %s", strings.ToUpper(alert.Level), alert.Title)
-
-	var msg bytes.Buffer
-	fmt.Fprintf(&msg, "From: %s\r\n", p.From)
-	fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(p.To, ", "))
-	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
-	fmt.Fprintf(&msg, "Date: %s\r\n", alert.Timestamp.Format(time.RFC1123Z))
-	fmt.Fprintf(&msg, "Content-Type: text/plain; charset=UTF-8\r\n")
-	fmt.Fprintf(&msg, "\r\n")
-	fmt.Fprintf(&msg, "Target: %s\r\n", alert.Target)
-	fmt.Fprintf(&msg, "Level:  %s\r\n", alert.Level)
-	fmt.Fprintf(&msg, "Time:   %s\r\n\r\n", alert.Timestamp.Format(time.RFC3339))
-	fmt.Fprintf(&msg, "%s\r\n", alert.Message)
-
-	addr := fmt.Sprintf("%s:%d", p.Host, p.Port)
-
-	var auth smtp.Auth
-	if p.Username != "" {
-		auth = smtp.PlainAuth("", p.Username, p.Password, p.Host)
-	}
-
-	if err := smtp.SendMail(addr, auth, p.From, p.To, msg.Bytes()); err != nil {
-		return fmt.Errorf("sending email: %w", err)
 	}
 	return nil
 }

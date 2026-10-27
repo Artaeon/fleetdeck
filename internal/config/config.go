@@ -113,12 +113,14 @@ type DiscoveryConfig struct {
 }
 
 type MonitoringConfig struct {
-	Enabled    bool   `toml:"enabled"`
-	Interval   string `toml:"interval"`
-	Timeout    string `toml:"timeout"`
-	WebhookURL string `toml:"webhook_url"`
-	SlackURL   string `toml:"slack_url"`
-	Threshold  int    `toml:"failure_threshold"`
+	SMTPConfigFile string   `toml:"smtp_config_file"`
+	EmailTo        []string `toml:"email_to"`
+	Enabled        bool     `toml:"enabled"`
+	Interval       string   `toml:"interval"`
+	Timeout        string   `toml:"timeout"`
+	WebhookURL     string   `toml:"webhook_url"`
+	SlackURL       string   `toml:"slack_url"`
+	Threshold      int      `toml:"failure_threshold"`
 }
 
 type DNSConfig struct {
