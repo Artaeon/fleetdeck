@@ -357,9 +357,14 @@ func (db *DB) migrate() error {
 		`ALTER TABLE projects ADD COLUMN source TEXT DEFAULT 'created'`,
 		`ALTER TABLE projects ADD COLUMN server_id TEXT DEFAULT ''`,
 		`ALTER TABLE projects ADD COLUMN branch_mappings TEXT DEFAULT ''`,
+		`ALTER TABLE servers ADD COLUMN fleetdeck_version TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE servers ADD COLUMN fleetdeck_commit TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE servers ADD COLUMN version_checked_at DATETIME`,
 	}
 	for _, stmt := range alterStatements {
-		db.conn.Exec(stmt) // ignore "duplicate column" errors
+		if _, err := db.conn.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
 	}
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -198,6 +199,11 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version of FleetDeck",
 	Run: func(cmd *cobra.Command, args []string) {
+		asJSON, _ := cmd.Flags().GetBool("json")
+		if asJSON {
+			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"version": Version, "commit": Commit, "os": runtime.GOOS, "arch": runtime.GOARCH})
+			return
+		}
 		fmt.Printf("fleetdeck %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		if Commit != "" {
 			commit := Commit
@@ -213,6 +219,7 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
+	versionCmd.Flags().Bool("json", false, "Print machine-readable build metadata")
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(versionCmd)
 }
