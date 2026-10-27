@@ -28,12 +28,13 @@ services:
     environment:
       POSTGRES_DB: fixture
       POSTGRES_HOST_AUTH_METHOD: trust
+    env_file: [database.env]
     volumes: [data:/var/lib/postgresql/data]
     network_mode: none
     mem_limit: 256m
     pids_limit: 64
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U postgres -d fixture']
+      test: [CMD-SHELL, 'pg_isready -U fixture_owner -d fixture']
       interval: 2s
       timeout: 2s
       retries: 30
@@ -49,21 +50,26 @@ services:
 volumes:
   data: {}
 COMPOSE
-printf 'POSTGRES_USER=postgres\nPOSTGRES_DB=fixture\n' > "$base/project/.env"
-chmod 0600 "$base/project/.env"
+printf 'POSTGRES_USER=wrong_interpolation_value\nPOSTGRES_DB=wrong_database\n' > "$base/project/.env"
+printf 'POSTGRES_USER=fixture_owner\n' > "$base/project/database.env"
+chmod 0600 "$base/project/.env" "$base/project/database.env"
 cli() { "$binary" --config "$base/config.toml" "$@"; }
 compose() { docker compose -f "$base/project/docker-compose.yml" "$@"; }
-sql() { compose exec -T db psql -X --set=ON_ERROR_STOP=on -U postgres -d fixture -Atc "$1"; }
+sql() { compose exec -T db psql -X --set=ON_ERROR_STOP=on -U fixture_owner -d fixture -Atc "$1"; }
 cli import "$name" --path "$base/project" --domain example.invalid
 cli start "$name" --timeout 90s
 sql "CREATE TABLE proof(value text); INSERT INTO proof VALUES ('before');"
-cli backup create "$name" --skip-volumes
+cli backup create "$name"
 manifest=$(find "$base/backups/$name" -name manifest.json -print -quit)
 id=$(basename "$(dirname "$manifest")")
 cli backup verify "$name" "$id"
+test -f "$(dirname "$manifest")/config/database.env"
+# Only the logical dump should cover the running PostgreSQL data directory.
+test -z "$(find "$(dirname "$manifest")/volumes" -type f)"
 app=$(compose ps -q app)
 sql "INSERT INTO proof VALUES ('after');"
-printf 'POSTGRES_USER=missing_role\nPOSTGRES_DB=fixture\n' > "$base/project/.env"
+printf 'POSTGRES_USER=missing_role\n' > "$base/project/database.env"
+compose up -d --wait db
 # A bad dump must fail both manual backup and the required pre-rollback snapshot.
 if cli backup create "$name" --skip-volumes; then
   echo 'Failed database dump was reported as a successful backup' >&2; exit 1
@@ -74,9 +80,9 @@ fi
 test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
 test "$(sql 'SELECT count(*) FROM proof')" = 2
 test "$(find "$base/backups/$name" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 1
-# Successful logical import into a clean database; only disposable data is removed.
-printf 'POSTGRES_USER=postgres\nPOSTGRES_DB=fixture\n' > "$base/project/.env"
-sql 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+# Restore over existing disposable tables; --clean removes their later rows.
+printf 'POSTGRES_USER=fixture_owner\n' > "$base/project/database.env"
+compose up -d --wait db
 cli rollback "$name" --backup-id "$id" --no-snapshot
 test "$(sql 'SELECT value FROM proof')" = before
 test -n "$(compose ps -q --status running app)"
