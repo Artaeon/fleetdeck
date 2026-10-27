@@ -11,6 +11,10 @@ import (
 )
 
 func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
+	return backupVolumes(projectPath, backupDir, nil)
+}
+
+func backupVolumes(projectPath, backupDir string, logicalDatabases map[string]bool) ([]ComponentInfo, error) {
 	volDir := filepath.Join(backupDir, "volumes")
 	if err := os.MkdirAll(volDir, 0700); err != nil {
 		return nil, err
@@ -30,6 +34,26 @@ func BackupVolumes(projectPath, backupDir string) ([]ComponentInfo, error) {
 	}
 	var components []ComponentInfo
 	seen := make(map[string]bool)
+	// A running database directory is not a consistent filesystem snapshot.
+	// Its successful logical dump is authoritative; do not archive or restore
+	// a second, potentially corrupt copy of the same live database files.
+	for service := range logicalDatabases {
+		for _, mount := range config.Services[service].Volumes {
+			if mount.Type == "volume" {
+				seen["volume:"+config.Volumes[mount.Source].Name] = true
+			} else if mount.Type == "bind" {
+				source := mount.Source
+				if !filepath.IsAbs(source) {
+					source = filepath.Join(absoluteProject, source)
+				}
+				relative, err := filepath.Rel(absoluteProject, source)
+				if err != nil {
+					return nil, err
+				}
+				seen["bind:"+relative] = true
+			}
+		}
+	}
 	for _, service := range volumeServiceNames(config) {
 		for _, mount := range config.Services[service].Volumes {
 			if mount.ReadOnly || mount.Type == "tmpfs" {
