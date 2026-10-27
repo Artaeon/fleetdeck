@@ -51,6 +51,7 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 PermitEmptyPasswords no
+LoginGraceTime 30
 CONFIG
 cp /etc/ssh/sshd_config /run/original-sshd
 cp /etc/pam.d/sshd /run/original-pam
@@ -100,6 +101,7 @@ chmod 0755 /usr/local/bin/systemctl /usr/local/bin/systemd-run /usr/local/bin/jo
 	if err := ApplySSHMFA(r, "testoperator"); err != nil {
 		t.Fatal(err)
 	}
+	run("/usr/sbin/sshd -T | grep -qx 'logingracetime 120'")
 	if _, err := r.Run(keyOnly); err == nil {
 		t.Fatal("key alone bypassed MFA")
 	}
