@@ -149,17 +149,19 @@ type ReleaseConfig struct {
 }
 
 type ReleaseTargetConfig struct {
-	Project             string   `toml:"project"`
-	Environment         string   `toml:"environment"`
-	Profile             string   `toml:"profile"`
-	ComposeFile         string   `toml:"compose_file"`
-	MigrationService    string   `toml:"migration_service"`
-	MigrationArgs       []string `toml:"migration_args"`
-	HealthProfile       string   `toml:"health_profile"`
-	HealthURLs          []string `toml:"health_urls"`
-	HealthMaxAttempts   int      `toml:"health_max_attempts"`
-	HealthRetryInterval string   `toml:"health_retry_interval"`
-	HealthTimeout       string   `toml:"health_timeout"`
+	// CI receive requires an exact component-to-registry repository allowlist.
+	ImageRepositories   map[string]string `toml:"image_repositories"`
+	Project             string            `toml:"project"`
+	Environment         string            `toml:"environment"`
+	Profile             string            `toml:"profile"`
+	ComposeFile         string            `toml:"compose_file"`
+	MigrationService    string            `toml:"migration_service"`
+	MigrationArgs       []string          `toml:"migration_args"`
+	HealthProfile       string            `toml:"health_profile"`
+	HealthURLs          []string          `toml:"health_urls"`
+	HealthMaxAttempts   int               `toml:"health_max_attempts"`
+	HealthRetryInterval string            `toml:"health_retry_interval"`
+	HealthTimeout       string            `toml:"health_timeout"`
 }
 
 // ReleaseHealthPolicy is the normalized, operator-owned readiness window for
