@@ -36,13 +36,22 @@ func SaveState(path string, targets []Target, results []CheckResult) error {
 	}
 
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	file, err := os.CreateTemp(dir, ".monitor-state-*")
+	if err != nil {
+		return fmt.Errorf("creating private state file: %w", err)
+	}
+	tmp := file.Name()
+	defer os.Remove(tmp)
+	defer file.Close()
+	if _, err := file.Write(data); err != nil {
 		return fmt.Errorf("writing temporary state file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
@@ -73,6 +82,8 @@ func (m *Monitor) SaveStateToDisk() error {
 	if m.StatePath == "" {
 		return nil
 	}
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 
 	results := m.Status()
 	return SaveState(m.StatePath, m.targets, results)
