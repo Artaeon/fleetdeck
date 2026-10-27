@@ -113,14 +113,15 @@ type DiscoveryConfig struct {
 }
 
 type MonitoringConfig struct {
-	SMTPConfigFile string   `toml:"smtp_config_file"`
-	EmailTo        []string `toml:"email_to"`
-	Enabled        bool     `toml:"enabled"`
-	Interval       string   `toml:"interval"`
-	Timeout        string   `toml:"timeout"`
-	WebhookURL     string   `toml:"webhook_url"`
-	SlackURL       string   `toml:"slack_url"`
-	Threshold      int      `toml:"failure_threshold"`
+	TelegramConfigFile string   `toml:"telegram_config_file"`
+	SMTPConfigFile     string   `toml:"smtp_config_file"`
+	EmailTo            []string `toml:"email_to"`
+	Enabled            bool     `toml:"enabled"`
+	Interval           string   `toml:"interval"`
+	Timeout            string   `toml:"timeout"`
+	WebhookURL         string   `toml:"webhook_url"`
+	SlackURL           string   `toml:"slack_url"`
+	Threshold          int      `toml:"failure_threshold"`
 }
 
 type DNSConfig struct {
@@ -493,6 +494,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("FLEETDECK_MONITORING_SLACK"); v != "" {
 		cfg.Monitoring.SlackURL = v
+	}
+	if v := os.Getenv("FLEETDECK_TELEGRAM_CONFIG"); v != "" {
+		cfg.Monitoring.TelegramConfigFile = v
 	}
 }
 
