@@ -54,15 +54,32 @@ password plus a WebAuthn security key/passkey. `hardware` additionally requires
 `hwk`; `mfa` deliberately permits other password-plus-MFA methods such as TOTP.
 There is no automatic downgrade to a weaker method after a failure.
 
-Recommended Authelia settings for enrollment:
+For a dedicated FleetDeck identity provider using the `webauthn` or `hardware`
+policy, offer only the matching second factor:
 
 ```yaml
+totp:
+  disable: true
+duo_api:
+  disable: true
 webauthn:
   enable_passkey_login: true
   selection_criteria:
     discoverability: required
     user_verification: required
 ```
+
+Authelia's `two_factor` client policy alone can also accept password plus TOTP.
+FleetDeck's `webauthn` policy deliberately rejects that combination. Leaving TOTP
+available can therefore send an administrator through a successful provider
+login followed by a rejected FleetDeck callback. Registering a passkey does not
+necessarily change an existing preferred second-factor method. Confirm the real
+browser flow actually uses the passkey before opening administration.
+
+On a shared Authelia installation, do not disable factors globally if other
+clients need them. Select WebAuthn for the FleetDeck login or use a dedicated
+provider. Do not change FleetDeck to the broader `mfa` policy merely to hide a
+factor mismatch.
 
 Authelia's normal passkey-first flow still requires the password for a two-factor
 policy. FleetDeck deliberately requires `pwd` and does not enable experimental

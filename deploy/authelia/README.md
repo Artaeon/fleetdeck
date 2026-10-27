@@ -20,7 +20,10 @@ administrator enrollment must be verified before enabling access.
 3. Configure Authelia in `authelia/configuration.yml` with listener
    `tcp://0.0.0.0:9091/`, file users `/config/users.yml`, SQLite `/data/db.sqlite3`,
    real TLS-validated SMTP, password plus WebAuthn, verified user presence and the
-   matching OIDC registration. Keep accounts disabled while SMTP is incomplete.
+   matching OIDC registration. For this dedicated provider, disable TOTP and Duo
+   when FleetDeck requires WebAuthn: Authelia's generic `two_factor` policy can
+   otherwise offer a method that FleetDeck correctly rejects. Keep accounts
+   disabled while SMTP is incomplete.
    Passwords, signing/storage/session keys and the OIDC client secret belong in a
    password manager; no real credentials belong in this directory in Git.
 4. Keep the raw FleetDeck client secret at `admin-auth/client-secret`, mode `0600`.

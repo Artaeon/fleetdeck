@@ -69,6 +69,10 @@ notifier:
 identity_validation:
   reset_password:
     jwt_secret: "'''+secrets.token_hex(32)+'''"
+totp:
+  disable: true
+duo_api:
+  disable: true
 webauthn:
   enable_passkey_login: true
   attestation_conveyance_preference: none

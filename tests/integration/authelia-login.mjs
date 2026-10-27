@@ -24,6 +24,10 @@ try {
   stage = 'password authentication';
   let result = await api('POST', '/api/firstfactor', {username:'testadmin',password:readFileSync('/work/password','utf8'),keepMeLoggedIn:false});
   assert.equal(result.status,200); assert.equal(result.body.status,'OK');
+  stage = 'available factor policy';
+  result = await api('GET', '/api/configuration');
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body.data.available_methods,['webauthn']);
   stage = 'registration verification';
   result = await api('POST','/api/user/session/elevation');
   assert.equal(result.status,200);
