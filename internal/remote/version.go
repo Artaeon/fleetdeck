@@ -6,8 +6,9 @@ import (
 )
 
 type VersionInfo struct {
-	Version string `json:"version"`
-	Commit  string `json:"commit"`
+	SourceDeployProtocol string `json:"source_deploy_protocol"`
+	Version              string `json:"version"`
+	Commit               string `json:"commit"`
 }
 
 var safeVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$`)
