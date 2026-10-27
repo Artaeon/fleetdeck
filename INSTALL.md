@@ -112,6 +112,7 @@ This is a one-time setup. FleetDeck installs Docker, Traefik, firewall, and hard
 
 ```bash
 fleetdeck server setup root@YOUR_SERVER_IP \
+  --admin-key ~/.ssh/fleetdeck-admin.pub \
   --domain yourdomain.com \
   --email your@email.com \
   --insecure
@@ -140,7 +141,7 @@ The `--insecure` flag is for first-time connections only -- it uses Trust On Fir
 cd /path/to/your/app
 
 fleetdeck deploy . \
-  --server root@YOUR_SERVER_IP \
+  --server fleetdeck-admin@YOUR_SERVER_IP \
   --domain myapp.yourdomain.com \
   --profile saas
 ```
@@ -200,7 +201,7 @@ Once set up, your daily workflow is simple:
 
 ```bash
 cd ~/projects/my-new-app
-fleetdeck deploy . --server root@SERVER --domain newapp.yourdomain.com
+fleetdeck deploy . --server fleetdeck-admin@SERVER --domain newapp.yourdomain.com
 ```
 
 ### Check All Projects
@@ -256,7 +257,7 @@ fleetdeck rollback myapp --latest    # Quick rollback
 git push origin main
 
 # Deploy the reviewed version
-fleetdeck deploy . --server root@SERVER --domain myapp.yourdomain.com
+fleetdeck deploy . --server fleetdeck-admin@SERVER --domain myapp.yourdomain.com
 ```
 
 ---
@@ -335,7 +336,7 @@ ssh root@YOUR_SERVER_IP
 ssh-keygen -R YOUR_SERVER_IP
 
 # Then reconnect with TOFU
-fleetdeck server setup root@YOUR_SERVER_IP --domain ... --email ... --insecure
+fleetdeck server setup root@YOUR_SERVER_IP --domain ... --email ... --insecure --admin-key ~/.ssh/fleetdeck-admin.pub
 ```
 
 ### "project is already being deployed"
