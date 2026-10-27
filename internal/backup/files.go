@@ -1,86 +1,147 @@
 package backup
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 var configFilePatterns = []string{
-	"docker-compose.yml",
-	"docker-compose.yaml",
-	"compose.yml",
-	"compose.yaml",
-	".env",
-	"Dockerfile",
-	"Dockerfile.*",
-	"*.dockerfile",
-	"nginx.conf",
-	"Caddyfile",
-	"Makefile",
+	"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml",
+	".env", "Dockerfile", "Dockerfile.*", "*.dockerfile", "nginx.conf", "Caddyfile", "Makefile",
+	".github/workflows/*",
 }
 
 func BackupConfigFiles(projectPath, backupDir string) ([]ComponentInfo, error) {
-	configDir := filepath.Join(backupDir, "config")
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
 		return nil, err
 	}
-
-	var components []ComponentInfo
-
+	defer root.Close()
+	files := make(map[string]bool) // true marks a private environment file
 	for _, pattern := range configFilePatterns {
 		matches, err := filepath.Glob(filepath.Join(projectPath, pattern))
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for _, match := range matches {
-			info, err := os.Stat(match)
-			if err != nil || info.IsDir() {
-				continue
-			}
-
-			relName := filepath.Base(match)
-			dst := filepath.Join(configDir, relName)
-			size, checksum, err := copyFileWithChecksum(match, dst)
+			name, err := filepath.Rel(projectPath, match)
 			if err != nil {
+				return nil, err
+			}
+			info, err := root.Lstat(name)
+			if err != nil {
+				return nil, err
+			}
+			if info.IsDir() {
 				continue
 			}
-
-			components = append(components, ComponentInfo{
-				Type:      "config",
-				Name:      relName,
-				Path:      filepath.Join("config", relName),
-				SizeBytes: size,
-				Checksum:  checksum,
-			})
+			if err := checkPath(root, name, false, false); err != nil {
+				return nil, err
+			}
+			files[name] = name == ".env"
 		}
 	}
-
-	// Also backup .github/workflows/ if present
-	workflowDir := filepath.Join(projectPath, ".github", "workflows")
-	if info, err := os.Stat(workflowDir); err == nil && info.IsDir() {
-		entries, _ := os.ReadDir(workflowDir)
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			src := filepath.Join(workflowDir, entry.Name())
-			dstRel := filepath.Join("config", ".github", "workflows", entry.Name())
-			dst := filepath.Join(backupDir, dstRel)
-
-			size, checksum, err := copyFileWithChecksum(src, dst)
+	// Separate env_file references may be nested and have arbitrary names.
+	// Refuse unsupported paths rather than produce an incomplete recovery set.
+	for _, name := range configFilePatterns[:4] {
+		if _, exists := files[name]; !exists {
+			continue
+		}
+		data, err := root.ReadFile(name)
+		if err != nil {
+			return nil, err
+		}
+		var config struct {
+			Services map[string]struct {
+				EnvFile yaml.Node `yaml:"env_file"`
+			} `yaml:"services"`
+		}
+		if yaml.Unmarshal(data, &config) != nil {
+			return nil, fmt.Errorf("invalid Compose file %s", name)
+		}
+		for _, service := range config.Services {
+			refs, err := environmentFiles(service.EnvFile)
 			if err != nil {
-				continue
+				return nil, err
 			}
-
-			components = append(components, ComponentInfo{
-				Type:      "config",
-				Name:      ".github/workflows/" + entry.Name(),
-				Path:      dstRel,
-				SizeBytes: size,
-				Checksum:  checksum,
-			})
+			for _, ref := range refs {
+				if strings.Contains(ref.Path, "$") {
+					return nil, fmt.Errorf("env_file paths must be literal project-relative paths for backup")
+				}
+				path := filepath.Clean(ref.Path)
+				if err := checkPath(root, path, false, false); err != nil {
+					if !ref.Required && os.IsNotExist(err) {
+						continue
+					}
+					return nil, fmt.Errorf("required environment file: %w", err)
+				}
+				files[path] = true
+			}
 		}
 	}
-
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var components []ComponentInfo
+	for _, name := range names {
+		in, err := root.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		dst := filepath.Join("config", name)
+		size, checksum, err := copyOpenedFileWithChecksum(in, filepath.Join(backupDir, dst), files[name])
+		in.Close()
+		if err != nil {
+			return nil, fmt.Errorf("backing up configuration %s: %w", name, err)
+		}
+		components = append(components, ComponentInfo{Type: "config", Name: name, Path: dst, SizeBytes: size, Checksum: checksum})
+	}
 	return components, nil
+}
+
+type environmentFile struct {
+	Path     string `yaml:"path"`
+	Required bool   `yaml:"required"`
+}
+
+func environmentFiles(node yaml.Node) ([]environmentFile, error) {
+	if node.Kind == 0 {
+		return nil, nil
+	}
+	if node.Kind == yaml.SequenceNode {
+		var result []environmentFile
+		for _, entry := range node.Content {
+			refs, err := environmentFiles(*entry)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, refs...)
+		}
+		return result, nil
+	}
+	ref := environmentFile{Required: true}
+	switch node.Kind {
+	case yaml.ScalarNode:
+		if node.Tag != "!!str" {
+			return nil, fmt.Errorf("invalid Compose env_file")
+		}
+		ref.Path = node.Value
+	case yaml.MappingNode:
+		if node.Decode(&ref) != nil {
+			return nil, fmt.Errorf("invalid Compose env_file")
+		}
+	default:
+		return nil, fmt.Errorf("invalid Compose env_file")
+	}
+	if ref.Path == "" {
+		return nil, fmt.Errorf("empty Compose env_file path")
+	}
+	return []environmentFile{ref}, nil
 }
