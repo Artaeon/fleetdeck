@@ -8,7 +8,8 @@ fleetdeck client init
 fleetdeck server add production operator@server.example.com
 fleetdeck server list
 fleetdeck server status production
-fleetdeck deploy ./my-app --server production --domain preview.example.com
+fleetdeck project link ./my-app --server production --name my-app --domain preview.example.com
+fleetdeck deploy ./my-app
 ```
 
 `client init` writes a private configuration under the OS user configuration
@@ -32,7 +33,9 @@ registering multiple servers does not create replication, load balancing or HA.
 Keep environment secrets in the password manager and private deployment files.
 A repository may contain a generic Compose file, Dockerfile and documented build
 settings; do not commit your personal server inventory, bot tokens or SMTP data.
-An automatic per-project deployment manifest is not introduced by `client init`.
+Use `fleetdeck project link` to save a private target outside the repository.
+See [protected project deployment](PROJECT_DEPLOY.md) for secret preservation,
+server-side backups and recovery limits. `client init` alone does not link projects.
 
 For enrolled SSH MFA hosts, use an interactive terminal:
 
