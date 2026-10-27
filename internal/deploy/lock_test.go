@@ -3,6 +3,7 @@ package deploy
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -24,9 +25,9 @@ func TestAcquireAndReleaseLock(t *testing.T) {
 		t.Fatalf("Release: %v", err)
 	}
 
-	// Lock file should be removed
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("lock file should be removed after release")
+	// The inode must remain stable across acquisitions
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Error("lock file must remain after release")
 	}
 }
 
@@ -77,5 +78,41 @@ func TestReleaseNilLockFile(t *testing.T) {
 	lock := &ProjectLock{}
 	if err := lock.Release(); err != nil {
 		t.Fatalf("Release with nil lockFile: %v", err)
+	}
+}
+
+func TestLockKeepsExistingDescriptorSerialized(t *testing.T) {
+	dir := t.TempDir()
+	first, err := AcquireLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiter, err := os.OpenFile(filepath.Join(dir, ".fleetdeck.lock"), os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer waiter.Close()
+	if err = first.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if err = syscall.Flock(int(waiter.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(waiter.Fd()), syscall.LOCK_UN)
+	if third, err := AcquireLock(dir); err == nil {
+		third.Release()
+		t.Fatal("different inode allowed concurrent deploy")
+	}
+}
+func TestLockRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "private")
+	os.WriteFile(outside, []byte("keep"), 0600)
+	if err := os.Symlink(outside, filepath.Join(dir, ".fleetdeck.lock")); err != nil {
+		t.Fatal(err)
+	}
+	if lock, err := AcquireLock(dir); err == nil {
+		lock.Release()
+		t.Fatal("accepted symlink lock")
 	}
 }
