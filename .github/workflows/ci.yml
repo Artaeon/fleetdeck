@@ -109,6 +109,10 @@ jobs:
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
           FLEETDECK_INTEGRATION: "true"
+      - name: Verify optional non-root PostgreSQL image and restore
+        run: |
+          docker build -t fleetdeck-postgres-nonroot:test deploy/postgres
+          tests/integration/postgres-nonroot.sh fleetdeck-postgres-nonroot:test
       - name: Verify project accounts and CLI proxy routes
         run: |
           go build -o /tmp/fleetdeck-cli-integration .
