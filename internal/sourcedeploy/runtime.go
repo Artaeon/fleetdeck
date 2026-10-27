@@ -11,12 +11,19 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/db"
 )
 
 func (e *Engine) quiesce(ctx context.Context, path, name, file string, m model) ([]string, error) {
 	stateful := false
-	for _, s := range m.Services {
+	databaseKinds := make(map[string]string)
+	for name, s := range m.Services {
+		kind, err := backup.DatabaseKind(s.Image, s.Labels)
+		if err != nil {
+			return nil, fmt.Errorf("database service %s: %w", name, err)
+		}
+		databaseKinds[name] = kind
 		for _, v := range s.Volumes {
 			if !v.ReadOnly && v.Type != "tmpfs" {
 				stateful = true
@@ -32,14 +39,13 @@ func (e *Engine) quiesce(ctx context.Context, path, name, file string, m model) 
 	}
 	var stopped []string
 	for _, service := range strings.Fields(string(data)) {
-		s, ok := m.Services[service]
+		_, ok := m.Services[service]
 		if !ok {
 			return nil, fmt.Errorf("running service is absent from Compose model")
 		}
 		// Match the native backup module's logical database support exactly. Other
 		// stateful services are stopped so their files can be copied consistently.
-		image := strings.ToLower(s.Image)
-		if strings.HasPrefix(image, "postgres") || strings.HasPrefix(image, "mysql") || strings.HasPrefix(image, "mariadb") {
+		if databaseKinds[service] != "" {
 			continue
 		}
 		stopped = append(stopped, service)

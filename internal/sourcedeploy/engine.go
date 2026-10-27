@@ -82,8 +82,9 @@ func New(c *config.Config, d *db.DB) *Engine {
 }
 
 type serviceModel struct {
-	Image string `json:"image"`
-	Build *struct {
+	Image  string            `json:"image"`
+	Labels map[string]string `json:"labels"`
+	Build  *struct {
 		Context    string `json:"context"`
 		Dockerfile string `json:"dockerfile"`
 	} `json:"build"`
