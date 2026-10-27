@@ -1,0 +1,11 @@
+[Unit]
+Description=Check FleetDeck and running container security every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=fleetdeck-security.service
+
+[Install]
+WantedBy=timers.target
