@@ -82,13 +82,16 @@ both PostgreSQL and MySQL imports report decompression failures. An import error
 leaves application services stopped, although the database service started for
 the import can remain running. Earlier SQL statements may already have changed
 data: this is error detection, not transactional rollback. Restore into a clean,
-compatible database and validate the result before returning traffic. Existing
-objects can cause a plain SQL dump to fail, and FleetDeck does not automatically
-drop or replace the whole database.
+compatible database and validate the result before returning traffic. New
+PostgreSQL dumps use `--clean --if-exists` to replace objects represented in the
+dump. Objects created after that snapshot can remain; FleetDeck does not drop or
+replace the whole database. Older dumps without these flags require a clean target.
 
-Database discovery still depends on the supported image names and `.env`
-settings. Custom image names, external databases, service-specific credentials
-and additional databases need an explicit recovery plan; a successful command
+Database discovery still depends on the supported PostgreSQL/MySQL/MariaDB image
+names. Credentials and database names come from the running service environment,
+including inline Compose values and `env_file`, using its actual container ID.
+Exactly one running container per database service is required. Custom image
+names, external databases, file-based secrets and additional databases need an explicit recovery plan; a successful command
 does not prove that every data store was discovered. The isolated PostgreSQL
 drill is `tests/integration/database-backup.sh`.
 
@@ -99,6 +102,12 @@ environment interpolation, short/long mount syntax and actual project-scoped,
 custom or external volume names. Shared named volumes are archived once. Explicit
 writable directories named `tmp`, `.cache` or `node_modules` are included too;
 read-only dependencies and tmpfs mounts are omitted.
+
+When a database service has a successful logical dump, its mounted data is
+excluded from filesystem archiving, including mounts shared with another service.
+This avoids restoring inconsistent live database files alongside the SQL dump.
+Other application volumes, such as uploads, are still archived. A database
+service containing unrelated persistent files needs a separate recovery plan.
 
 A missing or unreadable writable mount, failed archive command, anonymous volume,
 unsupported mount type, file bind mount or bind directory outside the project now
@@ -120,6 +129,16 @@ archiving file databases or other data requiring a consistent snapshot. Volume
 copying does not provide transactional consistency. Test recovery with the same
 ownership and mount layout used in deployment. The disposable Docker drill is
 `tests/integration/volume-backup.sh`.
+
+## Environment configuration coverage
+
+Configuration backups include service `env_file` references from the saved Compose
+files, including nested paths and optional files that exist. Each is stored with
+mode `0600` and restored with those permissions. Missing required files, links,
+external paths and interpolated env-file paths fail the backup. Use literal paths
+inside the project. Configuration copy errors are fatal rather than silently
+omitting files. Keep the complete backup private and encrypt it before off-server
+transfer; it contains the credentials needed to recover the project.
 
 ## Restore path checks
 
