@@ -28,6 +28,7 @@ type Config struct {
 }
 
 type AuditConfig struct {
+	Journal bool   `toml:"journal"`
 	Enabled bool   `toml:"enabled"`
 	LogPath string `toml:"log_path"`
 }

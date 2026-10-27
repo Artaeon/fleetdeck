@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	cfgFile string
-	cfg     *config.Config
+	cfgFile  string
+	cfg      *config.Config
 	database *db.DB
 )
 
@@ -52,6 +52,11 @@ Features:
 		if cfg.Audit.Enabled {
 			if err := audit.Init(cfg.Audit.LogPath); err != nil {
 				ui.Warn("Could not initialize audit log: %v", err)
+			}
+			if cfg.Audit.Journal {
+				if err := audit.EnableJournal(); err != nil {
+					ui.Warn("%v", err)
+				}
 			}
 		}
 	},
