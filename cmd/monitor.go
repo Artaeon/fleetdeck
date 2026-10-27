@@ -27,7 +27,7 @@ var monitorStartCmd = &cobra.Command{
 	Long: `Starts continuous health monitoring for one or more projects.
 
 Checks each project's URL at regular intervals and sends
-alerts via configured providers (webhook, Slack, email)
+alerts via configured providers (Telegram, webhook, Slack, Discord, email)
 when health status changes.
 
 Use --all to monitor every registered project (useful when running
@@ -109,6 +109,17 @@ Examples:
 		}
 
 		var providers []monitor.AlertProvider
+		telegramFile, _ := cmd.Flags().GetString("telegram-config")
+		if telegramFile == "" {
+			telegramFile = cfg.Monitoring.TelegramConfigFile
+		}
+		if telegramFile != "" {
+			provider, err := monitor.LoadTelegramProvider(telegramFile)
+			if err != nil {
+				return err
+			}
+			providers = append(providers, provider)
+		}
 		smtpFile, _ := cmd.Flags().GetString("smtp-config")
 		recipients, _ := cmd.Flags().GetStringSlice("email-to")
 		if smtpFile == "" {
@@ -236,6 +247,7 @@ func init() {
 	monitorStartCmd.Flags().String("targets-file", "", "Operator-owned JSON health endpoints, instead of registered project domains")
 	monitorStartCmd.Flags().String("state-file", "", "Writable monitor state path; allows a dedicated unprivileged monitor account")
 	monitorStartCmd.Flags().String("smtp-config", "", "Private SMTP JSON file; defaults to monitoring.smtp_config_file")
+	monitorStartCmd.Flags().String("telegram-config", "", "Private Telegram JSON file; defaults to monitoring.telegram_config_file")
 	monitorStartCmd.Flags().StringSlice("email-to", nil, "Notification recipient addresses")
 	monitorStartCmd.Flags().String("webhook", "", "Webhook URL for alerts")
 	monitorStartCmd.Flags().String("slack", "", "Slack webhook URL for alerts")
