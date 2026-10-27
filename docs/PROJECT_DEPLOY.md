@@ -74,6 +74,35 @@ restart is reported for operator recovery. A startup failure retains the snapsho
 and marks the project failed. Application migrations can change data, so FleetDeck
 does not blindly restore a database on a failed startup.
 
+## Custom database images
+
+Logical database backups and source-deployment writer stops share the same
+engine selection. Standard `postgres`, `mysql` and `mariadb` images (including
+Docker Hub `library/` names and digest references) are recognized automatically.
+For a custom registry image or bare `sha256:` ID, declare the engine explicitly:
+
+```yaml
+services:
+  database:
+    image: registry.example.com/team/database@sha256:REPLACE_WITH_64_HEX_DIGITS
+    labels:
+      io.fleetdeck.backup.database: postgres
+```
+
+Use an updated FleetDeck server with database-label support before deploying this
+configuration; older versions ignore the label. Allowed values are `postgres`,
+`mysql` and `mariadb`, as literal strings. Unknown/empty values and duplicate list
+entries stop the backup/update. The label overrides image-name detection and is
+an operator assertion: the image must provide the corresponding dump/restore
+tools and expected database environment variables. It does not make another
+database engine compatible. Ambiguous legacy image names beginning with these
+database names require an explicit label instead of silently losing dump coverage.
+
+Check the resulting backup manifest for a database component and test restoration.
+An unrecognized image without a label has no logical database dump. Custom
+database images therefore require explicit review, even if a volume copy exists.
+When a logical dump succeeds, its data mounts are excluded from live file copies.
+
 ## Recovery and backup boundaries
 
 The command prints the verified backup ID. Inspect it on the server:
