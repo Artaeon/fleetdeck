@@ -121,6 +121,7 @@ not yet implemented.** Each server runs its own FleetDeck instance and panel.
 | Start / operate | Secure / recover |
 | --- | --- |
 | [Installation](INSTALL.md) | [Host firewall and isolation](docs/SERVER_SECURITY.md) |
+| [Production readiness](docs/PRODUCTION_READINESS.md) | [Investigating vulnerabilities](docs/SECURITY_TRIAGE.md) |
 | [Workstation and server inventory](docs/LOCAL_CLIENT.md) | [SSH MFA and recovery](docs/SSH_ACCESS.md) |
 | [Protected project deployment](docs/PROJECT_DEPLOY.md) | [Authelia and passkeys](docs/AUTHELIA.md) |
 | [Application coverage](docs/APPLICATION_COVERAGE.md) | [Admin access](docs/ADMIN_ACCESS.md) |

@@ -5,6 +5,10 @@ trusted deployment administrator. Start with a dedicated Ubuntu/Debian VPS.
 Existing servers need the [migration runbook](docs/EXISTING_SERVER_MIGRATION.md)
 before changing their proxy, firewall or application ownership.
 
+Before switching a real public domain, work through the
+[production readiness checklist](docs/PRODUCTION_READINESS.md). It distinguishes
+installed features from controls you have configured and tested.
+
 ## 1. Install matching client and server builds
 
 Follow [release verification](docs/RELEASE_SECURITY.md) for published Linux
