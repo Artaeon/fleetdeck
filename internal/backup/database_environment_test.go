@@ -18,7 +18,7 @@ func TestDatabaseBackupAndRestoreUseRunningServiceEnvironment(t *testing.T) {
 	t.Setenv("DATABASE_COMMAND_LOG", log)
 	putFakeDockerOnPath(t, fakeDatabaseEnvironment+`printf '%s\n' "$*" >> "$DATABASE_COMMAND_LOG"
 case "$*" in
-  "exec fixture-container pg_dump -U fixture_user fixture_db")
+  "exec fixture-container pg_dump --clean --if-exists -U fixture_user fixture_db")
     i=0; while [ $i -lt 400 ]; do echo "SELECT $i, 'fixture payload';"; i=$((i+1)); done ;;
   "exec -i fixture-container psql -X --set=ON_ERROR_STOP=on -U fixture_user fixture_db") cat >/dev/null ;;
   *) exit 91 ;;

@@ -102,7 +102,7 @@ func dumpPostgres(containerName, serviceName string, envVars map[string]string, 
 	// verification. pipefail makes the pipeline fail if pg_dump fails.
 	cmd := exec.Command("bash", "-c",
 		"umask 077; set -o pipefail; "+
-			shellQuote("docker", "exec", containerName, "pg_dump", "-U", user, dbName)+
+			shellQuote("docker", "exec", containerName, "pg_dump", "--clean", "--if-exists", "-U", user, dbName)+
 			" | gzip > "+shellQuote(dumpFile))
 
 	if out, err := cmd.CombinedOutput(); err != nil {

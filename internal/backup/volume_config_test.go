@@ -83,6 +83,28 @@ func TestNamedVolumeFailureCannotBecomeSuccessfulBackup(t *testing.T) {
 	}
 }
 
+func TestLogicalDatabaseBackupExcludesLiveFilesButKeepsUploads(t *testing.T) {
+	project, backup := t.TempDir(), t.TempDir()
+	os.Mkdir(filepath.Join(project, "uploads"), 0700)
+	os.WriteFile(filepath.Join(project, "uploads", "proof"), []byte("preserved"), 0600)
+	model := map[string]any{
+		"services": map[string]any{
+			"db":  map[string]any{"volumes": []composeMount{{Type: "volume", Source: "database"}}},
+			"app": map[string]any{"volumes": []composeMount{{Type: "volume", Source: "database"}, {Type: "bind", Source: filepath.Join(project, "uploads")}}},
+		},
+		"volumes": map[string]any{"database": map[string]any{"name": "fixture_database"}},
+	}
+	// Any attempt to inspect/archive the live database volume fails the test.
+	fakeVolumeModel(t, model, "exit 91\n")
+	components, err := backupVolumes(project, backup, map[string]bool{"db": true})
+	if err != nil || len(components) != 1 || components[0].RestorePath != "uploads" {
+		t.Fatalf("database/upload separation: %v %v", components, err)
+	}
+	if _, err := backupVolumes(project, t.TempDir(), nil); err == nil {
+		t.Fatal("without a logical dump the database volume must still be required")
+	}
+}
+
 func TestVolumeInventoryRejectsUnsafeAndUnsupportedSources(t *testing.T) {
 	for _, kind := range []string{"symlink", "outside", "unknown"} {
 		t.Run(kind, func(t *testing.T) {

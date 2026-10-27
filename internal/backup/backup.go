@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/config"
@@ -106,7 +107,13 @@ func CreateBackup(cfg *config.Config, database *db.DB, project *db.Project, back
 	if !opts.SkipVolumes {
 		step++
 		ui.Step(step, totalSteps, "Backing up volumes...")
-		volComponents, err := BackupVolumes(project.ProjectPath, backupDir)
+		logicalDatabases := make(map[string]bool)
+		for _, component := range manifest.Components {
+			if component.Type == "database" {
+				logicalDatabases[strings.Fields(component.Name)[0]] = true
+			}
+		}
+		volComponents, err := backupVolumes(project.ProjectPath, backupDir, logicalDatabases)
 		if err != nil {
 			return nil, fmt.Errorf("volume backup failed: %w", err)
 		} else if len(volComponents) > 0 {
