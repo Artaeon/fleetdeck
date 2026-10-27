@@ -261,6 +261,13 @@ func DefaultConfig() *Config {
 func Load(path string) (*Config, error) {
 	if path == "" {
 		path = DefaultConfigPath
+		if userPath, err := UserConfigPath(); err == nil {
+			if _, err := os.Stat(userPath); err == nil {
+				path = userPath
+			} else if !os.IsNotExist(err) {
+				return nil, err
+			}
+		}
 	}
 
 	cfg := DefaultConfig()

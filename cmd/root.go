@@ -63,7 +63,7 @@ Features:
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: /etc/fleetdeck/config.toml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: user client configuration when present, otherwise /etc/fleetdeck/config.toml)")
 }
 
 func Execute() error {
