@@ -125,7 +125,7 @@ PY`)
 	if err := ConfirmSSHMFA(r); err != nil {
 		t.Fatal(err)
 	}
-	run("test ! -e /run/test-mfa-timer; test ! -e /var/lib/fleetdeck/ssh-mfa-trial")
+	run("test ! -e /run/test-mfa-timer; test ! -e /var/lib/fleetdeck-ssh-mfa-trial")
 	run(`cp /run/original-sshd /etc/ssh/sshd_config; cp /run/original-pam /etc/pam.d/sshd; systemctl reload ssh.service; mv /etc/fleetdeck/ssh-mfa/testoperator /run/enrolled-secret`)
 	if err := ApplySSHMFA(r, "testoperator"); err == nil {
 		t.Fatal("applied without enrollment")
@@ -137,7 +137,7 @@ PY`)
 	}
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := r.Run("test ! -e /var/lib/fleetdeck/ssh-mfa-trial"); err == nil {
+		if _, err := r.Run("test ! -e /var/lib/fleetdeck-ssh-mfa-trial"); err == nil {
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -153,7 +153,7 @@ PY`)
 	run(`test -f /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
 systemctl stop fleetdeck-ssh-mfa-rollback.timer
 kill "$(cat /run/sshd.pid)"
-sh /var/lib/fleetdeck/ssh-mfa-trial/rollback.sh
+sh /var/lib/fleetdeck-ssh-mfa-trial/rollback.sh
 cmp /run/original-sshd /etc/ssh/sshd_config
 cmp /run/original-pam /etc/pam.d/sshd
 test ! -e /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
