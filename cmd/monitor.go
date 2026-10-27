@@ -39,8 +39,6 @@ Examples:
   fleetdeck monitor start --all --webhook https://hooks.example.com/xxx`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d := openDB()
-
 		interval, _ := cmd.Flags().GetDuration("interval")
 		timeout, _ := cmd.Flags().GetDuration("timeout")
 		webhookURL, _ := cmd.Flags().GetString("webhook")
@@ -58,6 +56,10 @@ Examples:
 		}
 
 		var projects []*db.Project
+		var d *db.DB
+		if targetsFile == "" {
+			d = openDB()
+		}
 		if targetsFile != "" {
 			if all || len(args) > 0 {
 				return fmt.Errorf("--targets-file cannot be combined with project names or --all")
@@ -137,9 +139,12 @@ Examples:
 			providers = append(providers, dp)
 		}
 
-		statePath := filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")
-		if !all && len(args) == 1 {
+		statePath, _ := cmd.Flags().GetString("state-file")
+		if statePath == "" && !all && len(args) == 1 {
 			statePath = filepath.Join("/opt/fleetdeck/monitor", args[0]+".json")
+		}
+		if statePath == "" {
+			statePath = filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")
 		}
 		mon := monitor.NewWithState(targets, providers, threshold, statePath)
 
@@ -229,6 +234,7 @@ func init() {
 	monitorStartCmd.Flags().Duration("interval", 30*time.Second, "Check interval")
 	monitorStartCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout per check")
 	monitorStartCmd.Flags().String("targets-file", "", "Operator-owned JSON health endpoints, instead of registered project domains")
+	monitorStartCmd.Flags().String("state-file", "", "Writable monitor state path; allows a dedicated unprivileged monitor account")
 	monitorStartCmd.Flags().String("smtp-config", "", "Private SMTP JSON file; defaults to monitoring.smtp_config_file")
 	monitorStartCmd.Flags().StringSlice("email-to", nil, "Notification recipient addresses")
 	monitorStartCmd.Flags().String("webhook", "", "Webhook URL for alerts")
