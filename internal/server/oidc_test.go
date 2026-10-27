@@ -270,3 +270,24 @@ func TestOIDCConfigurationFailsClosed(t *testing.T) {
 		t.Fatal("unavailable provider fell back to token auth")
 	}
 }
+
+func TestOIDCSoftwarePasskeyRequiresPasswordAndMFA(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		amr  []string
+		want int
+	}{
+		{"password-and-software-passkey", []string{"pwd", "mfa", "swk", "pop", "pin", "user"}, 303},
+		{"software-passkey-without-password", []string{"mfa", "swk", "pin", "user"}, 401},
+		{"password-and-code", []string{"pwd", "mfa", "otp"}, 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setupOIDCFixture(t)
+			f.claims["amr"] = tc.amr
+			state, cookie := f.begin(t)
+			if got := f.callback(state, cookie).Code; got != tc.want {
+				t.Fatalf("callback returned %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
