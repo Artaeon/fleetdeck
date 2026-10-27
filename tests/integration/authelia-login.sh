@@ -56,9 +56,8 @@ access_control:
 session:
   secret: "'''+secrets.token_hex(32)+'''"
   cookies:
-    - domain: example.test
+    - domain: auth.example.test
       authelia_url: https://auth.example.test:8443
-      default_redirection_url: https://admin.example.test:8443
 storage:
   encryption_key: "'''+secrets.token_hex(32)+'''"
   local:
@@ -95,10 +94,22 @@ cat > "$base/Caddyfile" <<'CADDY'
 {
   admin off
   auto_https off
+  servers {
+    # Emulate a trusted CDN hop only inside this unpublished test network.
+    trusted_proxies static private_ranges
+  }
 }
 https://auth.example.test:8443 {
   tls /work/tls.pem /work/tls.key
-  reverse_proxy 127.0.0.1:9091
+  reverse_proxy 127.0.0.1:9091 {
+    header_up Host auth.example.test:8443
+    header_up X-Forwarded-Host auth.example.test:8443
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-URI {uri}
+    header_up -X-Original-URL
+    header_up -X-Original-Method
+    header_up -X-Forwarded-Method
+  }
 }
 https://admin.example.test:8443 {
   tls /work/tls.pem /work/tls.key

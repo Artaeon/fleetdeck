@@ -64,6 +64,35 @@ leave both markers absent. To suspend access later, remove the markers **and sto
 both services**; removing a marker alone does not stop an already running service.
 Docker automatic restarts are disabled so it cannot bypass the systemd gate.
 
+## Identity-provider proxy headers
+
+Pin the public portal's scheme and hostname explicitly, including when Caddy
+trusts a CDN's proxy addresses. Trusting the network hop does not establish that
+the CDN replaced every client-supplied forwarding header. Authelia uses these
+headers to determine its issuer and session configuration.
+
+For a dedicated OIDC portal (adapt the hostname and certificate configuration):
+
+```caddyfile
+auth.example.com {
+    reverse_proxy 127.0.0.1:9091 {
+        header_up Host auth.example.com
+        header_up X-Forwarded-Host auth.example.com
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-URI {uri}
+        header_up -X-Original-URL
+        header_up -X-Original-Method
+        header_up -X-Forwarded-Method
+    }
+}
+```
+
+Keep the provider cookie scoped to the authentication hostname. Verify that
+discovery still returns that issuer when a request supplies a different
+`X-Forwarded-Host`, scheme or original URL. Proxy-authorization integrations use
+different request metadata and need their own trusted route; do not reuse this
+portal example as a `forward_auth` configuration.
+
 ## Backups and recovery
 
 Install `backup.py` as `/usr/local/lib/fleetdeck/authelia-backup.py`. Store only an

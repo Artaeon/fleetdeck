@@ -10,6 +10,15 @@ try {
   // The untrusted test CA is accepted only inside this disposable browser.
   const context = await browser.newContext({ignoreHTTPSErrors: true});
   const page = await context.newPage();
+  stage = 'untrusted portal forwarding headers';
+  const discovery = await context.request.get(auth+'/.well-known/openid-configuration', {headers: {
+    'X-Forwarded-Host':'admin.example.test:8443',
+    'X-Forwarded-Proto':'http',
+    'X-Original-URL':admin+'/',
+    'X-Forwarded-URI':'/untrusted-path',
+  }});
+  assert.equal(discovery.status(),200);
+  assert.equal((await discovery.json()).issuer,auth);
   const cdp = await context.newCDPSession(page);
   await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator', {options: {
@@ -62,6 +71,8 @@ try {
   },result.body.data.publicKey);
   result=await api('POST','/api/secondfactor/webauthn',{response:assertion});
   assert.equal(result.status,200);
+  assert.equal((await context.cookies(admin)).filter(cookie=>cookie.name==='authelia_session').length,0,
+    'provider session cookie must not reach sibling applications');
   stage = 'OIDC authorization';
   await page.goto(admin+'/login');
   await page.waitForURL(url=>url.hostname==='auth.example.test' || (url.hostname==='admin.example.test' && url.pathname==='/'));
