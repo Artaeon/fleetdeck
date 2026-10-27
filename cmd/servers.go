@@ -37,7 +37,7 @@ Examples:
 		}
 
 		// Resolve SSH key path
-		if keyFile == "" {
+		if keyFile == "" && os.Getenv("SSH_AUTH_SOCK") == "" {
 			for _, path := range []string{
 				os.ExpandEnv("$HOME/.ssh/id_ed25519"),
 				os.ExpandEnv("$HOME/.ssh/id_rsa"),
@@ -61,9 +61,13 @@ Examples:
 
 		// Test connectivity
 		ui.Info("Testing SSH connection to %s@%s:%s...", user, host, port)
-		keyData, err := os.ReadFile(keyFile)
-		if err != nil {
-			return fmt.Errorf("reading SSH key %s: %w", keyFile, err)
+		var keyData []byte
+		if keyFile != "" {
+			var err error
+			keyData, err = os.ReadFile(keyFile)
+			if err != nil {
+				return fmt.Errorf("reading SSH key: %w", err)
+			}
 		}
 
 		var passphraseBytes []byte
@@ -180,9 +184,13 @@ var serverStatusCmd = &cobra.Command{
 		for _, s := range servers {
 			ui.Info("Checking %s (%s@%s:%s)...", s.Name, s.User, s.Host, s.Port)
 
-			keyData, err := os.ReadFile(s.KeyPath)
-			if err != nil {
-				ui.Error("  Cannot read key %s: %v", s.KeyPath, err)
+			var keyData []byte
+			var keyErr error
+			if s.KeyPath != "" {
+				keyData, keyErr = os.ReadFile(s.KeyPath)
+			}
+			if keyErr != nil {
+				ui.Error("  Cannot read key %s: %v", s.KeyPath, keyErr)
 				d.UpdateServerStatus(s.Name, "unreachable")
 				continue
 			}

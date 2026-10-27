@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -39,10 +40,11 @@ func ParsePrivateKey(data []byte, passphrase []byte) (ssh.Signer, error) {
 // The known_hosts file is read from ~/.ssh/known_hosts. If the file does not
 // exist, an error is returned; use NewClientInsecure to skip host key checking.
 func NewClient(host, port, user string, privateKey []byte, passphrase []byte) (*Client, error) {
-	signer, err := ParsePrivateKey(privateKey, passphrase)
+	auth, cleanup, err := authentication(privateKey, passphrase)
 	if err != nil {
 		return nil, err
 	}
+	defer cleanup()
 
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -55,10 +57,9 @@ func NewClient(host, port, user string, privateKey []byte, passphrase []byte) (*
 	}
 
 	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
+		User:            user,
+		Auth:            auth,
+		Timeout:         20 * time.Second,
 		HostKeyCallback: hostKeyCallback,
 	}
 
@@ -71,10 +72,11 @@ func NewClient(host, port, user string, privateKey []byte, passphrase []byte) (*
 // appended to known_hosts for future verification. This mirrors the behavior
 // of ssh -o StrictHostKeyChecking=accept-new.
 func NewClientTOFU(host, port, user string, privateKey []byte, passphrase []byte) (*Client, error) {
-	signer, err := ParsePrivateKey(privateKey, passphrase)
+	auth, cleanup, err := authentication(privateKey, passphrase)
 	if err != nil {
 		return nil, err
 	}
+	defer cleanup()
 
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -131,10 +133,9 @@ func NewClientTOFU(host, port, user string, privateKey []byte, passphrase []byte
 	}
 
 	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
+		User:            user,
+		Auth:            auth,
+		Timeout:         20 * time.Second,
 		HostKeyCallback: callback,
 	}
 

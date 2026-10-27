@@ -59,7 +59,7 @@ The server must be accessible via SSH with key-based auth.`,
 			if err != nil {
 				return fmt.Errorf("reading SSH key %s: %w", keyFile, err)
 			}
-		} else {
+		} else if os.Getenv("SSH_AUTH_SOCK") == "" {
 			// Try default SSH key locations
 			for _, path := range []string{
 				os.ExpandEnv("$HOME/.ssh/id_ed25519"),

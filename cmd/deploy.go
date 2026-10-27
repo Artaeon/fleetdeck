@@ -339,7 +339,7 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		if err != nil {
 			return fmt.Errorf("reading SSH key: %w", err)
 		}
-	} else {
+	} else if os.Getenv("SSH_AUTH_SOCK") == "" {
 		keyData = findSSHKey(host)
 		if keyData == nil {
 			return fmt.Errorf("no SSH key found; use --key to specify one")
