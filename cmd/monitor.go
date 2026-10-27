@@ -95,6 +95,22 @@ Examples:
 		}
 
 		var providers []monitor.AlertProvider
+		smtpFile, _ := cmd.Flags().GetString("smtp-config")
+		recipients, _ := cmd.Flags().GetStringSlice("email-to")
+		if smtpFile == "" {
+			smtpFile = cfg.Monitoring.SMTPConfigFile
+		}
+		if len(recipients) == 0 {
+			recipients = cfg.Monitoring.EmailTo
+		}
+		if smtpFile != "" {
+			provider, err := monitor.LoadEmailProvider(smtpFile, recipients)
+			if err != nil {
+				return err
+			}
+			providers = append(providers, provider)
+		}
+
 		if webhookURL != "" {
 			providers = append(providers, monitor.NewWebhookProvider(webhookURL))
 		}
@@ -200,6 +216,8 @@ var monitorCheckCmd = &cobra.Command{
 func init() {
 	monitorStartCmd.Flags().Duration("interval", 30*time.Second, "Check interval")
 	monitorStartCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout per check")
+	monitorStartCmd.Flags().String("smtp-config", "", "Private SMTP JSON file; defaults to monitoring.smtp_config_file")
+	monitorStartCmd.Flags().StringSlice("email-to", nil, "Notification recipient addresses")
 	monitorStartCmd.Flags().String("webhook", "", "Webhook URL for alerts")
 	monitorStartCmd.Flags().String("slack", "", "Slack webhook URL for alerts")
 	monitorStartCmd.Flags().String("discord", "", "Discord webhook URL for alerts")
