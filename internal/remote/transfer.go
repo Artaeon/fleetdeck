@@ -37,7 +37,7 @@ func (c *Client) UploadBytes(data []byte, remotePath string, mode os.FileMode) e
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 
-	if err := session.Run(cmd); err != nil {
+	if err := session.Run(c.command(cmd)); err != nil {
 		return fmt.Errorf("uploading to %s: %s: %w", remotePath, strings.TrimSpace(stderr.String()), err)
 	}
 	return nil
@@ -65,7 +65,7 @@ func (c *Client) Download(remotePath, localPath string) error {
 	session.Stderr = &stderr
 
 	cmd := fmt.Sprintf("cat %s", shellQuote(remotePath))
-	if err := session.Run(cmd); err != nil {
+	if err := session.Run(c.command(cmd)); err != nil {
 		os.Remove(localPath)
 		return fmt.Errorf("downloading %s: %s: %w", remotePath, strings.TrimSpace(stderr.String()), err)
 	}
@@ -76,29 +76,29 @@ func (c *Client) Download(remotePath, localPath string) error {
 // server. These are build artifacts, dependency caches, and VCS metadata
 // that would waste bandwidth and are rebuilt on the server.
 var skipDirs = map[string]bool{
-	"node_modules":   true,
-	".next":          true,
-	".nuxt":          true,
-	".git":           true,
-	".svn":           true,
-	"dist":           true,
-	"build":          true,
-	"vendor":         true,
-	"__pycache__":    true,
-	".venv":          true,
-	"venv":           true,
-	".tox":           true,
-	"target":         true, // Rust, Java
-	".gradle":        true,
-	".cache":         true,
-	".parcel-cache":  true,
-	".turbo":         true,
-	".vercel":        true,
-	".output":        true,
-	"coverage":       true,
-	".nyc_output":    true,
-	".pytest_cache":  true,
-	".mypy_cache":    true,
+	"node_modules":  true,
+	".next":         true,
+	".nuxt":         true,
+	".git":          true,
+	".svn":          true,
+	"dist":          true,
+	"build":         true,
+	"vendor":        true,
+	"__pycache__":   true,
+	".venv":         true,
+	"venv":          true,
+	".tox":          true,
+	"target":        true, // Rust, Java
+	".gradle":       true,
+	".cache":        true,
+	".parcel-cache": true,
+	".turbo":        true,
+	".vercel":       true,
+	".output":       true,
+	"coverage":      true,
+	".nyc_output":   true,
+	".pytest_cache": true,
+	".mypy_cache":   true,
 }
 
 func (c *Client) UploadDir(localDir, remoteDir string) error {
