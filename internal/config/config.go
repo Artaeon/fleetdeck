@@ -114,6 +114,7 @@ type DiscoveryConfig struct {
 }
 
 type MonitoringConfig struct {
+	StateFile          string   `toml:"state_file"`
 	TelegramConfigFile string   `toml:"telegram_config_file"`
 	SMTPConfigFile     string   `toml:"smtp_config_file"`
 	EmailTo            []string `toml:"email_to"`

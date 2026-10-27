@@ -19,6 +19,7 @@ func TestMonitoringTokenCannotAdministerOrLogin(t *testing.T) {
 		{"GET", "/metrics", http.StatusOK},
 		{"GET", "/api/config", http.StatusUnauthorized},
 		{"GET", "/api/projects", http.StatusUnauthorized},
+		{"GET", "/api/monitor", http.StatusUnauthorized},
 		{"POST", "/api/projects/example/stop", http.StatusUnauthorized},
 		{"POST", "/api/webhook/deploy/example", http.StatusUnauthorized},
 		{"POST", "/login", http.StatusUnauthorized},

@@ -3,6 +3,7 @@ package monitor
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -63,9 +64,19 @@ func SaveState(path string, targets []Target, results []CheckResult) error {
 
 // LoadState reads and unmarshals a previously saved monitor state from path.
 func LoadState(path string) (*MonitorState, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading state file: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("monitor state must be a regular file")
+	}
+	const maxStateBytes = 2 << 20
+	data, err := io.ReadAll(io.LimitReader(f, maxStateBytes+1))
+	if err != nil || len(data) > maxStateBytes {
+		return nil, fmt.Errorf("monitor state unreadable or larger than 2 MiB")
 	}
 
 	var state MonitorState
