@@ -28,7 +28,27 @@ smtp_config_file = "/etc/fleetdeck/smtp.json"
 email_to = ["operator@example.com"]
 ```
 
-CLI recipient flags can override the configured recipients. Monitor mail is sent on failure/recovery transitions, after the failure threshold. Authelia uses the same mailbox through its own private notifier configuration; validate and test it before activating administrator enrollment. Application mail remains opt-in per project, with separate accounts where sender identity or access boundaries require them.
+CLI recipient flags can override the configured recipients. Monitor mail is sent on failure/recovery transitions, after the failure threshold. Authelia can use the same SMTP account through its own private notifier configuration; validate and test it before activating administrator enrollment. Application mail remains opt-in per project, with separate accounts where sender identity or access boundaries require them.
+
+## Which mailbox receives an administrator's code?
+
+The SMTP login, sender and recipient are separate settings. Authelia sends
+registration and recovery messages to the administrator's `email` in its user
+source. With a file backend, that is the user's entry in `users.yml`. Changing
+the SMTP username or sender does not change that recipient. FleetDeck monitoring
+recipients (`to`, `email_to`, or `--to`) do not change it either.
+
+Before enrollment, confirm the intended recipient with the administrator and
+verify that they can open that inbox independently of FleetDeck. Record the
+administrator login name, authentication URL, dashboard URL and recovery-mail
+address in the appropriate private password-manager entry. Keep the SMTP account
+credentials separate from the administrator's password and passkey.
+
+If a code appears missing, check the configured recipient and its spam folder,
+then the provider's delivery result. Request a fresh code if the previous one
+has expired. Do not copy codes, reset links or mail credentials into logs or
+support messages, and do not disable identity verification to bypass delivery
+problems.
 
 A monitor running on the same VPS cannot report a total VPS/network outage while it is down. Add an independent external observer for that case. Mail configuration is not an external observer and does not make a single VPS highly available.
 
