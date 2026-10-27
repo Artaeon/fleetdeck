@@ -23,7 +23,7 @@
 **FleetDeck** is a single-binary deployment platform that takes your application from code to production with one command. It detects your stack, provisions your server, deploys with zero downtime, sets up HTTPS, generates build CI, monitors health, and handles backups. No Kubernetes. No YAML hell. Just ship.
 
 ```bash
-fleetdeck deploy ./my-saas --server root@server.ip --domain myapp.com --profile saas
+fleetdeck deploy ./my-saas --server fleetdeck-admin@server.ip --domain myapp.com --profile saas
 ```
 
 That one command connects to your server, detects your app (Next.js, Go, Python, whatever), generates a Docker Compose stack with PostgreSQL + Redis + S3 + email, configures Traefik for automatic HTTPS, deploys your containers. New projects created with `fleetdeck create` receive build-only GitHub Actions CI; deployments use a trusted administrator.
@@ -76,17 +76,18 @@ sudo make install
 **Step 1:** Provision your server (once):
 ```bash
 fleetdeck server setup root@your-server-ip \
+  --admin-key ~/.ssh/fleetdeck-admin.pub \
   --domain yourdomain.com \
   --email you@email.com \
   --insecure  # TOFU: auto-saves host key on first connect
 ```
 
-This installs Docker, Traefik (with automatic Let's Encrypt HTTPS), UFW firewall, fail2ban, swap, and hardens SSH. Idempotent -- safe to re-run.
+This installs Docker, Traefik, UFW, fail2ban and swap. Root bootstrap requires the public key matching your current SSH key or agent. FleetDeck creates `fleetdeck-admin`, verifies a separate login and sudo, then disables root/password SSH login. A five-minute timer restores the previous SSH configuration unless another fresh administrator connection succeeds. Re-run setup as `fleetdeck-admin`, not root. This is a trusted host administrator with full sudo authority; it is not a restricted project account. See [SSH access](docs/SSH_ACCESS.md).
 
 **Step 2:** Deploy your app:
 ```bash
 fleetdeck deploy ./my-app \
-  --server root@your-server-ip \
+  --server fleetdeck-admin@your-server-ip \
   --domain myapp.yourdomain.com \
   --profile saas
 ```
@@ -271,6 +272,7 @@ Blue/green deployment flow:
 
 ```bash
 fleetdeck server setup root@143.198.1.1 \
+  --admin-key ~/.ssh/fleetdeck-admin.pub \
   --domain example.com \
   --email you@example.com \
   --swap 4
@@ -438,6 +440,7 @@ make build && sudo make install
 
 # 2. Provision your server
 fleetdeck server setup root@YOUR_SERVER_IP \
+  --admin-key ~/.ssh/fleetdeck-admin.pub \
   --domain yourdomain.com \
   --email you@email.com \
   --insecure
@@ -449,7 +452,7 @@ fleetdeck dns setup yourdomain.com YOUR_SERVER_IP \
 # 4. Deploy your app
 cd /path/to/your/app
 fleetdeck deploy . \
-  --server root@YOUR_SERVER_IP \
+  --server fleetdeck-admin@YOUR_SERVER_IP \
   --domain app.yourdomain.com \
   --profile saas
 
@@ -468,7 +471,7 @@ fleetdeck info myapp
 fleetdeck logs myapp -f
 
 # Deploy a new project
-fleetdeck deploy ./new-project --server root@server --domain new.yourdomain.com
+fleetdeck deploy ./new-project --server fleetdeck-admin@server --domain new.yourdomain.com
 
 # Create a staging environment
 fleetdeck env create myapp staging
@@ -492,22 +495,22 @@ For apps that are already deployed, `fleetdeck update` provides a lightweight al
 
 ```bash
 # Sync files and rebuild only if Dockerfile/compose changed
-fleetdeck update myapp --server root@server
+fleetdeck update myapp --server fleetdeck-admin@server
 
 # Force a full rebuild (e.g. after dependency changes)
-fleetdeck update myapp --server root@server --rebuild --no-cache
+fleetdeck update myapp --server fleetdeck-admin@server --rebuild --no-cache
 
 # Update a single service in a multi-container stack
-fleetdeck update myapp --server root@server --service app
+fleetdeck update myapp --server fleetdeck-admin@server --service app
 
 # Pull latest images without rebuilding
-fleetdeck update myapp --server root@server --pull
+fleetdeck update myapp --server fleetdeck-admin@server --pull
 
 # Just restart containers (no file sync)
-fleetdeck update myapp --server root@server --restart-only
+fleetdeck update myapp --server fleetdeck-admin@server --restart-only
 
 # Run hooks before/after deployment
-fleetdeck update myapp --server root@server \
+fleetdeck update myapp --server fleetdeck-admin@server \
   --pre-deploy "npm run migrate" \
   --post-deploy "npm run seed"
 ```
@@ -573,7 +576,7 @@ Symptom: DigitalOcean/Hetzner/whoever lost the disk. You have `[backup.remote]` 
 
 ```bash
 # On a fresh server:
-fleetdeck server setup root@new-vps --domain example.com --email you@example.com
+fleetdeck server setup root@new-vps --domain example.com --email you@example.com --admin-key ~/.ssh/fleetdeck-admin.pub
 
 # Pull the offsite copy of the most recent backup (using rclone directly —
 # fleetdeck intentionally leaves this step manual so you confirm the
