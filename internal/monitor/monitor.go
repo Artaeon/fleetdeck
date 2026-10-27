@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,8 +26,28 @@ type CheckResult struct {
 	StatusCode   int           `json:"status_code"`
 	ResponseTime time.Duration `json:"response_time"`
 	Healthy      bool          `json:"healthy"`
+	FailureKind  string        `json:"failure_kind,omitempty"`
 	Error        string        `json:"error,omitempty"`
 	CheckedAt    time.Time     `json:"checked_at"`
+}
+
+const FailureCloudflareChallenge = "cloudflare_challenge"
+
+// HealthStatus separates an unobservable application from a failed check.
+// Healthy remains false for challenges, including those returning an expected
+// status code. Older state files without failure_kind remain readable.
+func (r CheckResult) HealthStatus() string {
+	if r.FailureKind == FailureCloudflareChallenge {
+		return "blocked"
+	}
+	if r.Healthy {
+		return "healthy"
+	}
+	return "unhealthy"
+}
+
+func isCloudflareChallenge(header http.Header) bool {
+	return strings.EqualFold(strings.TrimSpace(header.Get("Cf-Mitigated")), "challenge")
 }
 
 // Monitor runs periodic health checks against a set of targets and dispatches
@@ -140,7 +161,16 @@ func (m *Monitor) CheckOnce(target Target) CheckResult {
 		timeout = 10 * time.Second
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// Do not follow away evidence that the original probe was challenged.
+		if req.Response != nil && isCloudflareChallenge(req.Response.Header) {
+			return http.ErrUseLastResponse
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		return nil
+	}}
 
 	req, err := http.NewRequest(method, target.URL, nil)
 	if err != nil {
@@ -159,6 +189,10 @@ func (m *Monitor) CheckOnce(target Target) CheckResult {
 	defer resp.Body.Close()
 
 	result.StatusCode = resp.StatusCode
+	if isCloudflareChallenge(resp.Header) {
+		result.FailureKind = FailureCloudflareChallenge
+		return result
+	}
 	result.Healthy = resp.StatusCode == expectedStatus
 
 	return result
