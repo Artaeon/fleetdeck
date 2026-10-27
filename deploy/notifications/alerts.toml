@@ -3,6 +3,7 @@
 enabled = false
 
 # To add email, load smtp.json with systemd LoadCredential and set its runtime
-# path here, or supply --smtp-config %d/smtp.json in the service ExecStart.
+# Copy it with ExecStartPre=/usr/bin/install -m 0600 %d/smtp.json
+# /run/fleetdeck-alerts/smtp.json, then use that runtime path here or in ExecStart.
 [monitoring]
-# smtp_config_file = "/run/credentials/fleetdeck-alerts.service/smtp.json"
+# smtp_config_file = "/run/fleetdeck-alerts/smtp.json"
