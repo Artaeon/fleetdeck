@@ -125,3 +125,18 @@ Generic references:
 - [Docker firewall behavior](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
 - [Docker daemon security boundary](https://docs.docker.com/engine/security/)
 - [nftables atomic rule replacement](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement)
+
+## Host users and container users are different
+
+New `fleetdeck create` and protected source deployments create a no-login host
+account per project. This does not assign a unique Linux UID inside every image,
+provide Docker user-namespace remapping or make the operator a restricted tenant.
+A custom image can still start as root. Generated application templates and
+third-party database entrypoints must be assessed separately. Use explicit
+non-root users where the application supports them, minimal capabilities,
+`no-new-privileges`, bounded resources and narrowly scoped persistent mounts.
+
+The [security watcher](SECURITY_WATCHER.md) reports suspicious runtime settings
+and scans running image IDs. Reports are evidence for remediation, not an
+automatic claim that an installation is hardened. Existing deployments and
+custom Compose files retain their settings until explicitly migrated.

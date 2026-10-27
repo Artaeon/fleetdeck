@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 650" role="img" aria-labelledby="title desc">
+<title id="title">FleetDeck architecture and trust boundaries</title>
+<desc id="desc">Private workstation configuration connects through verified SSH and optional TOTP to a trusted server administrator. The Linux host runs separate project edge and backend networks, a shared proxy, an identity-protected admin panel, local backups and monitoring. Offsite storage and an external observer are separately configured. Docker and the host administrator are trusted; project host accounts do not determine container users.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#71c7ac" stroke-width="1.5"/></marker></defs>
+<rect width="1120" height="650" rx="20" fill="#101b23"/>
+<g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<text x="38" y="47" fill="#a2e3ca" font-size="13" letter-spacing="2">FLEETDECK / SYSTEM MAP</text>
+<text x="38" y="82" fill="#f2f6f5" font-size="26" font-weight="650">Private configuration. Explicit server boundaries.</text>
+<rect x="36" y="116" width="245" height="182" rx="12" fill="#1c2c36" stroke="#3b5260"/>
+<text x="56" y="147" fill="#fff" font-size="19" font-weight="600">Your workstation</text>
+<text x="56" y="181" fill="#cad7dd" font-size="15">FleetDeck CLI + source code</text>
+<text x="56" y="210" fill="#cad7dd" font-size="15">Private project → server link</text>
+<text x="56" y="239" fill="#cad7dd" font-size="15">SSH agent / password manager</text>
+<text x="56" y="276" fill="#a2e3ca" font-size="13">Targets and secrets stay out of Git</text>
+<path d="M281 207H365" stroke="#71c7ac" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="295" y="190" fill="#a2e3ca" font-size="13">SSH</text>
+<rect x="376" y="116" width="706" height="416" rx="12" fill="#14252e" stroke="#68808a" stroke-dasharray="6 5"/>
+<text x="396" y="147" fill="#fff" font-size="18" font-weight="600">Linux server · trusted administrator + Docker</text>
+<rect x="396" y="166" width="666" height="56" rx="8" fill="#254436"/>
+<text x="416" y="189" fill="#e4fff1" font-size="15">Host firewall + Docker ingress guard · shared HTTPS proxy</text>
+<text x="416" y="209" fill="#a2e3ca" font-size="12">Verified SSH key + optional phone TOTP for personal administration</text>
+<rect x="396" y="240" width="322" height="166" rx="9" fill="#1c2c36" stroke="#4b6573"/>
+<text x="414" y="267" fill="#fff" font-size="17" font-weight="600">Project A</text>
+<text x="414" y="296" fill="#cad7dd" font-size="14">Own edge network → application</text>
+<text x="414" y="323" fill="#cad7dd" font-size="14">Private backend → database + cache</text>
+<text x="414" y="350" fill="#cad7dd" font-size="14">Persistent volumes + private secrets</text>
+<text x="414" y="382" fill="#a2e3ca" font-size="13">No-login project host account</text>
+<rect x="736" y="240" width="326" height="166" rx="9" fill="#1c2c36" stroke="#4b6573"/>
+<text x="754" y="267" fill="#fff" font-size="17" font-weight="600">Project B</text>
+<text x="754" y="296" fill="#cad7dd" font-size="14">Own edge network → application</text>
+<text x="754" y="323" fill="#cad7dd" font-size="14">Private backend → database + cache</text>
+<text x="754" y="350" fill="#cad7dd" font-size="14">Persistent volumes + private secrets</text>
+<text x="754" y="382" fill="#a2e3ca" font-size="13">No-login project host account</text>
+<rect x="396" y="424" width="322" height="85" rx="9" fill="#1c2c36"/>
+<text x="414" y="451" fill="#fff" font-size="16">Per-server admin panel</text>
+<text x="414" y="477" fill="#cad7dd" font-size="13">Authelia OIDC / MFA / admin group</text>
+<text x="414" y="495" fill="#cad7dd" font-size="13">Optional device-certificate access</text>
+<rect x="736" y="424" width="326" height="85" rx="9" fill="#1c2c36"/>
+<text x="754" y="451" fill="#fff" font-size="16">Recovery + monitoring</text>
+<text x="754" y="477" fill="#cad7dd" font-size="13">Verified local snapshots · health checks</text>
+<text x="754" y="495" fill="#cad7dd" font-size="13">Update / CVE watcher · activity relay</text>
+<rect x="36" y="326" width="245" height="206" rx="12" fill="#1c2c36" stroke="#3b5260"/>
+<text x="56" y="357" fill="#fff" font-size="18" font-weight="600">Configure separately</text>
+<text x="56" y="391" fill="#cad7dd" font-size="15">Encrypted offsite backups</text>
+<text x="56" y="423" fill="#cad7dd" font-size="15">External uptime observer</text>
+<text x="56" y="455" fill="#cad7dd" font-size="15">Telegram / SMTP destinations</text>
+<text x="56" y="493" fill="#a2e3ca" font-size="13">Test delivery and recovery</text>
+<path d="M396 476H298V429H281" fill="none" stroke="#71c7ac" stroke-width="2" stroke-dasharray="5 5"/>
+<text x="38" y="573" fill="#e4c99b" font-size="15">Boundary: shared kernel and trusted host administration. Container users depend on each image.</text>
+<text x="38" y="603" fill="#afc1c9" font-size="14">Repeat per server. Multiple registered servers do not automatically provide replication or high availability.</text>
+</g></svg>
