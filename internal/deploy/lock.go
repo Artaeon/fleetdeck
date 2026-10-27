@@ -20,7 +20,7 @@ type ProjectLock struct {
 func AcquireLock(projectPath string) (*ProjectLock, error) {
 	lockPath := filepath.Join(projectPath, ".fleetdeck.lock")
 
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("creating lock file: %w", err)
 	}
@@ -34,7 +34,8 @@ func AcquireLock(projectPath string) (*ProjectLock, error) {
 	return &ProjectLock{lockFile: f, path: lockPath}, nil
 }
 
-// Release releases the file lock and removes the lock file.
+// Release unlocks the stable inode. Never unlink it: another process may have
+// already opened it, and unlinking permits a third process to lock a new inode.
 func (l *ProjectLock) Release() error {
 	if l.lockFile == nil {
 		return nil
@@ -46,9 +47,8 @@ func (l *ProjectLock) Release() error {
 	if err := l.lockFile.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("closing lock file: %w", err))
 	}
-	if err := os.Remove(l.path); err != nil && !os.IsNotExist(err) {
-		errs = append(errs, fmt.Errorf("removing lock file: %w", err))
-	}
+	l.lockFile = nil
+
 	if len(errs) > 0 {
 		return errs[0]
 	}

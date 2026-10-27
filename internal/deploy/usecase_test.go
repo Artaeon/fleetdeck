@@ -212,8 +212,8 @@ func TestUseCaseDeployLockAndStrategy(t *testing.T) {
 
 	// Step 5: Verify the lock is released.
 	lockPath := filepath.Join(dir, ".fleetdeck.lock")
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Error("lock file should be removed after release")
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Error("lock inode must remain after release")
 	}
 }
 
