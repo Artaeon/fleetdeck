@@ -36,6 +36,7 @@ type Monitor struct {
 	alerts    *AlertManager
 	results   map[string]CheckResult
 	mu        sync.RWMutex
+	saveMu    sync.Mutex
 	cancel    context.CancelFunc
 	done      chan struct{}
 	StatePath string
