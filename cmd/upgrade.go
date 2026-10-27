@@ -196,8 +196,9 @@ func sha256File(path string) (string, error) {
 }
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the version of FleetDeck",
+	Use:              "version",
+	Short:            "Print the version of FleetDeck",
+	PersistentPreRun: func(*cobra.Command, []string) {},
 	Run: func(cmd *cobra.Command, args []string) {
 		asJSON, _ := cmd.Flags().GetBool("json")
 		if asJSON {
