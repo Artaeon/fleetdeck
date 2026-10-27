@@ -1,0 +1,31 @@
+[Unit]
+Description=FleetDeck host activity notifications
+Wants=network-online.target
+After=network-online.target systemd-journald.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=fleetdeck-alerts
+Group=fleetdeck-alerts
+SupplementaryGroups=systemd-journal
+StateDirectory=fleetdeck-alerts
+StateDirectoryMode=0700
+LoadCredential=telegram.json:/etc/fleetdeck/notifications/telegram.json
+ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/notifications/alerts.toml alert watch --server-label vps-one --state-file /var/lib/fleetdeck-alerts/state.json --telegram-config %d/telegram.json
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
