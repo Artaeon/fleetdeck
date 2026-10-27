@@ -117,9 +117,9 @@ services:
 	if strings.Count(result, "name:") != 1 {
 		t.Errorf("expected exactly one name: field, got %d", strings.Count(result, "name:"))
 	}
-	// The existing name should be preserved.
-	if !strings.Contains(result, "name: already-set") {
-		t.Error("existing name: field should be preserved")
+	// The source project identity must never be reused by staging.
+	if !strings.Contains(result, "name: staging-myapp") {
+		t.Error("environment-specific name: field required")
 	}
 }
 
