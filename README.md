@@ -1,903 +1,156 @@
-<p align="center">
-  <img src="assets/banner.svg" alt="FleetDeck - One command. Code to production." width="100%">
-</p>
+<p align="center"><img src="assets/banner.svg" alt="FleetDeck — Your servers. Your deployments." width="100%"></p>
 
 <p align="center">
-  <a href="INSTALL.md">Install Guide</a> &bull;
-  <a href="#quick-start">Quick Start</a> &bull;
-  <a href="#the-one-command-workflow">One Command</a> &bull;
-  <a href="#deployment-profiles">Profiles</a> &bull;
-  <a href="#server-provisioning">Server Setup</a> &bull;
-  <a href="#how-to-use-fleetdeck">Usage Guide</a> &bull;
-  <a href="#documentation">Docs</a>
+  <a href="https://github.com/Artaeon/fleetdeck/actions/workflows/ci.yml"><img src="https://github.com/Artaeon/fleetdeck/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-9de1c5" alt="MIT license"></a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/Artaeon/fleetdeck/actions"><img src="https://github.com/Artaeon/fleetdeck/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://goreportcard.com/report/github.com/Artaeon/fleetdeck"><img src="https://goreportcard.com/badge/github.com/Artaeon/fleetdeck" alt="Go Report Card"></a>
-</p>
+# Deploy from your terminal. Keep control of your server.
 
----
+FleetDeck is an open-source CLI for running Docker Compose applications on your
+own Linux servers. Set up a host, link a project on your workstation, and deploy
+through SSH with server-side backups and preserved secrets. A per-server admin
+panel brings projects, deployment jobs and monitoring into the browser.
 
-**FleetDeck** is a command-line deployment tool for Docker Compose applications on Linux servers. It provides stack detection, server setup, HTTPS routing, health checks, deployment and recovery commands. Templates give supported applications a starting point; each application's build, secrets, persistent data and migrations still need configuration and testing.
+**[Get started](INSTALL.md) · [Project deployment](docs/PROJECT_DEPLOY.md) ·
+[Security model](docs/SERVER_SECURITY.md) · [Website](https://artaeon.github.io/fleetdeck/)**
 
-```bash
-fleetdeck deploy ./my-saas --server fleetdeck-admin@server.ip --domain myapp.com --profile saas
+```sh
+# Once on your workstation, after provisioning a FleetDeck server:
+fleetdeck client init
+fleetdeck server add production operator@server.example.com
+fleetdeck project link ./my-app --server production --name my-app \
+  --domain preview.example.com
+
+# Explicitly provide the first private .env if the application needs one:
+fleetdeck deploy ./my-app --env-file /private/path/production.env
+
+# Next time: same target, existing server secrets, verified pre-update backup.
+cd my-app
+fleetdeck deploy .
 ```
 
-For a compatible, configured application, this command connects to your server, detects the stack, generates the selected Compose profile and deploys it behind Traefik. The `saas` profile includes PostgreSQL, Redis, MinIO and a development mailbox; real outbound mail requires an SMTP provider. New projects created with `fleetdeck create` receive build-only GitHub Actions CI; deployments use a trusted administrator.
+Both client and server need the protected source deployment protocol. Project
+links live in private workstation configuration **outside your repository**.
+Review generated build/Compose files, configure health checks and test recovery
+before directing production traffic. See [the full workflow](docs/PROJECT_DEPLOY.md).
 
-Before a production rollout, review [application coverage and limits](docs/APPLICATION_COVERAGE.md), [backup and recovery requirements](docs/EXISTING_SERVER_MIGRATION.md), and [admin access](docs/ADMIN_ACCESS.md). A successful deployment is not proof of data recovery, application security or high availability. Offsite backup delivery, an external uptime observer, administrator enrollment and multi-server failover are not automatically completed by this command.
+## One host, several projects, explicit boundaries
 
----
+![FleetDeck architecture: private workstation configuration connects over SSH to a trusted administrator, per-project networks and services, identity-protected admin panel, backups and monitoring.](docs/assets/architecture.svg)
 
-## The Problem
+| Capability | What FleetDeck provides |
+| --- | --- |
+| Server setup | Docker/Compose, HTTPS proxy, SSH hardening, dedicated administrator, host firewall and Docker forwarding guard. Review existing hosts before migration. |
+| Project deployment | Private saved targets, bounded source transfer, per-project locks, preservation of server secrets/data, verified backups before replacement and Compose readiness checks. |
+| Recovery | Configuration, supported database dumps, volume archives, integrity verification, restore commands and immutable release jobs. Offsite delivery and restore drills need configuration. |
+| Admin panel | Per-server project view, bounded release jobs, monitoring view and server inventory. Authelia OIDC, required factors/admin group and optional device certificates. |
+| Monitoring | HTTP/service checks, Prometheus metrics, challenge-aware HTTP results, Telegram/email alerts and durable SSH/activity event relay. |
+| Security watcher | Scheduled release/package checks, Trivy scans of running image IDs and runtime-setting findings. Changed alerts only; incomplete checks stay unknown. |
+| Workstation setup | Named servers, last observed server version/commit, SSH agent support and interactive SSH TOTP for enrolled hosts. |
 
-Every new project is the same 30-minute ritual:
+FleetDeck uses established tools: **Docker Compose, Traefik, Authelia, Trivy,
+Prometheus-compatible metrics and rclone-compatible backup storage**. Uptime Kuma,
+Grafana and an external observer can complement it; FleetDeck does not yet
+install and synchronize a complete monitoring stack automatically.
 
-1. SSH into server, create a Linux user
-2. Generate SSH keys for CI/CD
-3. Write a Dockerfile
-4. Write docker-compose.yml with Traefik labels
-5. Configure .env with database passwords
-6. Create GitHub repo, set deploy secrets
-7. Write a GitHub Actions workflow
-8. Set up DNS records
-9. Configure backups
-10. Pray nothing breaks
+## Bring your application
 
-FleetDeck automates common parts of this setup and makes reviewed deployment settings reusable across projects.
+The deployment contract is Docker Compose. Built-in detection and templates help
+with common stacks; a working image, explicit storage and health checks are what
+make an application deployable.
 
-## What Makes FleetDeck Different
+| Application | Starting point |
+| --- | --- |
+| Next.js, Node.js, NestJS | Built-in detection/templates; Next.js standalone output and application-specific build variables need review. |
+| Python, Go and other backends | Built-in starters where available, or your own Dockerfile and Compose services. |
+| Astro, Svelte, static sites | Static builds can be served from the appropriate output directory. SSR needs its matching adapter/runtime. No universal framework smoke-test guarantee. |
+| CMS, SaaS, fullstack apps | Compose your application, database and uploads. Verify that CMS's migrations, mail, storage and data restoration work. |
+| Workers and internal services | Private Compose services without public ports. The current project-deploy CLI still requires a domain; worker-only onboarding needs manual configuration. |
 
-Unlike Kubernetes (too complex), Coolify/CapRover (opinionated PaaS), or plain Docker scripts (too manual), FleetDeck sits in the sweet spot:
+Profiles: `bare`, `server`, `saas`, `static`, `worker`, `fullstack`.
+The SaaS profile includes PostgreSQL, Redis, MinIO and a development mailbox;
+production email requires a real SMTP service. Templates are editable starting
+points, not a promise that every repository runs unchanged.
+[Application coverage and integration limits →](docs/APPLICATION_COVERAGE.md)
 
-- **Not a PaaS** -- you own your server, your configs, your data
-- **Not an orchestrator** -- no clusters, no service mesh, no learning curve
-- **Just automation** -- it does exactly what you'd do manually, but in seconds
-- **Single binary** -- one `go build`, one file, runs everywhere
+## Security is a maintained process
 
----
+New project host accounts have no login shell and no Docker-group membership.
+Generated projects use separate edge/backend networks and runtime restrictions.
+The firewall guards Docker ingress as well as host listeners. SSH can require
+both an SSH key and a phone authenticator; the browser uses a separately
+configured identity provider and required authentication factors.
 
-## Quick Start
+**The administrator and Docker daemon remain trusted host authorities.** A
+per-project host account is different from the UID inside a container. Custom
+images can start as root; shared-kernel containers are not a hostile-tenant
+boundary. Use separate VMs/hosts for mutually untrusted workloads. A synced
+passkey is not proof of binding to one physical device, and mail is not a third
+factor simply because it is configured for recovery.
 
-### Install
-
-```bash
-git clone https://github.com/Artaeon/fleetdeck.git
-cd fleetdeck
-make build
-sudo make install
+```sh
+# Read-only update, image CVE and runtime-setting report on the server:
+sudo fleetdeck --config /etc/fleetdeck/config.toml security check
 ```
 
-**Requirements:** Linux (Ubuntu 22.04+, Debian 12+). Go 1.27.3+ for building. Docker and Traefik are installed automatically by `server setup`.
-
-### The One-Command Workflow
-
-**Step 1:** Provision your server (once):
-```bash
-fleetdeck server setup root@your-server-ip \
-  --admin-key ~/.ssh/fleetdeck-admin.pub \
-  --domain yourdomain.com \
-  --email you@email.com \
-  --insecure  # TOFU: auto-saves host key on first connect
-```
-
-This installs Docker, Traefik, UFW, fail2ban and swap. Root bootstrap requires the public key matching your current SSH key or agent. FleetDeck creates `fleetdeck-admin`, verifies a separate login and sudo, then disables root/password SSH login. A five-minute timer restores the previous SSH configuration unless another fresh administrator connection succeeds. Re-run setup as `fleetdeck-admin`, not root. This is a trusted host administrator with full sudo authority; it is not a restricted project account. See [SSH access](docs/SSH_ACCESS.md).
-
-**Step 2:** Deploy your app:
-```bash
-fleetdeck deploy ./my-app \
-  --server fleetdeck-admin@your-server-ip \
-  --domain myapp.yourdomain.com \
-  --profile saas
-```
-
-**Step 3:** Verify the application at `https://myapp.yourdomain.com`, including its important user flows. Confirm persistent storage, recovery and monitoring before replacing an existing production deployment. Use a separate preview hostname while doing these checks.
-
-### Already Have a Server?
-
-```bash
-# Initialize FleetDeck on your existing server
-sudo fleetdeck init
-
-# Import your existing Docker Compose projects
-sudo fleetdeck discover
-sudo fleetdeck discover import --all
-
-# Create a new project
-sudo fleetdeck create myapp --domain myapp.com --template node --profile server
-sudo fleetdeck start myapp
-```
-
----
-
-## Smart Detection
-
-FleetDeck analyzes your project and figures out what you need:
-
-```bash
-$ fleetdeck detect ./my-app
-
-  Application detected!
-
-  Property    Value
-  Type        nextjs
-  Language    typescript
-  Framework   Next.js (App Router)
-  Port        3000
-  Database    yes
-  Redis       yes
-  Confidence  95%
-
-  Recommended profile: saas
-```
-
-**Supported stacks:**
-
-| Language | Frameworks | Detection Method |
-|----------|-----------|-----------------|
-| **Node.js** | Express, Fastify, Koa | package.json |
-| **TypeScript** | Next.js, NestJS | package.json + app/ dir |
-| **Python** | FastAPI, Django, Flask | requirements.txt, Pipfile, pyproject.toml |
-| **Go** | Gin, Echo, Fiber | go.mod |
-| **Rust** | Actix Web, Axum, Rocket | Cargo.toml |
-| **Static** | HTML/CSS/JS | index.html |
-
-Detection also identifies database usage (PostgreSQL, MySQL, MariaDB), Redis, Docker configs, and recommends the right deployment profile.
-
----
-
-## Deployment Profiles
-
-Profiles are pre-built infrastructure stacks. Instead of writing Docker Compose from scratch, pick a profile and FleetDeck generates everything.
-
-```bash
-fleetdeck profiles           # List all profiles
-fleetdeck profile saas       # Inspect a specific profile
-```
-
-| Profile | What You Get | Best For |
-|---------|-------------|----------|
-| **`bare`** | App container + Traefik HTTPS | Stateless APIs, microservices |
-| **`server`** | App + PostgreSQL + Redis | Backend APIs, web apps |
-| **`saas`** | App + PostgreSQL + Redis + S3 (MinIO) + Email (Mailpit) | Full SaaS products |
-| **`static`** | Nginx + CDN headers + gzip + SPA fallback | Landing pages, docs, SPAs |
-| **`worker`** | Worker process + Redis queue + PostgreSQL | Background job processors |
-| **`fullstack`** | Frontend + Backend + PostgreSQL + Redis + S3 | Monorepo applications |
-
-### The `saas` Profile
-
-A starting infrastructure stack for a SaaS application:
-
-- **Your app** with Traefik routing and automatic HTTPS
-- **PostgreSQL** with health checks, persistent storage, `pg_isready` probes
-- **Redis** with AOF persistence, 512MB memory limit, LRU eviction
-- **MinIO** (S3-compatible) at `s3.yourdomain.com` for file uploads
-- **Mailpit** as a private development mailbox, without a public web route. Configure a production SMTP provider to send real email.
-- Auto-generated `.env` with cryptographically random passwords
-
-### The `fullstack` Profile
-
-For monorepos with separate frontend and backend:
-
-- Frontend at `yourdomain.com` (Next.js, React, etc.)
-- Backend API at `api.yourdomain.com`
-- Separate Dockerfiles (`Dockerfile.frontend`, `Dockerfile.backend`)
-- Shared database, cache, and object storage
-
----
-
-### Post-Deploy Watchdog & Auto-Rollback
-
-After every zero-downtime deploy, fleetdeck can poll the live domain for a configurable window and automatically roll back if the new revision silently breaks a few minutes after the cutover — the most common production failure mode that health checks alone miss (OOM, upstream latency, slow migration deadlock).
-
-```bash
-# Watch for 5 minutes, roll back to the pre-deploy snapshot on failure
-fleetdeck deploy ./my-app \
-  --server prod --domain app.example.com \
-  --watch 5m --watch-rollback
-
-# Tune probing
-fleetdeck deploy ./my-app \
-  --server prod --domain app.example.com \
-  --watch 10m --watch-interval 15s --watch-threshold 5 --watch-status 200
-```
-
-With `--watch` unset (the default), deploy behavior is unchanged. Without `--watch-rollback` a failed watchdog only warns — you run `fleetdeck rollback` manually.
-
-**Rollback scope (`--watch-rollback-mode`):**
-
-| Mode | Restores | Loses | Use for |
-|------|----------|-------|---------|
-| `full` (default) | config + volumes + DB dumps | none (rewinds fully) | stateless apps, landing pages |
-| `files` | config only | none — DB writes from the watch window survive | stateful apps, mealtime-style workloads |
-
-```bash
-# Stateful app: roll the config back, but keep user data written during the watch window
-fleetdeck deploy ./mealtime --domain mealtime.com \
-  --watch 5m --watch-rollback --watch-rollback-mode=files
-```
-
-### Database Migrations
-
-Fleetdeck wraps whatever migration tool your project already uses (`npm run migrate`, `rails db:migrate`, `prisma migrate deploy`, `flyway migrate`, …). It doesn't invent a migration format — it adds three guarantees on top of `docker compose exec`:
-
-1. **Snapshot before every run.** A pre-migration DB snapshot is taken automatically, so a botched migration is one command away from recovery.
-2. **Tracked history.** Every migration is recorded in fleetdeck's SQLite DB with command, status, duration, and the snapshot ID.
-3. **Single-command rollback.** `fleetdeck migrate rollback <project>` restores the snapshot from the most recent migration.
-
-```bash
-# Ad-hoc: run a migration, safely
-fleetdeck migrate run mealtime --command "npm run migrate"
-
-# Inspect the history — what ran, when, how long, which snapshot
-fleetdeck migrate history mealtime
-
-# Restore the pre-migration state of the last migration
-fleetdeck migrate rollback mealtime
-
-# Or wire migrations into deploy
-fleetdeck deploy ./mealtime --domain mealtime.com \
-  --migrate "npm run migrate" \
-  --watch 5m --watch-rollback --watch-rollback-mode=files
-```
-
-When `--migrate` is used with `deploy`, the pipeline is: **snapshot → build → up → migrate → watchdog**. A failing migration aborts the deploy before the watchdog runs; the pre-migration snapshot is waiting, and the operator sees the migration output inline.
-
-`--migrate` is currently supported for **local deploys only** (where fleetdeck runs on the target server). For remote deploys, SSH to the server and run `fleetdeck migrate run` there.
-
-## Deployment Strategies
-
-```bash
-fleetdeck deploy ./app --strategy bluegreen --domain app.com
-```
-
-| Strategy | How It Works | Downtime |
-|----------|-------------|----------|
-| **`basic`** | `docker compose up -d` | Brief (~seconds) |
-| **`bluegreen`** | New containers alongside old, health check, switch traffic | **Zero** |
-| **`rolling`** | Update services one at a time with `--no-deps` | **Zero** |
-
-Blue/green deployment flow:
-1. Start new containers under a temporary project name
-2. Run health checks against the new containers
-3. If healthy: stop old containers, promote new ones
-4. If unhealthy: remove new containers, old ones keep running
-
-**Per-project locking** prevents concurrent deployments of the same project.
-
----
-
-## Server Provisioning
-
-```bash
-fleetdeck server setup root@143.198.1.1 \
-  --admin-key ~/.ssh/fleetdeck-admin.pub \
-  --domain example.com \
-  --email you@example.com \
-  --swap 4
-```
-
-| Component | What Gets Configured |
-|-----------|---------------------|
-| **System** | apt update/upgrade, curl, git, htop, fail2ban, UTC timezone |
-| **Docker** | Docker Engine + Compose v2 from official Docker repo |
-| **Traefik** | v3 reverse proxy, Let's Encrypt HTTPS, HTTP-to-HTTPS redirect |
-| **Firewall** | UFW: SSH (22), HTTP (80), HTTPS (443) only |
-| **Swap** | Configurable swap file (default 2GB) |
-| **SSH** | Password auth disabled, root login disabled |
-
-Every step is **idempotent** -- run it again after six months and it just verifies everything is still configured correctly.
-
-**SSH Security:** Uses Trust On First Use (TOFU) -- the host key is verified against `~/.ssh/known_hosts`. On first connection with `--insecure`, the key is automatically saved for future verification. SSH keys are **auto-discovered** by checking `~/.ssh/config`, then common key names (`id_ed25519`, `id_ecdsa`, `id_rsa`), then scanning `~/.ssh/` for any private keys -- the `--key` flag is only needed to override the default.
-
----
-
-## DNS Management
-
-```bash
-# Auto-configure root + wildcard A records
-fleetdeck dns setup example.com 143.198.1.1 --provider cloudflare --token cf_xxx
-
-# List all records
-fleetdeck dns list example.com --token cf_xxx
-```
-
-Creates `example.com` and `*.example.com` A records pointing to your server. Supports multi-level TLDs (`.co.uk`, `.com.au`, etc.) correctly.
-
----
-
-## Environment Management
-
-```bash
-fleetdeck env create myapp staging --domain staging.myapp.com
-fleetdeck env create myapp preview --domain preview.myapp.com --branch feature/redesign
-fleetdeck env promote myapp staging production
-```
-
-Each environment gets its own Docker Compose stack, domain, and configuration. Promotion copies config and images from one environment to another.
-
----
-
-## Health Monitoring
-
-Run the monitor as a systemd service so alerts survive reboots and process crashes:
-
-```bash
-sudo cp packaging/systemd/fleetdeck-monitor.service /etc/systemd/system/
-sudo systemctl enable --now fleetdeck-monitor
-journalctl -u fleetdeck-monitor -f
-```
-
-The shipped unit runs `fleetdeck monitor start --all`, which watches every registered project. Put provider webhooks in `/etc/fleetdeck/fleetdeck.env` (mode 0600) and `systemctl restart fleetdeck-monitor` to pick them up. See `packaging/systemd/README.md` for the full setup.
-
-```bash
-# Continuous monitoring with Slack alerts
-fleetdeck monitor start myapp --interval 30s --slack https://hooks.slack.com/xxx
-
-# One-off health check (great for CI/CD)
-fleetdeck monitor check myapp
-```
-
-- Alerts fire on **state transitions only** (healthy -> unhealthy, recovery) -- no alert fatigue
-- Configurable failure threshold (default: 3 consecutive failures before alerting)
-- **State persists to disk** -- survives process restarts
-- Providers: Webhook (JSON POST), Slack (formatted messages), Email (SMTP)
-
----
-
-## Backup & Disaster Recovery
-
-```bash
-# Full backup (config + database dumps + volume archives)
-fleetdeck backup create myapp
-
-# List backups
-fleetdeck backup list myapp
-
-# Restore (auto-snapshots current state first)
-fleetdeck backup restore myapp <backup-id>
-
-# Quick rollback to latest snapshot
-fleetdeck rollback myapp --latest
-
-# Schedule daily backups
-fleetdeck schedule enable myapp
-
-# Push a backup to off-server storage (S3, B2, R2, GCS, SFTP, ...)
-fleetdeck backup push myapp
-```
-
-**Automatic snapshots** before every stop, restart, destroy, and restore. You can always go back, even after a restore.
-
-**What gets backed up:** docker-compose.yml, .env, Dockerfile, PostgreSQL dumps (`pg_dump`), MySQL dumps (`mysqldump`), Docker volume archives, SHA256 manifest.
-
-**Retention:** configurable max count, max age (days), max total size (GB). The most recent backup of each type is never deleted.
-
-**Off-server backup (rclone driver):** add a `[backup.remote]` block to your `config.toml` and `fleetdeck backup push` will mirror backups to any of rclone's ~50 backends without requiring an object-store SDK:
-
-```toml
-[backup.remote]
-driver    = "rclone"        # currently the only driver
-target    = "b2:my-fleet-backups"  # any rclone remote:path
-auto_push = true            # optional — push automatically on backup create
-```
-
-Configure the rclone remote once with `rclone config` on the server. With `auto_push = true`, every backup is mirrored off-server synchronously; without it, operators run `fleetdeck backup push` (manually or via cron) to sync on their own schedule.
-
----
-
-## Web Dashboard & API
-
-```bash
-# Generate a random token in your password manager (at least 32 characters).
-# Paste it at this hidden prompt; it is not written to shell history.
-read -r -s -p "Dashboard token: " FLEETDECK_API_TOKEN
-export FLEETDECK_API_TOKEN
-fleetdeck dashboard
-```
-
-The dashboard binds to `127.0.0.1:8420` by default and refuses to start without
-`FLEETDECK_API_TOKEN` (or `[server] api_token`). For remote browser access, keep
-this listener private behind an HTTPS reverse proxy with restricted access.
-Direct non-loopback listeners require mutual TLS with explicitly allowed device
-certificates as well as the API token. For a simple private connection, run this on
-your workstation while the dashboard runs on the server:
-
-```bash
-ssh -N -L 8420:127.0.0.1:8420 deploy@example.com
-```
-
-Open `http://127.0.0.1:8420` locally and sign in with the same token. Direct
-loopback access supports browser sessions; remote access requires HTTPS. A
-trusted reverse proxy must preserve Host, overwrite forwarded headers, and set
-`X-Forwarded-Proto: https`; list its immediate IP in
-`FLEETDECK_TRUST_PROXY_IPS`.
-
-See [admin access and monitoring](docs/ADMIN_ACCESS.md) for device certificates,
-revocation and a separate read-only Prometheus credential. For browser MFA, use
-the [Authelia integration](docs/AUTHELIA.md), which verifies factors and admin
-membership and disables token-login bypasses. Enrollment/recovery belong to
-Authelia; a complete multi-server control panel is not implemented. See the
-[current application and integration coverage](docs/APPLICATION_COVERAGE.md).
-
-Browser-based project management: real-time server stats, project grid, start/stop/restart controls, live log viewer, backup browser, deployment history, and GitHub webhook integration.
-
-Full REST API at `/api/projects`, `/api/status`, `/api/audit`, `/api/webhook/github`.
-
----
-
-## How to Use FleetDeck
-
-### Your First Deploy (5 minutes)
-
-**Prerequisites:** A VPS (Hetzner, DigitalOcean, Linode -- $5/mo works), a domain, and your app code.
-
-```bash
-# 1. Build FleetDeck
-git clone https://github.com/Artaeon/fleetdeck.git && cd fleetdeck
-make build && sudo make install
-
-# 2. Provision your server
-fleetdeck server setup root@YOUR_SERVER_IP \
-  --admin-key ~/.ssh/fleetdeck-admin.pub \
-  --domain yourdomain.com \
-  --email you@email.com \
-  --insecure
-
-# 3. Set up DNS (auto if you have Cloudflare)
-fleetdeck dns setup yourdomain.com YOUR_SERVER_IP \
-  --provider cloudflare --token YOUR_CF_TOKEN
-
-# 4. Deploy your app
-cd /path/to/your/app
-fleetdeck deploy . \
-  --server fleetdeck-admin@YOUR_SERVER_IP \
-  --domain app.yourdomain.com \
-  --profile saas
-
-# Your app is live at https://app.yourdomain.com
-```
-
-### Day-to-Day Workflow
-
-```bash
-# Push code -> GitHub Actions verifies the build
-git push origin main
-
-# Check project status
-fleetdeck list
-fleetdeck info myapp
-fleetdeck logs myapp -f
-
-# Deploy a new project
-fleetdeck deploy ./new-project --server fleetdeck-admin@server --domain new.yourdomain.com
-
-# Create a staging environment
-fleetdeck env create myapp staging
-
-# Quick update without CI/CD
-fleetdeck update myapp --server prod
-fleetdeck update myapp --server prod --service app  # single service
-
-# Monitor health
-fleetdeck monitor start myapp --slack https://hooks.slack.com/xxx
-
-# Backup before risky changes
-fleetdeck backup create myapp
-# ... make changes ...
-fleetdeck rollback myapp --latest  # oops, revert
-```
-
-### Updating Live Applications
-
-For apps that are already deployed, `fleetdeck update` provides a lightweight alternative to full redeployment -- no CI/CD pipeline needed. It syncs your local files to the server, auto-detects Dockerfile or Compose changes, and rebuilds only when necessary.
-
-```bash
-# Sync files and rebuild only if Dockerfile/compose changed
-fleetdeck update myapp --server fleetdeck-admin@server
-
-# Force a full rebuild (e.g. after dependency changes)
-fleetdeck update myapp --server fleetdeck-admin@server --rebuild --no-cache
-
-# Update a single service in a multi-container stack
-fleetdeck update myapp --server fleetdeck-admin@server --service app
-
-# Pull latest images without rebuilding
-fleetdeck update myapp --server fleetdeck-admin@server --pull
-
-# Just restart containers (no file sync)
-fleetdeck update myapp --server fleetdeck-admin@server --restart-only
-
-# Run hooks before/after deployment
-fleetdeck update myapp --server fleetdeck-admin@server \
-  --pre-deploy "npm run migrate" \
-  --post-deploy "npm run seed"
-```
-
-### Managing Multiple Projects
-
-FleetDeck is built for running 5-50 projects on a single server:
-
-```bash
-$ fleetdeck list
-
-NAME         DOMAIN                  STATUS    TEMPLATE  PROFILE
-myapp        myapp.com               running   nextjs    saas
-api          api.company.com         running   go        server
-blog         blog.company.com        running   static    static
-worker       -                       running   node      worker
-staging      staging.myapp.com       stopped   nextjs    saas
-```
-
-Generated projects use separate edge and internal backend networks. New project accounts have no Docker-group access. This protects service boundaries on a trusted host; it is not isolation for hostile tenants. See [server security and migration](docs/SERVER_SECURITY.md).
-
----
-
-## Operational Runbook
-
-Concrete recipes for the scenarios you'll actually hit in production. Each entry assumes fleetdeck is installed on the server and you're running these commands there (either directly via SSH or inside a CI job that SSHes in).
-
-### Recipe 1 — A migration broke production
-
-Symptom: `fleetdeck migrate run` or `deploy --migrate` reported failure; the DB is in an intermediate state.
-
-```bash
-# 1. See what ran
-fleetdeck migrate history mealtime
-
-# 2. Roll back the DB to the pre-migration snapshot
-fleetdeck migrate rollback mealtime
-
-# 3. Confirm the app is serving the old schema + old code
-curl -I https://mealtime.com
-```
-
-The pre-migration snapshot was taken *before* the migration command even started, so restore brings back both the DB and the config files. You're left running the previous release; re-deploy to roll forward once the migration is fixed.
-
-### Recipe 2 — A deploy silently broke things after cutover
-
-Symptom: the deploy succeeded, containers came up healthy, but 10 minutes in the app started throwing 5xx.
-
-```bash
-# If you deployed with --watch --watch-rollback, nothing to do —
-# the watchdog already restored the pre-deploy snapshot and the
-# domain is back on the previous release.
-
-# If you didn't opt into auto-rollback:
-fleetdeck rollback mealtime --latest
-```
-
-For next time: always deploy `mealtime` with `--watch 5m --watch-rollback --watch-rollback-mode=files` so user writes from the watch window survive.
-
-### Recipe 3 — The VPS is gone, restore from offsite backup
-
-Symptom: DigitalOcean/Hetzner/whoever lost the disk. You have `[backup.remote]` configured and backups have been mirrored to B2 / R2 / S3.
-
-```bash
-# On a fresh server:
-fleetdeck server setup root@new-vps --domain example.com --email you@example.com --admin-key ~/.ssh/fleetdeck-admin.pub
-
-# Pull the offsite copy of the most recent backup (using rclone directly —
-# fleetdeck intentionally leaves this step manual so you confirm the
-# source before writing to disk)
-rclone copy b2:my-fleet-backups/<backup-id> /opt/fleetdeck/backups/mealtime/<backup-id>
-
-# Rehydrate the project record (the SQLite DB is gone, so fleetdeck
-# doesn't know about this backup yet)
-fleetdeck create mealtime --domain mealtime.com --profile server --import-backup /opt/fleetdeck/backups/mealtime/<backup-id>
-
-# Or, if `create --import-backup` isn't wired yet, restore manually:
-fleetdeck backup restore mealtime <backup-id>
-```
-
-**Before you need this:** test it once end-to-end on a throwaway VPS. A backup you haven't restored is a hope, not a backup.
-
-### Recipe 4 — Rotate the Cloudflare API token (or other secret)
-
-```bash
-# Update the env file that systemd reads
-sudo $EDITOR /etc/fleetdeck/fleetdeck.env
-# edit FLEETDECK_DNS_TOKEN=...
-
-# Restart the daemons so they pick up the new value
-sudo systemctl restart fleetdeck-monitor
-
-# Active CLI sessions keep their old env; restart your shell or
-# re-export the var before running 'fleetdeck dns ...'
-```
-
-Environment-file changes do NOT propagate to already-running processes.
-
-### Recipe 5 — Add a new domain to an existing project
-
-```bash
-# Update the project's docker compose labels (Traefik Host rule)
-# Then re-deploy — Traefik picks up the new host and requests the cert
-fleetdeck deploy ./mealtime --domain new.mealtime.com --watch 5m
-```
-
-If DNS isn't pointed yet, Let's Encrypt will reject the certificate request. Point DNS first, then deploy.
-
-### Recipe 6 — Set up a dead-man's switch for backups
-
-A broken backup schedule is a silent failure. The safest pattern is a
-cron that runs an audit and pings an uptime monitor only if the audit
-passes — if the ping doesn't arrive, the monitor alerts.
-
-```bash
-# /etc/cron.d/fleetdeck-backup-audit
-*/30 * * * * fleetdeck  fleetdeck backup audit --max-age 48h --quiet \
-                         && curl -fsS https://hc-ping.com/<your-uuid> >/dev/null
-```
-
-If any project has no backup or its most recent backup is older than
-`--max-age`, `audit` exits non-zero, the `&& curl` never runs, and
-healthchecks.io (or equivalent) fires an alert. Add a second monitor
-for the ping endpoint itself.
-
-### Recipe 7 — "Is my backup actually restorable?"
-
-```bash
-# Run the verify command — checks all SHA256 checksums and gzip integrity
-fleetdeck backup verify mealtime <backup-id>
-
-# For real confidence, do a restore on a throwaway project:
-fleetdeck create mealtime-restore-test --domain scratch.example.com --profile server
-fleetdeck backup restore mealtime-restore-test <backup-id>
-```
-
-Do this at least once per quarter. Verified backups are the only kind that count.
-
-### Configuration at a glance
-
-| Env var | Purpose |
-|---------|---------|
-| `FLEETDECK_ENCRYPTION_KEY` | AES key passphrase for encrypted secrets column |
-| `FLEETDECK_API_TOKEN` | Bearer token for the dashboard / HTTP API |
-| `FLEETDECK_METRICS_TOKEN` | Separate read-only credential for `GET /metrics` |
-| `FLEETDECK_WEBHOOK_SECRET` | HMAC secret for GitHub push webhooks |
-| `FLEETDECK_DNS_TOKEN` | Cloudflare API token |
-| `FLEETDECK_MONITORING_SLACK` / `FLEETDECK_MONITORING_WEBHOOK` | Alert destinations |
-| `FLEETDECK_TRUST_PROXY_IPS` | Comma-separated list of proxy IPs whose `X-Forwarded-For` is honored for rate limiting |
-| `FLEETDECK_SSH_PASSPHRASE` | Passphrase for an encrypted SSH key used by `deploy --server` |
-| `FLEETDECK_BASE_PATH` | Override `/opt/fleetdeck` (e.g. for local/dev use) |
-
-All are also settable in `/etc/fleetdeck/config.toml`. Env vars win when both are set.
-
-### Deployment checklist for a new production project
-
-Don't skip items. Each one has saved someone's weekend at least once.
-
-- [ ] `fleetdeck server setup` on a fresh VPS (idempotent if re-run)
-- [ ] `[backup.remote]` configured with `auto_push = true` and a tested rclone remote
-- [ ] `fleetdeck backup audit --max-age 48h` wired into cron + an uptime monitor (dead man's switch for broken schedules)
-- [ ] Systemd unit `fleetdeck-monitor.service` enabled (`journalctl -u fleetdeck-monitor -f` shows probes)
-- [ ] External uptime monitor (Uptime Kuma, Pingdom) configured — fleetdeck's own monitor can't catch "the VPS is dead"
-- [ ] `FLEETDECK_ENCRYPTION_KEY` at least 16 chars of random material (`openssl rand -hex 32`)
-- [ ] First deploy uses `--watch 5m --watch-rollback` (use `--watch-rollback-mode=files` for stateful apps)
-- [ ] Backup **restore** rehearsed on a throwaway project — verify, don't hope
-- [ ] `v0.1.0` (or whatever release) pinned — don't `upgrade` the binary the same week you deploy
-
-### Production hardening reference
-
-| Concern | What fleetdeck does by default | How to tune |
-|---------|-------------------------------|-------------|
-| Deploy concurrency | Caps parallel deploys at 3 so a coordinated org push doesn't OOM the box | `[server] max_concurrent_deploys = 10` in config.toml |
-| Webhook retry storms | Dedupes GitHub redeliveries by `X-GitHub-Delivery` for 30 min | No knob — size chosen to outlast GitHub's retry window |
-| Stuck subprocess | Every `git pull`, `docker compose build/up/exec` runs with a per-step timeout | Timeouts live at the top of `internal/server/webhook.go` |
-| Graceful shutdown | `Shutdown()` cancels `shutdownCtx`, drains in-flight async deploys, then closes DB | Caller's context deadline caps the wait |
-| Rate-limit bypass | `X-Forwarded-For` only honored when peer is in `FLEETDECK_TRUST_PROXY_IPS` | Set to `127.0.0.1,::1` behind a local reverse proxy |
-| Secret permissions | `.env`, `.pem`, `.key`, `.p12`, `.pfx`, `.jks` forced to `0600` on upload regardless of source mode | Source list in `internal/remote/transfer.go` |
-| Audit log exposure | Log file created `0640`, directory `0750` — not world-readable | N/A; tighten with filesystem ACLs if needed |
-| Weak encryption key | `FLEETDECK_ENCRYPTION_KEY` under 16 chars rejected at startup | Error message points at `openssl rand -hex 32` |
-| Config typos | Invalid `strategy`/`profile`/`dns.provider` values rejected at Load | Sentinel values documented in the config reference |
-
----
+Install the [security watcher timer](docs/SECURITY_WATCHER.md) to receive changed
+findings through Telegram/email. It never silently upgrades applications.
+FleetDeck's own CI runs daily Go vulnerability checks and Dependabot updates;
+application dependencies still need their own checks.
+
+## Recovery before confidence
+
+Protected source updates verify a server-side snapshot before replacing files.
+Stateful writers stop during backup/build, so this path has a maintenance window.
+Existing `.env`, referenced private files and persistent data are preserved.
+A failed backup blocks the update. Startup failure retains the snapshot for a
+migration-aware recovery decision; automatic database rollback could lose new data.
+
+Local snapshots are not disaster recovery. Configure encrypted offsite backups,
+retention, delivery alerts and an external uptime check. Perform a restore drill.
+For deployments using prebuilt immutable images and explicit migration jobs, use
+[the separate release workflow](docs/RELEASE_JOBS.md).
+
+Multiple named servers are supported. **Automatic HA clustering, replicated
+databases, coordinated failover and a complete cross-server control plane are
+not yet implemented.** Each server runs its own FleetDeck instance and panel.
 
 ## Documentation
 
-### Complete Command Reference
+| Start / operate | Secure / recover |
+| --- | --- |
+| [Installation](INSTALL.md) | [Host firewall and isolation](docs/SERVER_SECURITY.md) |
+| [Workstation and server inventory](docs/LOCAL_CLIENT.md) | [SSH MFA and recovery](docs/SSH_ACCESS.md) |
+| [Protected project deployment](docs/PROJECT_DEPLOY.md) | [Authelia and passkeys](docs/AUTHELIA.md) |
+| [Application coverage](docs/APPLICATION_COVERAGE.md) | [Admin access](docs/ADMIN_ACCESS.md) |
+| [Notifications and monitoring](docs/NOTIFICATIONS.md) | [Update / vulnerability watcher](docs/SECURITY_WATCHER.md) |
+| [SMTP configuration](docs/SMTP.md) | [Migration and restore runbook](docs/EXISTING_SERVER_MIGRATION.md) |
+| [Cloudflare origins](docs/CLOUDFLARE.md) | [Release jobs](docs/RELEASE_JOBS.md) |
+| [Public repository boundary](docs/PUBLIC_REPOSITORY_BOUNDARY.md) | [Release verification](docs/RELEASE_SECURITY.md) |
 
-| Command | Description |
-|---------|-------------|
-| **Deploy & Update** | |
-| `fleetdeck deploy [dir]` | One-command deploy (local or remote via SSH) |
-| `fleetdeck update <name>` | Lightweight update for live apps (sync, rebuild if needed) |
-| `fleetdeck detect [dir]` | Auto-detect app type and recommend profile |
-| `fleetdeck profiles` | List all deployment profiles |
-| `fleetdeck profile <name>` | Inspect a profile (add `--compose` for template) |
-| **Server** | |
-| `fleetdeck server setup <user@host>` | Provision a fresh server |
-| `fleetdeck server origin-firewall preview / apply / confirm / rollback` | [Optional Cloudflare-only web ingress with timed recovery](docs/CLOUDFLARE.md) |
-| `fleetdeck init` | Initialize FleetDeck locally |
-| `fleetdeck upgrade` | Self-update to latest release |
-| **Projects** | |
-| `fleetdeck create <name>` | Create project (`--profile`, `--template`, `--domain`) |
-| `fleetdeck start / stop / restart <name>` | Lifecycle management |
-| `fleetdeck destroy <name>` | Remove project (with optional data retention) |
-| `fleetdeck list / info / logs / status` | Information and monitoring |
-| **DNS** | |
-| `fleetdeck dns setup <domain> <ip>` | Auto-configure A + wildcard records |
-| `fleetdeck dns list / delete` | Record management |
-| **Environments** | |
-| `fleetdeck env create / list / promote / delete` | Multi-environment management |
-| **Monitoring** | |
-| `fleetdeck monitor start <name>` | Continuous health monitoring |
-| `fleetdeck monitor check <name>` | Single health check (exits non-zero if unhealthy) |
-| **Backup** | |
-| `fleetdeck backup create / list / restore` | Full backup and restore |
-| `fleetdeck backup push <name>` | Mirror backup to the rclone remote configured under `[backup.remote]` |
-| `fleetdeck backup audit --max-age 48h` | Dead-man's-switch: exit non-zero if any project has stale or missing backups |
-| `fleetdeck rollback <name>` | Quick rollback to any snapshot |
-| `fleetdeck snapshot <name>` | Quick snapshot |
-| `fleetdeck schedule enable / disable / list` | Scheduled backups via systemd |
-| **Migrations** | |
-| `fleetdeck migrate run <name> --command "..."` | Snapshot-then-run: tracked app-level migration |
-| `fleetdeck migrate history <name>` | List past migrations with status, duration, snapshot ID |
-| `fleetdeck migrate rollback <name>` | Restore the snapshot from the most recent migration |
-| **Retention** | |
-| `fleetdeck prune deployments --keep 50` | Trim old deployment rows from the SQLite database |
-| **CI/CD** | |
-| `fleetdeck setup-cd <name>` | Register project for auto-deploy from GitHub |
-| **Volumes** | |
-| `fleetdeck volumes list` | List Docker volumes for a project |
-| `fleetdeck volumes rm` | Remove Docker volumes |
-| **Discovery** | |
-| `fleetdeck discover` | Scan server for existing Docker Compose projects |
-| `fleetdeck discover import` | Import discovered projects |
-| `fleetdeck sync` | Reconcile database with actual system state |
+Use `fleetdeck --help` and `fleetdeck <command> --help` for the current command
+reference. Keep server addresses, personal identities, credential exports and
+operational runbooks in private storage. Public examples use placeholder data.
 
-### Configuration
+## Develop and contribute
 
-```toml
-# /etc/fleetdeck/config.toml
+Use the Go toolchain declared in `go.mod`, a C compiler for SQLite, and Docker
+with Compose/Buildx for integration tests. On macOS, Colima can provide the local
+Docker environment; it is a test environment, not a Linux host-hardening target.
 
-[server]
-base_path = "/opt/fleetdeck"
-domain = "fleet.yourdomain.com"
-encryption_key = "your-strong-passphrase"
-api_token = ""                     # Supply FLEETDECK_API_TOKEN before starting the dashboard
-webhook_secret = "github-webhook-secret"
-
-[traefik]
-network = "traefik_default"
-entrypoint = "websecure"
-cert_resolver = "letsencrypt"
-
-[github]
-default_org = "your-github-org"
-
-[defaults]
-template = "node"
-postgres_version = "15-alpine"
-
-[deploy]
-strategy = "basic"              # basic, bluegreen, rolling
-default_profile = "server"
-timeout = "5m"
-
-[monitoring]
-enabled = false
-interval = "30s"
-timeout = "10s"
-failure_threshold = 3
-
-[dns]
-provider = "cloudflare"
-
-[backup]
-base_path = "/opt/fleetdeck/backups"
-max_manual_backups = 10
-max_snapshots = 20
-max_age_days = 30
-max_total_size_gb = 5
-auto_snapshot = true
-
-[audit]
-enabled = true
-log_path = "/var/log/fleetdeck/audit.log"
+```sh
+make build
+go test ./...
+go test -race ./...
+go vet ./...
 ```
 
-Sensitive values can be set via environment variables: `FLEETDECK_API_TOKEN`, `FLEETDECK_WEBHOOK_SECRET`, `FLEETDECK_ENCRYPTION_KEY`, `FLEETDECK_DNS_TOKEN`, `FLEETDECK_MONITORING_SLACK`.
+CI also exercises real Docker deployment/recovery, firewall packet handling,
+SSH/MFA, Authelia login, release packaging and secret scanning. Integration tests
+use disposable fixtures; read each script's requirements before running it.
 
-### Security
-
-| Layer | Implementation |
-|-------|---------------|
-| Project accounts | Private groups/homes, no login shell or Docker-group access |
-| Deployment trust | Administrator SSH; generated CI receives no host credentials |
-| Secrets | AES-256-GCM at rest, PBKDF2 key derivation (100K iterations) |
-| Webhooks | HMAC-SHA256 signature verification |
-| API | Bearer token auth, per-IP rate limiting (10 req/s) |
-| Network | Per-project edge bridges, internal backend networks, Traefik TLS |
-| HTTP | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| Firewall | UFW host rules plus IPv4/IPv6 Docker ingress guard |
-| Input validation | Shell injection prevention, path traversal protection |
-| Deployment | Per-project file locking prevents concurrent deploys |
-| Audit | Structured JSON logs for every operation |
-
----
-
-## Development
-
-```bash
-make build          # Build binary
-make test           # Run all tests
-make test-race      # Run with race detection
-make test-cover     # Generate coverage report
-make vet            # Run go vet
-make lint           # Run golangci-lint
-make release        # Build release binaries (amd64 + arm64)
-```
-
-### Test Coverage
-
-**900+ test functions** across **60+ test files**. All tests pass. Zero race conditions.
-
-| Package | Coverage | Tests |
-|---------|----------|-------|
-| detect | **99.1%** | 78 |
-| profiles | **95.1%** | 54 |
-| bootstrap | **93.9%** | 56 |
-| config | **90.7%** | 26 |
-| environments | **88.7%** | 51 |
-| dns | **85.7%** | 40 |
-| monitor | **82.1%** | 56 |
-| project | **73.2%** | 39 |
-| deploy | **32.6%** | 39 |
-| remote | **9.0%** | 36 |
-
-Deploy and remote have lower unit test coverage because they execute `docker compose` and SSH commands that require real infrastructure. **Integration tests** in CI run these against real Docker and SSH containers.
-
-### CI Pipeline
-
-Every push runs: build, vet, race-detected tests, coverage report, Docker integration tests, and SSH integration tests. See `.github/workflows/ci.yml`.
-
----
-
-## Roadmap
-
-- [x] Smart app detection (Node, Python, Go, Rust, static)
-- [x] 6 deployment profiles (bare, server, saas, static, worker, fullstack)
-- [x] One-command remote deployment via SSH
-- [x] Server provisioning (Docker, Traefik, firewall, SSL)
-- [x] Zero-downtime deployments (blue/green, rolling)
-- [x] TOFU SSH host key verification
-- [x] Per-project deployment locking
-- [x] Health monitoring with Slack/webhook/email alerts + state persistence
-- [x] DNS management with multi-level TLD support (Cloudflare)
-- [x] Environment management (staging/production/preview)
-- [x] Web dashboard with REST API
-- [x] Backup, snapshot, and rollback system
-- [x] Secret encryption (AES-256-GCM)
-- [x] Audit logging with rotation
-- [x] GitHub Actions CI with integration tests
-- [x] Lightweight update command for live applications
-- [x] SSH key auto-discovery from ~/.ssh/config
-- [x] CI/CD setup with branch-based deployments
-- [ ] Hetzner and DigitalOcean DNS providers
-- [ ] Resource monitoring (CPU, RAM per project via cgroups)
-- [ ] Prometheus metrics endpoint
-- [ ] Plugin system for custom hooks
-- [ ] Multi-server support
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and pull request guidelines.
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for the security model and vulnerability reporting.
-
-## License
-
-MIT
-
----
-
-Built by [Artaeon](https://github.com/Artaeon)
+Contributions that make deployments easier to understand, verify and recover are
+welcome. Keep changes focused, include meaningful tests and document operational
+limits. Follow [the security policy](SECURITY.md) for vulnerability reports.
+FleetDeck is available under the [MIT license](LICENSE).
