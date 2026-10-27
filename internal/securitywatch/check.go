@@ -20,11 +20,12 @@ import (
 )
 
 type Check struct {
-	Status    string `json:"status"`
-	Code      string `json:"code,omitempty"`
-	Installed string `json:"installed,omitempty"`
-	Latest    string `json:"latest,omitempty"`
-	Count     int    `json:"count,omitempty"`
+	Status         string `json:"status"`
+	Code           string `json:"code,omitempty"`
+	Installed      string `json:"installed,omitempty"`
+	Latest         string `json:"latest,omitempty"`
+	Count          int    `json:"count,omitempty"`
+	RebootRequired bool   `json:"reboot_required,omitempty"`
 }
 type Finding struct {
 	ID       string `json:"id"`
@@ -73,17 +74,18 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte,
 }
 
 type Checker struct {
-	Runner      Runner
-	HTTP        *http.Client
-	API         string
-	Now         func() time.Time
-	ScanTimeout time.Duration
-	HostOS      string
-	IndexStamp  string
+	Runner       Runner
+	HTTP         *http.Client
+	API          string
+	Now          func() time.Time
+	ScanTimeout  time.Duration
+	HostOS       string
+	IndexStamp   string
+	RebootMarker string
 }
 
 func New() *Checker {
-	return &Checker{Runner: ExecRunner{}, HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, API: "https://api.github.com", Now: time.Now, ScanTimeout: 5 * time.Minute, HostOS: runtime.GOOS, IndexStamp: "/var/lib/apt/periodic/update-success-stamp"}
+	return &Checker{Runner: ExecRunner{}, HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, API: "https://api.github.com", Now: time.Now, ScanTimeout: 5 * time.Minute, HostOS: runtime.GOOS, IndexStamp: "/var/lib/apt/periodic/update-success-stamp", RebootMarker: "/var/run/reboot-required"}
 }
 
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -324,9 +326,22 @@ func (c *Checker) host(ctx context.Context) Check {
 	if c.HostOS != "linux" {
 		return Check{Status: "not_applicable", Code: "linux_host_check_only"}
 	}
+	result := Check{Status: "unknown"}
+	info, err := os.Lstat(c.RebootMarker)
+	if err == nil {
+		if !info.Mode().IsRegular() {
+			result.Code = "host_reboot_status_unverified"
+			return result
+		}
+		result.RebootRequired = true
+	} else if !os.IsNotExist(err) {
+		result.Code = "host_reboot_status_unverified"
+		return result
+	}
 	data, err := c.Runner.Run(ctx, "apt-get", "--simulate", "-o", "Debug::NoLocking=1", "upgrade")
 	if err != nil {
-		return Check{Status: "unknown", Code: "apt_unavailable_or_failed"}
+		result.Code = "apt_unavailable_or_failed"
+		return result
 	}
 	count := 0
 	for _, line := range strings.Split(string(data), "\n") {
@@ -334,15 +349,18 @@ func (c *Checker) host(ctx context.Context) Check {
 			count++
 		}
 	}
-	info, err := os.Stat(c.IndexStamp)
+	result.Count = count
+	info, err = os.Stat(c.IndexStamp)
 	if err != nil || c.Now().Sub(info.ModTime()) > 48*time.Hour || info.ModTime().After(c.Now().Add(time.Minute)) {
-		return Check{Status: "unknown", Code: "apt_index_freshness_unverified", Count: count}
+		result.Code = "apt_index_freshness_unverified"
+		return result
 	}
 	status := "up_to_date"
 	if count > 0 {
 		status = "update_available"
 	}
-	return Check{Status: status, Count: count}
+	result.Status = status
+	return result
 }
 func (r Report) Counts() (critical, warning, unknown int) {
 	for _, c := range []Check{r.Release, r.Host, r.Inventory} {
@@ -350,6 +368,9 @@ func (r Report) Counts() (critical, warning, unknown int) {
 			unknown++
 		}
 		if c.Status == "update_available" {
+			warning++
+		}
+		if c.RebootRequired {
 			warning++
 		}
 	}

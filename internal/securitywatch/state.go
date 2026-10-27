@@ -109,6 +109,9 @@ func Notify(state *State, report Report, label string, providers []monitor.Alert
 				title = "Previously reported security checks are clear"
 			}
 			message := fmt.Sprintf("%d critical findings, %d warnings or updates, %d incomplete checks. Review the private FleetDeck security report. No software was updated automatically.", critical, warning, unknown)
+			if report.Host.RebootRequired {
+				message += " The host reports a required restart; schedule it with verified recovery access."
+			}
 			if provider.Send(monitor.Alert{Level: level, Title: title, Message: message, Target: label, Timestamp: report.CheckedAt}) != nil {
 				failures++
 				continue
