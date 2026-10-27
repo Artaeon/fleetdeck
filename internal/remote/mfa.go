@@ -14,7 +14,18 @@ var validOTP = regexp.MustCompile(`^(?:[0-9]{6}|[0-9]{8})$`)
 
 func totpChallenge(read func() (string, error)) ssh.KeyboardInteractiveChallenge {
 	attempts := 0
+	rounds := 0
 	return func(user, instruction string, questions []string, echo []bool) ([]string, error) {
+		rounds++
+		if rounds > 8 {
+			return nil, fmt.Errorf("too many SSH MFA protocol messages")
+		}
+		// PAM can send informational rounds with no prompts, including after
+		// accepting the code. Acknowledge them without displaying untrusted
+		// instructions or reading another secret from the terminal.
+		if len(questions) == 0 && len(echo) == 0 {
+			return []string{}, nil
+		}
 		attempts++
 		// Never display a server-controlled prompt or feed codes to an arbitrary
 		// password challenge. The host key is verified before authentication.

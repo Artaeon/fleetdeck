@@ -169,6 +169,6 @@ jobs:
           SSH_TEST_USER: fleetdeck
           SSH_TEST_KEY: /tmp/testkey
       - name: Verify real SSH MFA and automatic recovery
-        run: go test -v -run TestContainerSSHMFAAndRecovery ./internal/bootstrap
+        run: go test -v -run TestContainerSSHMFA ./internal/bootstrap ./internal/remote
         env:
           FLEETDECK_SSH_MFA_CONTAINER_TEST: "1"

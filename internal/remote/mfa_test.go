@@ -22,6 +22,33 @@ func TestMFARejectsUnexpectedPrompts(t *testing.T) {
 	}
 }
 
+func TestMFAAllowsBoundedPAMInformation(t *testing.T) {
+	reads := 0
+	challenge := totpChallenge(func() (string, error) { reads++; return "123456", nil })
+	for _, questions := range [][]string{nil, {"Verification code:"}, nil} {
+		var echo []bool
+		if len(questions) != 0 {
+			echo = []bool{false}
+		}
+		answers, err := challenge("", "untrusted informational text", questions, echo)
+		if err != nil || len(answers) != len(questions) {
+			t.Fatalf("PAM exchange rejected: answers=%d error=%v", len(answers), err)
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("read %d codes for one actual prompt", reads)
+	}
+	if _, err := challenge("", "", nil, []bool{false}); err == nil {
+		t.Fatal("malformed empty challenge accepted")
+	}
+	for i := 0; i < 8; i++ {
+		_, _ = challenge("", "", nil, nil)
+	}
+	if _, err := challenge("", "", nil, nil); err == nil || reads != 1 {
+		t.Fatal("unbounded informational exchanges accepted or read another code")
+	}
+}
+
 func TestSSHRequiresKeyAndSecondFactor(t *testing.T) {
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(key)
