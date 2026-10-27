@@ -255,7 +255,6 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := now.Add(oidcSessionLifetime)
-	authenticated = true
 	if id.Expiry.Before(expires) {
 		expires = id.Expiry
 	}
@@ -267,6 +266,7 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 	if old, err := r.Cookie(s.sessionCookieName()); err == nil {
 		s.sessions.revoke(old.Value)
 	}
+	authenticated = true
 	// Lax permits the OIDC top-level GET redirect across sites; unsafe requests
 	// still require the existing exact Origin check. The host prefix prevents
 	// sibling subdomains from injecting a Domain cookie with this name.
