@@ -71,10 +71,11 @@ Confirmation requires a fresh successful PAM second-factor login in the trusted
 system journal since the trial began. Existing SSH sessions do not prove it.
 Without confirmation, both SSH and PAM files are restored automatically. Manual
 recovery is `sudo fleetdeck server ssh-mfa rollback` or the provider console.
-The five-minute rollback timer is transient: do not reboot during a trial; a
-reboot can remove the pending timer and recovery files. Console access remains
-necessary for host failures. Existing SSH connections survive a reload, so close
-old multiplexed sessions after confirming the new policy.
+The previous files are also preserved in a private persistent trial directory.
+A boot recovery unit restores an unconfirmed trial before SSH starts if the host
+reboots. Console access remains necessary for host or storage failures. Existing
+SSH connections survive a reload, so close old multiplexed sessions after
+confirming the new policy.
 
 FleetDeck's remote CLI supports this flow with `FLEETDECK_SSH_MFA=totp`; see
 [workstation setup](LOCAL_CLIENT.md). Automatic deployments need an explicitly
