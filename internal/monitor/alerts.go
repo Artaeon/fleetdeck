@@ -25,7 +25,9 @@ type Alert struct {
 // targetState tracks consecutive check outcomes for a single target.
 type targetState struct {
 	ConsecutiveFailures int
-	WasHealthy          bool
+	ConsecutiveStatus   int
+	PendingStatus       string
+	AlertedStatus       string
 }
 
 // AlertManager decides when to fire alerts based on state transitions. It only
@@ -58,14 +60,14 @@ func (am *AlertManager) Process(result CheckResult) {
 
 	state, exists := am.states[result.Target.Name]
 	if !exists {
-		state = &targetState{WasHealthy: true}
+		state = &targetState{}
 		am.states[result.Target.Name] = state
 	}
 
-	if result.Healthy {
-		wasUnhealthy := !state.WasHealthy
-		state.ConsecutiveFailures = 0
-		state.WasHealthy = true
+	status := result.HealthStatus()
+	if status == "healthy" {
+		wasUnhealthy := state.AlertedStatus != ""
+		*state = targetState{}
 
 		if wasUnhealthy {
 			am.send(Alert{
@@ -80,10 +82,32 @@ func (am *AlertManager) Process(result CheckResult) {
 	}
 
 	// Unhealthy check.
-	state.ConsecutiveFailures++
+	if state.ConsecutiveFailures < am.failureThreshold {
+		state.ConsecutiveFailures++
+	}
+	if state.PendingStatus != status {
+		state.PendingStatus = status
+		state.ConsecutiveStatus = 0
+	}
+	if state.ConsecutiveStatus < am.failureThreshold {
+		state.ConsecutiveStatus++
+	}
 
-	if state.WasHealthy && state.ConsecutiveFailures >= am.failureThreshold {
-		state.WasHealthy = false
+	// Mixed failures must still alert. Once an incident is open, require a
+	// stable new diagnosis before changing its severity, to avoid flapping.
+	if state.ConsecutiveFailures >= am.failureThreshold && state.AlertedStatus != status &&
+		(state.AlertedStatus == "" || state.ConsecutiveStatus >= am.failureThreshold) {
+		state.AlertedStatus = status
+		if status == "blocked" {
+			am.send(Alert{
+				Level:     "warning",
+				Title:     fmt.Sprintf("%s health check blocked", result.Target.Name),
+				Message:   "Cloudflare returned a browser challenge. Application health is unknown; this is not a successful check or proof of a server outage.",
+				Target:    result.Target.Name,
+				Timestamp: result.CheckedAt,
+			})
+			return
+		}
 
 		errMsg := result.Error
 		if errMsg != "" {
