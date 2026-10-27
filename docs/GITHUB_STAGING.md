@@ -35,6 +35,11 @@ There are no published application ports, shared production volumes or copied
 production credentials. This password gate is for previews; the FleetDeck admin
 panel continues to require its separate MFA policy.
 
+Basic Auth uses the HTTP `Authorization` header. Applications that need their
+own bearer-token Authorization header should use a cookie-based access gateway
+(for example an operator-configured Authelia ForwardAuth policy) instead of this
+Basic Auth template. Test the application's login and API flows through the gate.
+
 The template targets FleetDeck's **Traefik** setup (`websecure`, `letsencrypt`).
 Configure DNS and TLS first. Existing Caddy or other proxy installations need an
 operator-configured equivalent gate; this command does not rewrite their routes.
