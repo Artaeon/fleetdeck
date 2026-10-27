@@ -71,18 +71,22 @@ func TestIntegrationProjectNetworks(t *testing.T) {
 			t.Fatalf("%s -> %s allowed=%t: %v %s", from, address, allowed, err, out)
 		}
 	}
-	// Positive checks establish server readiness before negative isolation checks.
-	for _, address := range []string{aIP, bIP} {
+	// Every endpoint must be ready through an allowed path before testing
+	// isolation. A starting private backend must not look like a network denial.
+	for _, route := range []struct{ from, address string }{
+		{proxy, aIP}, {proxy, bIP}, {a, dbIP},
+	} {
 		ready := false
 		for i := 0; i < 30; i++ {
-			if _, err := docker("exec", proxy, "wget", "-qO-", "-T", "1", "http://"+address+":8080/"); err == nil {
+			out, err := docker("exec", route.from, "wget", "-qO-", "-T", "1", "http://"+route.address+":8080/")
+			if err == nil && strings.TrimSpace(out) == "fixture" {
 				ready = true
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
 		if !ready {
-			t.Fatalf("fixture server %s did not become ready", address)
+			t.Fatalf("fixture server %s did not become ready from %s", route.address, route.from)
 		}
 	}
 	probe(proxy, aIP, true)
