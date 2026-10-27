@@ -86,6 +86,9 @@ authorize deployments, SSH access or software upgrades.
 
 ## Respond to a finding
 
+Follow [the image triage guide](SECURITY_TRIAGE.md) to map a finding to an exact
+artifact, distinguish package matches from reachable code, and verify a repair.
+
 Identify the affected image/service locally, check the vendor advisory and whether
 the vulnerable component is reachable, rebuild with reviewed fixes, take a
 verified backup and deploy through the protected update workflow. Test readiness
