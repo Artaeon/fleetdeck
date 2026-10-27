@@ -1,419 +1,115 @@
-# Installing FleetDeck
+# Install FleetDeck and link your first project
 
-This guide covers everything you need to go from zero to deploying your first app. You set this up once, then every future project is a single command.
+FleetDeck runs on your workstation as an SSH client and on a Linux server as the
+trusted deployment administrator. Start with a dedicated Ubuntu/Debian VPS.
+Existing servers need the [migration runbook](docs/EXISTING_SERVER_MIGRATION.md)
+before changing their proxy, firewall or application ownership.
 
-## Overview
+## 1. Install matching client and server builds
 
-FleetDeck has two components:
+Follow [release verification](docs/RELEASE_SECURITY.md) for published Linux
+binaries, or build from reviewed source. The Go toolchain is declared in `go.mod`;
+SQLite also requires a C compiler. On macOS, install the command-line developer
+tools first. A local Docker runtime is optional unless testing containers locally.
 
-1. **Your laptop** -- where you run `fleetdeck deploy` from
-2. **Your server** -- where your apps run (a VPS from Hetzner, DigitalOcean, Linode, etc.)
-
-You install FleetDeck on your laptop. It SSHes into your server to set everything up.
-
-```
-Your Laptop                          Your Server ($5-10/mo VPS)
-+------------------+                 +-------------------------+
-| fleetdeck binary |  --- SSH --->   | Docker + Traefik        |
-| your app code    |                 | Your apps (auto HTTPS)  |
-+------------------+                 +-------------------------+
-```
-
----
-
-## Step 1: Install FleetDeck on Your Laptop
-
-### Requirements
-
-- **Go 1.23+** (only needed to build)
-- **Git**
-- **SSH key** (you probably already have one at `~/.ssh/id_ed25519`)
-
-### Build and Install
-
-```bash
+```sh
 git clone https://github.com/Artaeon/fleetdeck.git
 cd fleetdeck
 make build
+./fleetdeck version --json
 sudo make install
 ```
 
-This puts the `fleetdeck` binary in `/usr/local/bin/`. Verify it works:
+A locally built commit may not have a release version; the security watcher then
+reports release freshness as unknown. Linux and macOS binaries are not
+interchangeable. Verify `fleetdeck version --json` on both ends after installation;
+protected source deployment requires `source_deploy_protocol: "1"` on the server.
 
-```bash
-fleetdeck version
+## 2. Provision the Linux server
+
+Arrange provider-console recovery access, record the SSH host key through a
+trusted channel, and add it to your workstation's known hosts. Use your SSH agent
+(including 1Password if configured) or a private key with suitable permissions.
+Avoid disabling host-key verification. Keep an independent session open while
+changing SSH policy.
+
+For a fresh supported host with initial root-key access:
+
+```sh
+fleetdeck server setup root@server.example.com \
+  --admin-key /private/path/operator.pub \
+  --domain proxy.example.com \
+  --email operator@example.com
 ```
 
-### Generate an SSH Key (if you don't have one)
+The admin public key must match the current private key/agent. Setup installs
+Docker/Compose and supporting services, creates a dedicated administrator,
+configures the HTTPS proxy, hardens SSH and installs host/container firewall
+rules. Review its prompts and verify a new administrator connection before
+closing recovery access. Root bootstrap is not the day-to-day deployment login.
+Ensure Docker Buildx is installed for protected source builds.
 
-```bash
-ssh-keygen -t ed25519 -C "your@email.com"
+Configure DNS and certificates for your chosen hostnames. Store DNS credentials
+in private files or the password manager, never shell examples or Git. For
+Cloudflare, follow [the origin protection guide](docs/CLOUDFLARE.md); an HTTP
+challenge can block machine probes even while a browser works.
+
+## 3. Initialize the private workstation configuration
+
+```sh
+fleetdeck client init
+fleetdeck server add production operator@server.example.com
+fleetdeck server status production
+fleetdeck server list
 ```
 
----
+Replace `operator` with the configured administrator (the bootstrap default is
+`fleetdeck-admin`). Private settings remain outside all project repositories.
+Server status records the last observed version and commit. For enrolled SSH
+MFA, use `FLEETDECK_SSH_MFA=totp` and enter the phone code at the hidden prompt.
 
-## Step 2: Get a Server
+## 4. Prepare and link the application
 
-Any Linux VPS works. Recommended:
+Review your application's Dockerfile, Compose configuration, health check,
+persistent volumes and production secrets. Detection/templates help but do not
+replace an application-specific build and restore test.
 
-| Provider | Minimum | Recommended | Notes |
-|----------|---------|-------------|-------|
-| [Hetzner](https://www.hetzner.com/cloud) | CX22 (2 vCPU, 4GB) | CX32 (4 vCPU, 8GB) | Best price/performance in EU |
-| [DigitalOcean](https://www.digitalocean.com) | Basic $6/mo | Regular $12/mo | Simple, good docs |
-| [Linode](https://www.linode.com) | Shared 2GB | Shared 4GB | Solid alternative |
-
-**Requirements:**
-- Ubuntu 22.04+ or Debian 12+
-- Root SSH access
-- A public IP address
-
-### Add Your SSH Key to the Server
-
-When creating the VPS, add your SSH public key (`~/.ssh/id_ed25519.pub`). Or after creation:
-
-```bash
-ssh-copy-id root@YOUR_SERVER_IP
+```sh
+fleetdeck detect ./my-app
+fleetdeck project link ./my-app --server production --name my-app \
+  --domain preview.example.com --profile saas
+fleetdeck project show ./my-app
+fleetdeck deploy ./my-app --env-file /private/path/production.env
 ```
 
-Verify you can connect:
+`--env-file` is optional for applications without secrets. It explicitly seeds
+only a missing server `.env`; future deploys retain existing server values.
+Other private file references need explicit server provisioning. Follow
+[protected project deployment](docs/PROJECT_DEPLOY.md) for its supported Compose
+contract, backups, maintenance windows and recovery instructions.
 
-```bash
-ssh root@YOUR_SERVER_IP "echo connected"
+## 5. Enable the operational services you need
+
+These require explicit setup; installing a binary does not configure accounts,
+notification destinations or offsite storage for you.
+
+- [SSH key + phone authenticator](docs/SSH_ACCESS.md), with recovery codes tested.
+- [Per-server admin access](docs/ADMIN_ACCESS.md) and [Authelia MFA/passkeys](docs/AUTHELIA.md), with private SMTP for enrollment/recovery.
+- [Telegram/email monitoring and host activity alerts](docs/NOTIFICATIONS.md).
+- [Scheduled security checks](docs/SECURITY_WATCHER.md), with a verified Trivy installation.
+- Backup scheduling, encrypted offsite copies and an isolated restore drill.
+- An independent external uptime observer, so host outages remain visible.
+
+## 6. Repeat deployments
+
+From the linked project directory:
+
+```sh
+fleetdeck deploy .
 ```
 
----
-
-## Step 3: Get a Domain
-
-You need a domain name. Any registrar works (Namecheap, Cloudflare, Porkbun, etc.).
-
-**Point your domain to your server** by creating an A record:
-
-| Type | Name | Value | TTL |
-|------|------|-------|-----|
-| A | @ | YOUR_SERVER_IP | 300 |
-| A | * | YOUR_SERVER_IP | 300 |
-
-The wildcard `*` record means all subdomains (app.yourdomain.com, api.yourdomain.com, etc.) automatically point to your server.
-
-**If you use Cloudflare**, FleetDeck can do this automatically:
-
-```bash
-fleetdeck dns setup yourdomain.com YOUR_SERVER_IP \
-  --provider cloudflare \
-  --token YOUR_CLOUDFLARE_API_TOKEN
-```
-
----
-
-## Step 4: Provision Your Server
-
-This is a one-time setup. FleetDeck installs Docker, Traefik, firewall, and hardens SSH:
-
-```bash
-fleetdeck server setup root@YOUR_SERVER_IP \
-  --admin-key ~/.ssh/fleetdeck-admin.pub \
-  --domain yourdomain.com \
-  --email your@email.com \
-  --insecure
-```
-
-**What this does:**
-- Updates the system and installs essential packages (curl, git, fail2ban)
-- Installs Docker Engine + Compose v2 from the official Docker repository
-- Sets up Traefik v3 as a reverse proxy with automatic Let's Encrypt HTTPS
-- Configures UFW firewall (only SSH, HTTP, HTTPS open)
-- Creates a 2GB swap file
-- Hardens SSH (disables password auth and root login)
-- Saves the server's SSH host key to your `~/.ssh/known_hosts`
-
-The `--insecure` flag is for first-time connections only -- it uses Trust On First Use (TOFU) to save the host key. After this, all future connections verify the host key automatically.
-
-**This step is idempotent** -- you can re-run it anytime to verify or update the configuration.
-
----
-
-## Step 5: Deploy Your First App
-
-### Option A: Auto-Detect and Deploy
-
-```bash
-cd /path/to/your/app
-
-fleetdeck deploy . \
-  --server fleetdeck-admin@YOUR_SERVER_IP \
-  --domain myapp.yourdomain.com \
-  --profile saas
-```
-
-FleetDeck will:
-1. Detect your app type (Node.js, Go, Python, etc.)
-2. Connect to your server via SSH
-3. Upload your project files
-4. Build Docker images on the server
-5. Start your containers with Traefik routing
-
-Your app is now live at `https://myapp.yourdomain.com` with automatic HTTPS.
-
-### Option B: Check What FleetDeck Detects First
-
-```bash
-fleetdeck detect .
-```
-
-This shows you what FleetDeck thinks your app is and which profile it recommends, without deploying anything.
-
-### Option C: Create a Project With Build CI
-
-```bash
-fleetdeck create myapp \
-  --domain myapp.yourdomain.com \
-  --template node \
-  --profile saas \
-  --github-org your-org
-```
-
-This creates a private Linux account, Docker Compose configuration, GitHub repository and build-only GitHub Actions workflow. Project accounts receive no Docker access or host deployment keys. Deploy using your trusted administrator account.
-
----
-
-## Step 6: Build CI and Deployment
-
-Projects created with `--github-org` include build-only CI. Pushes verify the image
-build; they do not automatically deploy. Use `fleetdeck deploy` from your trusted
-administrator account. If you explicitly configure webhook deployment, treat that
-repository's code as privileged host input.
-
-For existing servers, review [firewall, isolation and migration](docs/SERVER_SECURITY.md)
-before changing deployed networks or removing legacy CI credentials.
-
-If every public site on a host uses Cloudflare, the optional
-[origin firewall](docs/CLOUDFLARE.md) restricts direct web access with a timed
-rollback trial. Verify certificate renewal and long requests before enabling it.
-
----
-
-## Daily Usage
-
-Once set up, your daily workflow is simple:
-
-### Deploy a New App
-
-```bash
-cd ~/projects/my-new-app
-fleetdeck deploy . --server fleetdeck-admin@SERVER --domain newapp.yourdomain.com
-```
-
-### Check All Projects
-
-```bash
-fleetdeck list
-fleetdeck status
-```
-
-### View Logs
-
-```bash
-fleetdeck logs myapp -f          # Follow logs
-fleetdeck logs myapp -s postgres # Specific service
-```
-
-### Create Staging Environment
-
-```bash
-fleetdeck env create myapp staging
-# Live at https://staging.myapp.yourdomain.com
-```
-
-### Promote Staging to Production
-
-```bash
-fleetdeck env promote myapp staging production
-```
-
-### Monitor Health
-
-```bash
-# One-off check
-fleetdeck monitor check myapp
-
-# Continuous monitoring with Slack alerts
-fleetdeck monitor start myapp api blog \
-  --slack https://hooks.slack.com/services/xxx
-```
-
-### Backup and Rollback
-
-```bash
-fleetdeck backup create myapp        # Manual backup
-fleetdeck schedule enable myapp      # Daily auto-backups
-fleetdeck rollback myapp --latest    # Quick rollback
-```
-
-### Update Running App
-
-```bash
-# Publish source and run build CI
-git push origin main
-
-# Deploy the reviewed version
-fleetdeck deploy . --server fleetdeck-admin@SERVER --domain myapp.yourdomain.com
-```
-
----
-
-## Deployment Profiles
-
-Choose a profile based on what your app needs:
-
-| Profile | Use When | What You Get |
-|---------|----------|-------------|
-| `bare` | Simple API, no database | App + Traefik HTTPS |
-| `server` | Backend with database | App + PostgreSQL + Redis |
-| `saas` | Full SaaS product | App + PostgreSQL + Redis + S3 (MinIO) + Email |
-| `static` | Landing page, docs | Nginx + CDN headers + gzip |
-| `worker` | Background jobs | Worker + Redis queue + PostgreSQL |
-| `fullstack` | Monorepo (frontend + backend) | Frontend + Backend + DB + Redis + S3 |
-
-```bash
-fleetdeck profiles               # List all profiles
-fleetdeck profile saas            # See what saas includes
-fleetdeck profile saas --compose  # See the Docker Compose template
-```
-
----
-
-## Configuration
-
-FleetDeck works with zero configuration. For customization, create `/etc/fleetdeck/config.toml` on your server:
-
-```toml
-[server]
-base_path = "/opt/fleetdeck"
-encryption_key = "your-strong-passphrase"
-
-[traefik]
-network = "traefik_default"
-cert_resolver = "letsencrypt"
-
-[github]
-default_org = "your-github-org"
-
-[defaults]
-template = "node"
-postgres_version = "15-alpine"
-
-[deploy]
-strategy = "basic"     # basic, bluegreen, rolling
-
-[backup]
-auto_snapshot = true
-max_manual_backups = 10
-max_age_days = 30
-```
-
-Sensitive values should be set via environment variables:
-
-```bash
-export FLEETDECK_ENCRYPTION_KEY="your-strong-passphrase"
-# Random token of at least 32 characters, generated in your password manager.
-read -r -s -p "Dashboard token: " FLEETDECK_API_TOKEN
-export FLEETDECK_API_TOKEN
-export FLEETDECK_DNS_TOKEN="your-cloudflare-token"
-```
-
----
-
-## Troubleshooting
-
-### "SSH connection failed"
-
-```bash
-# Verify you can connect manually
-ssh root@YOUR_SERVER_IP
-
-# If host key changed (server rebuild), remove old key
-ssh-keygen -R YOUR_SERVER_IP
-
-# Then reconnect with TOFU
-fleetdeck server setup root@YOUR_SERVER_IP --domain ... --email ... --insecure --admin-key ~/.ssh/fleetdeck-admin.pub
-```
-
-### "project is already being deployed"
-
-Another deployment is in progress for this project. Wait for it to finish, or if it crashed:
-
-```bash
-# On the server
-rm /opt/fleetdeck/myapp/.fleetdeck.lock
-```
-
-### "docker compose" errors
-
-```bash
-# Check Docker is running
-ssh root@YOUR_SERVER_IP "docker version"
-
-# Check compose
-ssh root@YOUR_SERVER_IP "docker compose version"
-
-# View container logs directly
-ssh root@YOUR_SERVER_IP "cd /opt/fleetdeck/myapp && docker compose logs"
-```
-
-### "certificate" or HTTPS errors
-
-Traefik handles HTTPS automatically. Common issues:
-
-1. **DNS not pointing to server** -- verify with `dig myapp.yourdomain.com`
-2. **Rate limited by Let's Encrypt** -- wait 1 hour, happens with too many cert requests
-3. **Firewall blocking port 443** -- verify with `ssh root@SERVER "ufw status"`
-
-### App not accessible
-
-```bash
-# Check if containers are running
-fleetdeck info myapp
-fleetdeck health myapp
-
-# Check Traefik is routing correctly
-ssh root@SERVER "docker compose -f /opt/traefik/docker-compose.yml logs"
-```
-
----
-
-## Updating FleetDeck
-
-```bash
-cd ~/fleetdeck  # or wherever you cloned it
-git pull
-make build
-sudo make install
-```
-
-Or use the built-in upgrade:
-
-```bash
-fleetdeck upgrade
-```
-
----
-
-## Uninstalling
-
-### Remove FleetDeck binary
-
-```bash
-sudo rm /usr/local/bin/fleetdeck
-```
-
-### Remove FleetDeck data (on server)
-
-```bash
-# This removes ALL projects, backups, and configuration
-sudo rm -rf /opt/fleetdeck
-sudo rm -rf /etc/fleetdeck
-sudo rm -rf /var/log/fleetdeck
-```
-
-Your Docker containers and Traefik continue running independently.
+Review the result and application health. When persistent state exists, plan for
+the backup/build maintenance window. Failed readiness is not permission to
+blindly restore an older database. Keep the verified backup and assess migrations
+before recovery. Add more named servers and private project links when needed;
+this does not automatically create a high-availability cluster.
