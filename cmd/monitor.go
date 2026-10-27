@@ -48,8 +48,9 @@ Examples:
 		discordURL, _ := cmd.Flags().GetString("discord")
 		threshold, _ := cmd.Flags().GetInt("threshold")
 		all, _ := cmd.Flags().GetBool("all")
+		targetsFile, _ := cmd.Flags().GetString("targets-file")
 
-		if !all && len(args) == 0 {
+		if targetsFile == "" && !all && len(args) == 0 {
 			return fmt.Errorf("specify at least one project name, or use --all to monitor every registered project")
 		}
 		if all && len(args) > 0 {
@@ -57,7 +58,11 @@ Examples:
 		}
 
 		var projects []*db.Project
-		if all {
+		if targetsFile != "" {
+			if all || len(args) > 0 {
+				return fmt.Errorf("--targets-file cannot be combined with project names or --all")
+			}
+		} else if all {
 			all, err := d.ListProjects()
 			if err != nil {
 				return fmt.Errorf("listing projects: %w", err)
@@ -83,6 +88,13 @@ Examples:
 		}
 
 		var targets []monitor.Target
+		if targetsFile != "" {
+			var err error
+			targets, err = monitor.LoadTargets(targetsFile, interval, timeout)
+			if err != nil {
+				return err
+			}
+		}
 		for _, proj := range projects {
 			targets = append(targets, monitor.Target{
 				Name:           proj.Name,
@@ -216,6 +228,7 @@ var monitorCheckCmd = &cobra.Command{
 func init() {
 	monitorStartCmd.Flags().Duration("interval", 30*time.Second, "Check interval")
 	monitorStartCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout per check")
+	monitorStartCmd.Flags().String("targets-file", "", "Operator-owned JSON health endpoints, instead of registered project domains")
 	monitorStartCmd.Flags().String("smtp-config", "", "Private SMTP JSON file; defaults to monitoring.smtp_config_file")
 	monitorStartCmd.Flags().StringSlice("email-to", nil, "Notification recipient addresses")
 	monitorStartCmd.Flags().String("webhook", "", "Webhook URL for alerts")

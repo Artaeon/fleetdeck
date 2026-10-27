@@ -31,3 +31,14 @@ email_to = ["operator@example.com"]
 CLI recipient flags can override the configured recipients. Monitor mail is sent on failure/recovery transitions, after the failure threshold. Authelia uses the same mailbox through its own private notifier configuration; validate and test it before activating administrator enrollment. Application mail remains opt-in per project, with separate accounts where sender identity or access boundaries require them.
 
 A monitor running on the same VPS cannot report a total VPS/network outage while it is down. Add an independent external observer for that case. Mail configuration is not an external observer and does not make a single VPS highly available.
+
+For private application health routes and password-protected previews, provide an operator-owned targets file instead of `--all`:
+
+```json
+[
+  {"name": "app", "url": "http://127.0.0.1:8080/health"},
+  {"name": "preview-edge", "url": "https://preview.example.com/", "expected_status": 401}
+]
+```
+
+Run `fleetdeck monitor start --targets-file /etc/fleetdeck/monitor-targets.json --smtp-config /etc/fleetdeck/smtp.json`. Probe the private application and public access gate separately: a working login page alone does not establish application health. Keep credentials and secret query parameters out of monitoring URLs; the loader rejects them because results are persisted.
