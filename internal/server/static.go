@@ -1,29 +1,32 @@
 package server
 
 const styleCSS = `
+:root { color-scheme: dark; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
 :root {
-    --bg: #f5f5f7;
-    --bg-card: #ffffff;
-    --bg-sidebar: rgba(255,255,255,0.72);
-    --bg-hover: rgba(0,0,0,0.04);
-    --border: #d2d2d7;
-    --border-light: #e8e8ed;
-    --text: #1d1d1f;
-    --text-secondary: #86868b;
-    --text-tertiary: #aeaeb2;
-    --accent: #007aff;
-    --accent-hover: #0056b3;
-    --green: #34c759;
-    --red: #ff3b30;
-    --yellow: #ff9500;
-    --orange: #ff9500;
-    --purple: #af52de;
-    --radius: 16px;
-    --radius-sm: 10px;
-    --radius-xs: 8px;
+    --bg: #080a0e;
+    --bg-card: #0e121a;
+    --bg-sidebar: #080a0e;
+    --bg-hover: #161e2e;
+    --border: #34415b;
+    --border-light: #222c3d;
+    --text: #e3e8f2;
+    --text-secondary: #a9b4c8;
+    --text-tertiary: #8a99b2;
+    --accent: #6f96ff;
+    --accent-hover: #a9bfff;
+    --green: #99d58b;
+    --red: #ff8c8c;
+    --yellow: #e7c374;
+    --orange: #e7c374;
+    --purple: #bea2f0;
+    --radius: 3px;
+    --radius-sm: 3px;
+    --radius-xs: 2px;
     --shadow: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
     --shadow-lg: 0 8px 30px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
-    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    --font: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
     --sidebar-width: 260px;
     --content-padding: 32px;
     --transition: 0.2s ease;
@@ -110,11 +113,11 @@ a:hover { color: var(--accent-hover); }
 }
 
 .nav-item.active {
-    background: var(--accent);
-    color: #fff;
+    background: #172440;
+    color: var(--accent);
 }
 
-.nav-item.active svg { stroke: #fff; }
+.nav-item.active svg { stroke: var(--accent); }
 
 /* Content Area */
 .content {
@@ -286,9 +289,9 @@ a:hover { color: var(--accent-hover); }
 
 .btn-primary {
     background: var(--accent);
-    color: #fff;
+    color: #080a0e;
 }
-.btn-primary:hover { background: var(--accent-hover); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); color: #080a0e; }
 
 .btn-secondary {
     background: transparent;
