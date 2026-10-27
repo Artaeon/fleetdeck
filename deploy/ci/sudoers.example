@@ -1,0 +1,4 @@
+# Install with visudo -cf validation. Never grant this account general sudo
+# or Docker group membership. Both entries have completely fixed arguments.
+fleetdeck-ci-example ALL=(root) NOPASSWD: /usr/bin/timeout --signal=TERM --kill-after=15s 35m /usr/bin/env -i PATH=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin HOME=/root SSH_ORIGINAL_COMMAND=status /usr/local/bin/fleetdeck --config /etc/fleetdeck/ci/example.toml release receive --target example-staging
+fleetdeck-ci-example ALL=(root) NOPASSWD: /usr/bin/timeout --signal=TERM --kill-after=15s 35m /usr/bin/env -i PATH=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin HOME=/root SSH_ORIGINAL_COMMAND=apply /usr/local/bin/fleetdeck --config /etc/fleetdeck/ci/example.toml release receive --target example-staging
