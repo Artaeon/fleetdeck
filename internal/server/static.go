@@ -1015,7 +1015,9 @@ const appJS = `
             failed: 'badge-red',
             pending: 'badge-yellow',
             healthy: 'badge-green',
-            unhealthy: 'badge-red'
+            unhealthy: 'badge-red',
+            blocked: 'badge-yellow',
+            stale: 'badge-yellow'
         };
         var cls = map[status] || 'badge-gray';
         return '<span class="badge ' + cls + '">' + escapeHTML(status || 'unknown') + '</span>';
@@ -1064,6 +1066,7 @@ const appJS = `
         { pattern: /^\/projects$/, fn: renderProjects },
         { pattern: /^\/project\/([a-z0-9][a-z0-9-]*[a-z0-9])$/, fn: renderProjectDetail },
         { pattern: /^\/servers$/, fn: renderServers },
+        { pattern: /^\/monitoring$/, fn: renderMonitoring },
         { pattern: /^\/deploy$/, fn: renderDeploy },
         { pattern: /^\/dns$/, fn: renderDNS },
         { pattern: /^\/volumes$/, fn: renderVolumes },
@@ -1197,6 +1200,51 @@ const appJS = `
         html += '</div>';
 
         setBody(html);
+    }
+
+    function renderMonitoring() {
+        setHeader('Monitoring');
+        showLoading();
+        function refresh() {
+            api('GET', '/api/monitor').then(function(data) {
+                if (location.hash !== '#/monitoring') return;
+                if (!data.configured) {
+                    setBody('<div class="empty-state"><h3>Monitoring is not connected</h3><p>Connect the server monitor to see current checks here.</p></div>');
+                    return;
+                }
+                var targets = data.targets || [];
+                if (!targets.length) {
+                    setBody('<div class="empty-state"><h3>No checks available</h3><p>Application health is unknown until monitoring targets are configured and checked.</p></div>');
+                    return;
+                }
+                var counts = {healthy: 0, unhealthy: 0, blocked: 0, unknown: 0};
+                targets.forEach(function(t) {
+                    if (t.status === 'healthy' || t.status === 'unhealthy' || t.status === 'blocked') counts[t.status]++;
+                    else counts.unknown++;
+                });
+                var html = '<p class="text-secondary mb-24">Latest observations from this server. A blocked or outdated check cannot confirm application health.</p>';
+                html += '<div class="stats-grid">';
+                html += statCard('Healthy', counts.healthy, 'text-green');
+                html += statCard('Failed checks', counts.unhealthy, counts.unhealthy ? 'text-red' : '');
+                html += statCard('Blocked checks', counts.blocked, counts.blocked ? 'text-yellow' : '');
+                html += statCard('No current result', counts.unknown, counts.unknown ? 'text-yellow' : '');
+                html += '</div><div class="projects-grid">';
+                targets.forEach(function(t) {
+                    html += '<article class="monitor-card card" style="padding:20px">';
+                    html += '<div class="project-card-header"><h2 class="project-card-name">' + escapeHTML(t.name) + '</h2>' + statusBadge(t.status) + '</div>';
+                    html += '<p class="text-secondary mb-16">' + escapeHTML(t.detail) + '</p>';
+                    html += '<div class="kv-row"><span class="kv-key">Last checked</span><span class="kv-value">' + timeAgo(t.checked_at) + '</span></div>';
+                    html += '<div class="kv-row"><span class="kv-key">HTTP response</span><span class="kv-value">' + escapeHTML(String(t.status_code || 'No response')) + '</span></div>';
+                    html += '</article>';
+                });
+                html += '</div><p class="text-secondary mt-24">These checks do not establish whole-server uptime. Use an independent observer for complete host outages.</p>';
+                setBody(html);
+            }).catch(function() {
+                if (location.hash === '#/monitoring') showError('Monitoring data is unavailable. Current health is unknown.');
+            });
+        }
+        refresh();
+        state.refreshTimer = setInterval(refresh, 15000);
     }
 
     function statCard(label, value, cls) {
