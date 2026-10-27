@@ -42,7 +42,7 @@ func showProjectHealth(name string) error {
 
 	for _, svc := range report.Services {
 		switch svc.Health {
-		case "healthy":
+		case "healthy", "completed":
 			ui.Success("  %-30s %s  (%s)", svc.Name, ui.StatusColor("running"), svc.Status)
 		case "unhealthy":
 			ui.Error("  %-30s %s  (%s)", svc.Name, ui.StatusColor("error"), svc.Status)
