@@ -86,7 +86,11 @@ func (am *AlertManager) Process(result CheckResult) {
 		state.WasHealthy = false
 
 		errMsg := result.Error
-		if errMsg == "" {
+		if errMsg != "" {
+			// Transport errors may contain a target URL, redirect token or headers.
+			// Keep diagnostic detail local; external channels receive a fixed cause.
+			errMsg = "health request failed; inspect the private monitor state"
+		} else {
 			errMsg = fmt.Sprintf("status %d", result.StatusCode)
 		}
 
