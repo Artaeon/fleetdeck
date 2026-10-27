@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -242,4 +243,28 @@ func (c *Client) IsConnected() bool {
 	}
 	_, _, err := c.conn.SendRequest("keepalive@openssh.com", true, nil)
 	return err == nil
+}
+
+// RunInput executes one authenticated command with a source stream. Closing the
+// session on cancellation interrupts the transfer; the server owns its lock and
+// refuses to mutate a project before its backup is verified.
+func (c *Client) RunInput(ctx context.Context, command string, input io.Reader, stdout, stderr io.Writer) error {
+	session, err := c.conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	session.Stdin = input
+	session.Stdout = stdout
+	session.Stderr = stderr
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			session.Close()
+		case <-done:
+		}
+	}()
+	return session.Run(c.command(command))
 }

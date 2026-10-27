@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/profiles"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
+	"github.com/fleetdeck/fleetdeck/internal/sourcedeploy"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -57,20 +57,22 @@ func readWatchOptions(cmd *cobra.Command) deployWatchOptions {
 var deployCmd = &cobra.Command{
 	Use:   "deploy [directory]",
 	Short: "Deploy an application (local or remote)",
-	Long: `One-command deployment that handles everything:
+	Long: `Deploy a reviewed Docker Compose application locally or over SSH.
 
-  1. Detects your app type (or uses --profile)
-  2. Connects to server via SSH (or deploys locally)
-  3. Creates project structure, user, SSH keys
-  4. Generates optimized Docker Compose from profile
-  5. Builds and deploys with chosen strategy
-  6. Sets up GitHub Actions CI/CD
+Remote source deployments require compatible FleetDeck on the server. They
+preserve existing secrets, serialize updates on the server, verify a snapshot
+before replacing source, and wait for Compose readiness. Stateful source updates
+may stop application writers during the backup/build window. Database rollback
+is an explicit operator decision, never an automatic response to a failed probe.
 
-Examples:
-  fleetdeck deploy ./my-app --domain app.example.com
-  fleetdeck deploy ./my-app --server root@1.2.3.4 --domain app.example.com --profile saas
-  fleetdeck deploy ./my-app --server prod --domain app.example.com  # use registered server name
-  fleetdeck deploy . --strategy bluegreen --domain app.example.com`,
+Save a private target once:
+  fleetdeck project link . --server production --name demo --domain demo.example.com
+  fleetdeck deploy .
+
+Seed the first .env explicitly when needed:
+  fleetdeck deploy . --env-file /private/path/production.env
+
+For immutable releases and reviewed migrations, see 'fleetdeck release'.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -113,6 +115,15 @@ Examples:
 		// Ensure strategy defaults to "basic" even if explicitly set to empty.
 		if strategyName == "" {
 			strategyName = "basic"
+		}
+
+		if server != "" {
+			if fresh || strategyName != "basic" || preDeployHook != "" || postDeployHook != "" {
+				return fmt.Errorf("safe source deployments currently require basic strategy without --fresh or shell hooks; use bounded release jobs for reviewed migration/recovery workflows")
+			}
+			if readWatchOptions(cmd).watch > 0 || readWatchOptions(cmd).rollback {
+				return fmt.Errorf("remote source deployments use server-side Compose readiness; client watchdog rollback cannot restore a remote snapshot")
+			}
 		}
 
 		// Step 1: Detect app type
@@ -192,6 +203,9 @@ Examples:
 		// Post-deploy watchdog. Runs only when --watch > 0. If the watchdog
 		// declares the deploy unhealthy and --watch-rollback was set, the
 		// pre-deploy snapshot is restored here before this RunE returns.
+		if server != "" {
+			return nil
+		}
 		return runPostDeployWatchdog(cmd.Context(), name, domain, readWatchOptions(cmd))
 	},
 }
@@ -295,21 +309,6 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 }
 
 func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string, noCache, fresh bool) error {
-	// Acquire per-project lock using a canonical path based on project name,
-	// so concurrent deploys from different directories are serialized on this machine.
-	lockDir := filepath.Join(os.TempDir(), "fleetdeck-locks", name)
-	if err := os.MkdirAll(lockDir, 0755); err != nil {
-		return fmt.Errorf("creating lock directory: %w", err)
-	}
-	lock, err := deploy.AcquireLock(lockDir)
-	if err != nil {
-		return fmt.Errorf("acquiring deploy lock: %w (another deploy for %q may be running)", err, name)
-	}
-	defer lock.Release()
-
-	// Pre-deploy snapshot to protect against failed deployments
-	autoSnapshot(name, "deploy")
-
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
 	passphrase, _ := cmd.Flags().GetString("passphrase")
@@ -376,188 +375,44 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	}
 	ui.Success("Connected to %s", host)
 
-	// Step 3: Upload project
-	ui.Step(3, 5, "Uploading project to server...")
-	remotePath := "/opt/fleetdeck/" + name
-	quotedPath := "'/opt/fleetdeck/" + name + "'"
-	if _, err := client.Run("mkdir -p " + quotedPath); err != nil {
-		return fmt.Errorf("creating remote directory: %w", err)
+	version := remote.ReadVersion(client)
+	if version.SourceDeployProtocol != sourcedeploy.Protocol {
+		return fmt.Errorf("server does not support safe source deployment protocol %s; update FleetDeck on the server first (no files uploaded)", sourcedeploy.Protocol)
 	}
-
-	if err := client.UploadDir(dir, remotePath); err != nil {
-		return fmt.Errorf("uploading project: %w", err)
+	serverConfig, _ := cmd.Flags().GetString("server-config")
+	if !filepath.IsAbs(serverConfig) || strings.ContainsAny(serverConfig, "\x00\r\n") {
+		return fmt.Errorf("server-config must be an absolute path")
 	}
-	ui.Success("Project uploaded to %s", remotePath)
-
-	// Step 3b: Auto-generate missing env files
-	envReqs, _ := detect.DetectEnvFiles(dir)
-	for _, req := range envReqs {
-		if req.Exists {
-			continue
-		}
-		remoteEnvPath := remotePath + "/" + req.Required
-		if req.Example != "" {
-			ui.Info("Generating %s from %s...", req.Required, filepath.Base(req.Example))
-			tmpFile := filepath.Join(os.TempDir(), "fleetdeck-env-"+filepath.Base(req.Required))
-			if err := detect.GenerateEnvFromExample(req.Example, tmpFile); err != nil {
-				ui.Warn("Could not generate %s: %v", req.Required, err)
-				continue
-			}
-			defer os.Remove(tmpFile)
-			if err := client.Upload(tmpFile, remoteEnvPath); err != nil {
-				ui.Warn("Could not upload %s: %v", req.Required, err)
-			} else {
-				ui.Success("Generated %s with secrets", req.Required)
-			}
-		} else {
-			ui.Warn("Missing %s (no example file found to generate from)", req.Required)
-			// Create an empty file so docker compose doesn't fail
-			if err := client.UploadBytes([]byte("# Auto-generated by FleetDeck\n"), remoteEnvPath, 0600); err != nil {
-				ui.Warn("Could not create empty %s: %v", req.Required, err)
-			}
-		}
+	envFile, _ := cmd.Flags().GetString("env-file")
+	// Materialize privately before starting SSH so local errors cannot deliver a
+	// truncated archive that looks like a complete deployment to the receiver.
+	archive, err := os.CreateTemp("", "fleetdeck-source-*.tar")
+	if err != nil {
+		return err
 	}
-
-	// Step 4: Build and deploy
-	ui.Step(4, 5, "Building and deploying on server (%s strategy)...", strategyName)
-
-	if err := edge.Prepare(dir, "", client); err != nil {
-		return fmt.Errorf("preparing project network: %w", err)
+	defer os.Remove(archive.Name())
+	defer archive.Close()
+	if err = sourcedeploy.ArchiveWithEnv(dir, archive, envFile); err != nil {
+		return err
 	}
-
-	// Fresh deploy: tear down existing containers and volumes
-	if fresh {
-		ui.Info("Fresh deploy: removing existing containers and volumes...")
-		freshCmd := "cd " + quotedPath + " && docker compose down -v"
-		if output, err := client.Run(freshCmd); err != nil {
-			ui.Warn("Fresh teardown returned an error (may be first deploy): %s", output)
-		}
+	if _, err = archive.Seek(0, 0); err != nil {
+		return err
 	}
-
-	// Build first (common to all strategies)
-	buildCmd := "cd " + quotedPath + " && docker compose build"
+	args := []string{"fleetdeck", "--config", serverConfig, "deploy", "receive", "--name", name, "--domain", domain, "--profile", prof.Name, "--timeout", timeout.String()}
 	if noCache {
-		buildCmd += " --no-cache"
+		args = append(args, "--no-cache")
 	}
-	output, err := client.Run(buildCmd)
-	if err != nil {
-		ui.Error("Remote build failed: %s", output)
-		return fmt.Errorf("remote build: %w", err)
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuote(arg)
 	}
-
-	// Execute strategy-specific deploy
-	var remoteDeployCmd string
-	switch strategyName {
-	case "bluegreen":
-		// Bring up the new set under a temporary compose project name,
-		// then poll its 'app' service for readiness before tearing down
-		// the old set. If readiness never converges, abort the swap and
-		// leave the old containers serving traffic.
-		//
-		// Previously this path was `up -d && sleep 5 && swap`, which
-		// (a) treated a fixed sleep as a health check, and (b) tore down
-		// the old project before verifying anything — leaving a window
-		// with no containers at all if the new image booted slowly.
-		//
-		// The readiness check runs `docker compose -p <new> ps` and looks
-		// for a container whose health is "healthy" OR whose state is
-		// "running" without a healthcheck defined. 60 attempts * 2 s =
-		// 120 s ceiling.
-		newProject := name + "-new"
-		remoteDeployCmd = fmt.Sprintf(
-			"set -e\n"+
-				"cd %s\n"+
-				"docker compose -p %s up -d --pull always\n"+
-				"echo 'Waiting for new containers to become healthy...'\n"+
-				"ready=0\n"+
-				"for i in $(seq 1 60); do\n"+
-				"  status=$(docker compose -p %s ps --format '{{.Health}}|{{.State}}' 2>/dev/null || true)\n"+
-				"  if [ -z \"$status\" ]; then\n"+
-				"    sleep 2; continue\n"+
-				"  fi\n"+
-				"  if echo \"$status\" | grep -q 'unhealthy'; then\n"+
-				"    echo 'A new container is unhealthy — aborting swap.'\n"+
-				"    docker compose -p %s logs --tail=50 || true\n"+
-				"    docker compose -p %s down --remove-orphans || true\n"+
-				"    exit 11\n"+
-				"  fi\n"+
-				"  bad=$(echo \"$status\" | awk -F'|' '{print $2}' | grep -v -E '^(running|healthy)$' || true)\n"+
-				"  healthy=$(echo \"$status\" | awk -F'|' '$1==\"healthy\" || ($1==\"\" && $2==\"running\") {print}')\n"+
-				"  total=$(echo \"$status\" | wc -l)\n"+
-				"  ok=$(echo \"$healthy\" | wc -l)\n"+
-				"  if [ -z \"$bad\" ] && [ \"$total\" = \"$ok\" ]; then\n"+
-				"    ready=1; break\n"+
-				"  fi\n"+
-				"  sleep 2\n"+
-				"done\n"+
-				"if [ \"$ready\" != 1 ]; then\n"+
-				"  echo 'New containers did not become healthy within 120s — aborting swap.'\n"+
-				"  docker compose -p %s logs --tail=50 || true\n"+
-				"  docker compose -p %s down --remove-orphans || true\n"+
-				"  exit 12\n"+
-				"fi\n"+
-				"# Cutover: stop old, promote new to primary project name.\n"+
-				"docker compose down\n"+
-				"docker compose -p %s down --remove-orphans\n"+
-				"docker compose up -d --pull always\n",
-			quotedPath, newProject, newProject, newProject, newProject, newProject, newProject, newProject,
-		)
-	case "rolling":
-		// Pull first, then restart each service one at a time
-		remoteDeployCmd = fmt.Sprintf(
-			"cd %s && docker compose pull && "+
-				"for svc in $(docker compose config --services); do "+
-				"docker compose up -d --no-deps $svc; "+
-				"sleep 2; "+
-				"done",
-			quotedPath,
-		)
-	default: // "basic"
-		remoteDeployCmd = "cd " + quotedPath + " && docker compose up -d --pull always"
+	ui.Info("Server will preserve secrets and verify a backup before replacing existing source")
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeout+time.Minute)
+	defer cancel()
+	if err = client.RunInput(ctx, strings.Join(quoted, " "), archive, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return fmt.Errorf("server-side deployment failed; inspect the server snapshot and reported readiness before retrying: %w", err)
 	}
-
-	// Run pre-deploy hook (after build, before deploy — containers must exist)
-	if preDeployHook != "" {
-		ui.Info("Running pre-deploy hook...")
-		hookCmd := "cd " + quotedPath + " && docker compose exec -T app sh -c " + shellQuote(preDeployHook)
-		output, err := client.Run(hookCmd)
-		if err != nil {
-			ui.Error("Pre-deploy hook failed: %s", output)
-			return fmt.Errorf("pre-deploy hook failed: %w", err)
-		}
-		ui.Success("Pre-deploy hook completed")
-	}
-
-	output, err = client.Run(remoteDeployCmd)
-	if err != nil {
-		ui.Error("Remote deployment failed: %s", output)
-		return fmt.Errorf("remote deployment: %w", err)
-	}
-
-	// Run post-deploy hook
-	if postDeployHook != "" {
-		ui.Info("Running post-deploy hook...")
-		hookCmd := "cd " + quotedPath + " && docker compose exec -T app sh -c " + shellQuote(postDeployHook)
-		output, err := client.Run(hookCmd)
-		if err != nil {
-			ui.Error("Post-deploy hook failed: %s", output)
-			return fmt.Errorf("post-deploy hook failed: %w", err)
-		}
-		ui.Success("Post-deploy hook completed")
-	}
-
-	ui.Success("Application deployed on server")
-
-	// Step 5: Summary
-	ui.Step(5, 5, "Deployment complete")
-	fmt.Println()
-	ui.Success("Application deployed at https://%s", domain)
-	ui.Info("Server: %s@%s", user, host)
-	ui.Info("Path: %s", remotePath)
-	ui.Info("Profile: %s", prof.Name)
-	fmt.Println()
-
-	audit.Log("deploy.remote", name, fmt.Sprintf("server=%s profile=%s domain=%s", server, prof.Name, domain), true)
+	audit.Log("deploy.remote", name, "server="+server+" protocol="+sourcedeploy.Protocol, true)
 	return nil
 }
 
@@ -626,6 +481,7 @@ func fileExistsInDir(dir, name string) bool {
 }
 
 func init() {
+	deployCmd.Flags().String("env-file", "", "Explicit private .env seed for a new remote project; existing server values always win")
 	deployCmd.Flags().String("domain", "", "Domain for the application (required)")
 	deployCmd.Flags().String("server-config", "/etc/fleetdeck/config.toml", "Operator-owned FleetDeck configuration on the remote server")
 	deployCmd.Flags().String("server", "", "Remote server (user@host or registered name) for remote deployment")
