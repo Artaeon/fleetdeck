@@ -1,74 +1,451 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="FleetDeck is an open-source CLI for Docker Compose deployments on your Linux servers. Private project targets, protected updates, backups, MFA and monitoring.">
-<meta name="theme-color" content="#101b23">
-<title>FleetDeck — Your servers. Your deployments.</title>
-<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/site.css">
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<header class="header"><div class="wrap nav">
-<a class="brand" href="#" aria-label="FleetDeck home"><svg width="27" height="28" viewBox="0 0 27 28" aria-hidden="true"><rect x="1" y="2" width="25" height="10" rx="3"/><rect x="1" y="16" width="25" height="10" rx="3"/><path d="M6 7h2m-2 14h2"/></svg>FleetDeck<span class="version">OPEN SOURCE</span></a>
-<nav aria-label="Main navigation"><a href="#workflow">Workflow</a><a href="#capabilities">Capabilities</a><a href="#security">Security</a><a class="nav-github" href="https://github.com/Artaeon/fleetdeck">GitHub <span aria-hidden="true">↗</span></a></nav>
-</div></header>
-<main id="main">
-<section class="hero wrap">
-<div class="hero-copy"><p class="eyebrow"><span class="signal" aria-hidden="true"></span> CLI NATIVE. SELF HOSTED. MIT LICENSED.</p>
-<h1>Your servers.<br>Your deployments.<br><span>Your call.</span></h1>
-<p class="intro">Take a Docker Compose project from your laptop to your Linux server. Keep secrets private, back up before updates, and see what is running.</p>
-<div class="actions"><a class="button primary" href="https://github.com/Artaeon/fleetdeck/blob/main/INSTALL.md">Start with FleetDeck <span aria-hidden="true">↗</span></a><a class="text-link" href="#workflow">See the workflow <span aria-hidden="true">↓</span></a></div>
-<p class="hero-note">One trusted VPS or several named servers. Your infrastructure stays yours.</p></div>
-<div class="terminal" aria-label="Example deployment workflow">
-<div class="terminal-bar"><span class="terminal-dots" aria-hidden="true">● ● ●</span><span>my-app / terminal</span><span class="terminal-tag">EXAMPLE</span></div>
-<div class="terminal-body"><p class="code-comment"># Link once. Stored outside your repository.</p><pre><code><span class="prompt">$</span> fleetdeck project link . \
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="FleetDeck is an open-source CLI for Docker Compose deployments on your Linux servers. Private project targets, protected updates, backups, MFA and monitoring."
+    />
+    <meta name="theme-color" content="#101b23" />
+    <title>FleetDeck — Your servers. Your deployments.</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="header">
+      <div class="wrap nav">
+        <a class="brand" href="#" aria-label="FleetDeck home"
+          ><svg width="27" height="28" viewBox="0 0 27 28" aria-hidden="true">
+            <rect x="1" y="2" width="25" height="10" rx="3" />
+            <rect x="1" y="16" width="25" height="10" rx="3" />
+            <path d="M6 7h2m-2 14h2" /></svg
+          >FleetDeck<span class="version">OPEN SOURCE</span></a
+        >
+        <nav aria-label="Main navigation">
+          <a href="#workflow">Workflow</a
+          ><a href="#capabilities">Capabilities</a
+          ><a href="#security">Security</a
+          ><a class="nav-github" href="https://github.com/Artaeon/fleetdeck"
+            >GitHub <span aria-hidden="true">↗</span></a
+          >
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <section class="hero wrap">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="signal" aria-hidden="true"></span> CLI NATIVE. SELF
+            HOSTED. MIT LICENSED.
+          </p>
+          <h1>
+            Your servers.<br />Your deployments.<br /><span>Your call.</span>
+          </h1>
+          <p class="intro">
+            Take a Docker Compose project from your laptop to your Linux server.
+            Keep secrets private, back up before updates, and see what is
+            running.
+          </p>
+          <div class="actions">
+            <a
+              class="button primary"
+              href="https://github.com/Artaeon/fleetdeck/blob/main/INSTALL.md"
+              >Start with FleetDeck <span aria-hidden="true">↗</span></a
+            ><a class="text-link" href="#workflow"
+              >See the workflow <span aria-hidden="true">↓</span></a
+            >
+          </div>
+          <p class="hero-note">
+            One trusted VPS or several named servers. Your infrastructure stays
+            yours.
+          </p>
+        </div>
+        <div class="terminal" aria-label="Example deployment workflow">
+          <div class="terminal-bar">
+            <span class="terminal-dots" aria-hidden="true">● ● ●</span
+            ><span>my-app / terminal</span
+            ><span class="terminal-tag">EXAMPLE</span>
+          </div>
+          <div class="terminal-body">
+            <p class="code-comment">
+              # Link once. Stored outside your repository.
+            </p>
+            <pre><code><span class="prompt">$</span> fleetdeck project link . \
     --server production \
     --name my-app \
-    --domain preview.example.com</code></pre><div class="terminal-divider"></div><p class="code-comment"># Your next update</p><pre><code><span class="prompt">$</span> fleetdeck deploy .</code></pre>
-<ul class="terminal-results"><li><span>✓</span> Saved target selected</li><li><span>✓</span> Existing server secrets preserved</li><li><span>✓</span> Server snapshot verified</li><li><span>✓</span> Build complete · readiness checked</li></ul>
-<div class="terminal-foot"><span class="signal" aria-hidden="true"></span> Clear steps. A recovery point before change.</div></div>
-</div>
-</section>
-<div class="ecosystem"><div class="wrap"><p>BUILT ON ESTABLISHED TOOLS</p><div><span>Docker Compose</span><span>Traefik</span><span>Authelia</span><span>Trivy</span><span>Prometheus metrics</span></div></div></div>
-<section id="workflow" class="section wrap">
-<div class="section-heading"><div><p class="eyebrow">01 / FROM WORKSTATION TO SERVER</p><h2>Set the destination once.<br>Make every update deliberate.</h2></div><p>Private project links remember where an application belongs. FleetDeck checks the server, preserves its configuration and creates a verified recovery point before replacing source.</p></div>
-<ol class="steps"><li><span class="step-num">01</span><h3>Prepare the host</h3><p>Provision Docker, HTTPS routing and firewall rules. Verify administrator access and recovery.</p></li><li><span class="step-num">02</span><h3>Link your project</h3><p>Choose a named server, project and preview domain. Save the target privately on your workstation.</p></li><li><span class="step-num">03</span><h3>Deploy with a backup</h3><p>Keep server secrets, verify a snapshot, build the candidate and check Compose readiness.</p></li><li><span class="step-num">04</span><h3>Observe and maintain</h3><p>Track health and security findings. Test restoration and review changes before updating again.</p></li></ol>
-<div class="note"><strong>Stateful projects need a maintenance window.</strong> Writers stop during backup and build. A failed backup blocks the update; a failed startup retains the snapshot for a migration-aware recovery decision.</div>
-<a class="text-link" href="https://github.com/Artaeon/fleetdeck/blob/main/docs/PROJECT_DEPLOY.md">Read the deployment and recovery contract <span aria-hidden="true">↗</span></a>
-</section>
-<section id="capabilities" class="section section-tint"><div class="wrap">
-<div class="section-heading"><div><p class="eyebrow">02 / A PRACTICAL OPERATING TOOLKIT</p><h2>More than a push command.</h2></div><p>Start in the terminal. Add a protected admin panel, monitoring and notification channels as your setup grows.</p></div>
-<div class="cap-grid">
-<article class="cap-card"><span class="card-icon" aria-hidden="true">⌘</span><h3>Private project targets</h3><p>Named servers, saved project destinations and last observed FleetDeck versions. SSH agent support, including 1Password.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/LOCAL_CLIENT.md">Workstation setup ↗</a></article>
-<article class="cap-card"><span class="card-icon" aria-hidden="true">↺</span><h3>Backups &amp; recovery</h3><p>Configuration, supported database dumps and volume archives. Check integrity, retain old images and practice restoration.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/EXISTING_SERVER_MIGRATION.md">Recovery runbook ↗</a></article>
-<article class="cap-card"><span class="card-icon" aria-hidden="true">▦</span><h3>A panel per server</h3><p>Projects, bounded release jobs and monitoring in the browser. Protect access with Authelia, required factors and an admin group.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/AUTHELIA.md">Identity &amp; admin access ↗</a></article>
-<article class="cap-card"><span class="card-icon" aria-hidden="true">↗</span><h3>Health &amp; activity alerts</h3><p>Telegram and email notifications, SSH activity summaries and Prometheus metrics. Distinguish an HTTP failure from a Cloudflare challenge.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/NOTIFICATIONS.md">Monitoring &amp; alerts ↗</a></article>
-<article class="cap-card"><span class="card-icon" aria-hidden="true">◉</span><h3>Update &amp; CVE watcher</h3><p>Scheduled release/package checks, Trivy scans and runtime findings. Notify on changes. Failed checks remain unknown.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/SECURITY_WATCHER.md">Configure the watcher ↗</a></article>
-<article class="cap-card"><span class="card-icon" aria-hidden="true">⇄</span><h3>Reviewed release jobs</h3><p>A separate workflow for immutable images, explicit migration steps and controlled release recovery on the server.</p><a href="https://github.com/Artaeon/fleetdeck/blob/main/docs/RELEASE_JOBS.md">Release workflow ↗</a></article>
-</div></div></section>
-<section id="architecture" class="section wrap">
-<div class="section-heading"><div><p class="eyebrow">03 / KNOW THE BOUNDARIES</p><h2>Several projects.<br>One understandable host.</h2></div><p>Project networks separate application traffic. Host accounts organize ownership. The shared proxy, Docker daemon and administrator remain trusted parts of the system.</p></div>
-<figure class="architecture"><a href="assets/architecture.svg" aria-label="Open the full-size FleetDeck architecture diagram"><img src="assets/architecture.svg" width="1120" height="650" loading="lazy" alt="Workstation with private configuration connects over SSH to a Linux host. The host contains separate project networks, a shared proxy, a protected admin panel, local backups and monitoring. Offsite storage and external monitoring require separate configuration."></a><figcaption>Each server runs its own instance. <a href="assets/architecture.svg">Open full-size diagram ↗</a></figcaption></figure>
-<div class="boundary-grid"><div><h3>Configured, not assumed</h3><p>Enable SSH MFA, enroll passkeys, connect SMTP/Telegram, schedule the security watcher and configure offsite backups explicitly.</p></div><div><h3>Multiple servers ≠ automatic HA</h3><p>Named destinations are supported. Replicated databases, coordinated failover and a complete cross-server control plane are still future work.</p></div></div>
-</section>
-<section id="applications" class="section section-tint"><div class="wrap">
-<div class="section-heading"><div><p class="eyebrow">04 / BRING YOUR STACK</p><h2>Compose is the contract.</h2></div><p>Templates help you start. Your application's build, health checks, secrets and persistent data determine its deployment requirements.</p></div>
-<div class="stack-grid"><article><h3>Websites &amp; frontends</h3><p>Static HTML, Astro or Svelte builds, and Next.js. Adjust output directories; SSR needs the right adapter and runtime.</p><span class="stack-tag">STATIC / SSR</span></article><article><h3>SaaS &amp; CMS</h3><p>Compose your app, database, cache and uploads. Validate each CMS's migrations, mail and restoration procedure.</p><span class="stack-tag">STATEFUL APPLICATIONS</span></article><article><h3>APIs &amp; workers</h3><p>Node, Python, Go or a custom image. Internal services can stay private; worker-only onboarding needs manual configuration.</p><span class="stack-tag">HTTP / BACKGROUND JOBS</span></article></div>
-<a class="text-link" href="https://github.com/Artaeon/fleetdeck/blob/main/docs/APPLICATION_COVERAGE.md">Check current application coverage <span aria-hidden="true">↗</span></a>
-</div></section>
-<section id="security" class="section wrap">
-<div class="section-heading"><div><p class="eyebrow">05 / SECURITY WITHOUT MAGIC CLAIMS</p><h2>Layers you can inspect.<br>Limits you can plan for.</h2></div><p>FleetDeck helps maintain a secure deployment process. It cannot guarantee an application has no vulnerabilities or turn shared-kernel containers into isolated virtual machines.</p></div>
-<div class="security-list">
-<details open><summary>Does every project get its own user?</summary><p>New managed projects receive a no-login host account with no Docker-group membership. Container users are separate: a third-party image can still start as root. Generated runtime controls and the watcher help you inspect that configuration. Use separate VMs or hosts for mutually untrusted tenants.</p></details>
-<details><summary>Can SSH and the admin panel require additional factors?</summary><p>Enrolled personal SSH access can require both an SSH key and a phone authenticator. Browser access uses Authelia OIDC with required factors and admin-group checks; optional device certificates add another access boundary. A synced passkey alone does not bind access to one physical device. Test recovery before enforcing factors.</p></details>
-<details><summary>Will the watcher update everything automatically?</summary><p>No. The opt-in timer checks release availability, host package updates, running-image vulnerabilities and runtime settings, then alerts on changes. Unknown checks stay unknown. Review advisories, rebuild, back up and test updates before rollout. It does not cover every dependency, exploit or source repository.</p></details>
-<details><summary>Are backups and monitoring ready after one install?</summary><p>The tools are available; your destinations and policies need setup. Configure retention and encrypted offsite copies, verify delivery and run an isolated restore drill. Use an observer outside the VPS so total host outages remain visible. Uptime Kuma and Grafana are optional integrations, not an automatically installed stack.</p></details>
-</div>
-<a class="text-link" href="https://github.com/Artaeon/fleetdeck/blob/main/docs/SERVER_SECURITY.md">Read the security model <span aria-hidden="true">↗</span></a>
-</section>
-<section class="closing"><div class="wrap closing-inner"><div><p class="eyebrow">OPEN CODE. YOUR INFRASTRUCTURE.</p><h2>Make the next deployment<br>easier to trust.</h2><p>Start with a preview project. Verify the build. Test recovery.<br>Then make the workflow your own.</p></div><div class="closing-actions"><a class="button primary" href="https://github.com/Artaeon/fleetdeck/blob/main/INSTALL.md">Read the installation guide ↗</a><a class="button secondary" href="https://github.com/Artaeon/fleetdeck">Explore the source ↗</a></div></div></section>
-</main>
-<footer class="wrap footer"><a class="brand" href="#">FleetDeck</a><p>CLI native deployment for your Linux servers.</p><nav aria-label="Footer"><a href="https://github.com/Artaeon/fleetdeck/blob/main/LICENSE">MIT license</a><a href="https://github.com/Artaeon/fleetdeck/blob/main/SECURITY.md">Report a vulnerability</a><a href="https://github.com/Artaeon/fleetdeck/blob/main/README.md">Documentation</a></nav></footer>
-</body></html>
+    --domain preview.example.com</code></pre>
+            <div class="terminal-divider"></div>
+            <p class="code-comment"># Your next update</p>
+            <pre><code><span class="prompt">$</span> fleetdeck deploy .</code></pre>
+            <ul class="terminal-results">
+              <li><span>✓</span> Saved target selected</li>
+              <li><span>✓</span> Existing server secrets preserved</li>
+              <li><span>✓</span> Server snapshot verified</li>
+              <li><span>✓</span> Build complete · readiness checked</li>
+            </ul>
+            <div class="terminal-foot">
+              <span class="signal" aria-hidden="true"></span> Clear steps. A
+              recovery point before change.
+            </div>
+          </div>
+        </div>
+      </section>
+      <div class="ecosystem">
+        <div class="wrap">
+          <p>BUILT ON ESTABLISHED TOOLS</p>
+          <div>
+            <span>Docker Compose</span><span>Traefik</span><span>Authelia</span
+            ><span>Trivy</span><span>Prometheus metrics</span>
+          </div>
+        </div>
+      </div>
+      <section id="workflow" class="section wrap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / FROM WORKSTATION TO SERVER</p>
+            <h2>
+              Set the destination once.<br />Make every update deliberate.
+            </h2>
+          </div>
+          <p>
+            Private project links remember where an application belongs.
+            FleetDeck checks the server, preserves its configuration and creates
+            a verified recovery point before replacing source.
+          </p>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="step-num">01</span>
+            <h3>Prepare the host</h3>
+            <p>
+              Provision Docker, HTTPS routing and firewall rules. Verify
+              administrator access and recovery.
+            </p>
+          </li>
+          <li>
+            <span class="step-num">02</span>
+            <h3>Link your project</h3>
+            <p>
+              Choose a named server, project and preview domain. Save the target
+              privately on your workstation.
+            </p>
+          </li>
+          <li>
+            <span class="step-num">03</span>
+            <h3>Deploy with a backup</h3>
+            <p>
+              Keep server secrets, verify a snapshot, build the candidate and
+              check Compose readiness.
+            </p>
+          </li>
+          <li>
+            <span class="step-num">04</span>
+            <h3>Observe and maintain</h3>
+            <p>
+              Track health and security findings. Test restoration and review
+              changes before updating again.
+            </p>
+          </li>
+        </ol>
+        <div class="note">
+          <strong>Stateful projects need a maintenance window.</strong> Writers
+          stop during backup and build. A failed backup blocks the update; a
+          failed startup retains the snapshot for a migration-aware recovery
+          decision.
+        </div>
+        <a
+          class="text-link"
+          href="https://github.com/Artaeon/fleetdeck/blob/main/docs/PROJECT_DEPLOY.md"
+          >Read the deployment and recovery contract
+          <span aria-hidden="true">↗</span></a
+        >
+      </section>
+      <section id="capabilities" class="section section-tint">
+        <div class="wrap">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / A PRACTICAL OPERATING TOOLKIT</p>
+              <h2>More than a push command.</h2>
+            </div>
+            <p>
+              Start in the terminal. Add a protected admin panel, monitoring and
+              notification channels as your setup grows.
+            </p>
+          </div>
+          <div class="cap-grid">
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">⌘</span>
+              <h3>Private project targets</h3>
+              <p>
+                Named servers, saved project destinations and last observed
+                FleetDeck versions. SSH agent support, including 1Password.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/LOCAL_CLIENT.md"
+                >Workstation setup ↗</a
+              >
+            </article>
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">↺</span>
+              <h3>Backups &amp; recovery</h3>
+              <p>
+                Configuration, supported database dumps and volume archives.
+                Check integrity, retain old images and practice restoration.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/EXISTING_SERVER_MIGRATION.md"
+                >Recovery runbook ↗</a
+              >
+            </article>
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">▦</span>
+              <h3>A panel per server</h3>
+              <p>
+                Projects, bounded release jobs and monitoring in the browser.
+                Protect access with Authelia, required factors and an admin
+                group.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/AUTHELIA.md"
+                >Identity &amp; admin access ↗</a
+              >
+            </article>
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">↗</span>
+              <h3>Health &amp; activity alerts</h3>
+              <p>
+                Telegram and email notifications, SSH activity summaries and
+                Prometheus metrics. Distinguish an HTTP failure from a
+                Cloudflare challenge.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/NOTIFICATIONS.md"
+                >Monitoring &amp; alerts ↗</a
+              >
+            </article>
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">◉</span>
+              <h3>Update &amp; CVE watcher</h3>
+              <p>
+                Scheduled release/package checks, Trivy scans and runtime
+                findings. Notify on changes. Failed checks remain unknown.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/SECURITY_WATCHER.md"
+                >Configure the watcher ↗</a
+              >
+            </article>
+            <article class="cap-card">
+              <span class="card-icon" aria-hidden="true">⇄</span>
+              <h3>Reviewed release jobs</h3>
+              <p>
+                A separate workflow for immutable images, explicit migration
+                steps and controlled release recovery on the server.
+              </p>
+              <a
+                href="https://github.com/Artaeon/fleetdeck/blob/main/docs/RELEASE_JOBS.md"
+                >Release workflow ↗</a
+              >
+            </article>
+          </div>
+        </div>
+      </section>
+      <section id="architecture" class="section wrap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">03 / KNOW THE BOUNDARIES</p>
+            <h2>Several projects.<br />One understandable host.</h2>
+          </div>
+          <p>
+            Project networks separate application traffic. Host accounts
+            organize ownership. The shared proxy, Docker daemon and
+            administrator remain trusted parts of the system.
+          </p>
+        </div>
+        <figure class="architecture">
+          <a
+            href="assets/architecture.svg"
+            aria-label="Open the full-size FleetDeck architecture diagram"
+            ><img
+              src="assets/architecture.svg"
+              width="1120"
+              height="650"
+              loading="lazy"
+              alt="Workstation with private configuration connects over SSH to a Linux host. The host contains separate project networks, a shared proxy, a protected admin panel, local backups and monitoring. Offsite storage and external monitoring require separate configuration."
+          /></a>
+          <figcaption>
+            Each server runs its own instance.
+            <a href="assets/architecture.svg">Open full-size diagram ↗</a>
+          </figcaption>
+        </figure>
+        <div class="boundary-grid">
+          <div>
+            <h3>Configured, not assumed</h3>
+            <p>
+              Enable SSH MFA, enroll passkeys, connect SMTP/Telegram, schedule
+              the security watcher and configure offsite backups explicitly.
+            </p>
+          </div>
+          <div>
+            <h3>Multiple servers ≠ automatic HA</h3>
+            <p>
+              Named destinations are supported. Replicated databases,
+              coordinated failover and a complete cross-server control plane are
+              still future work.
+            </p>
+          </div>
+        </div>
+      </section>
+      <section id="applications" class="section section-tint">
+        <div class="wrap">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">04 / BRING YOUR STACK</p>
+              <h2>Compose is the contract.</h2>
+            </div>
+            <p>
+              Templates help you start. Your application's build, health checks,
+              secrets and persistent data determine its deployment requirements.
+            </p>
+          </div>
+          <div class="stack-grid">
+            <article>
+              <h3>Websites &amp; frontends</h3>
+              <p>
+                Static HTML, Astro or Svelte builds, and Next.js. Adjust output
+                directories; SSR needs the right adapter and runtime.
+              </p>
+              <span class="stack-tag">STATIC / SSR</span>
+            </article>
+            <article>
+              <h3>SaaS &amp; CMS</h3>
+              <p>
+                Compose your app, database, cache and uploads. Validate each
+                CMS's migrations, mail and restoration procedure.
+              </p>
+              <span class="stack-tag">STATEFUL APPLICATIONS</span>
+            </article>
+            <article>
+              <h3>APIs &amp; workers</h3>
+              <p>
+                Node, Python, Go or a custom image. Internal services can stay
+                private; worker-only onboarding needs manual configuration.
+              </p>
+              <span class="stack-tag">HTTP / BACKGROUND JOBS</span>
+            </article>
+          </div>
+          <a
+            class="text-link"
+            href="https://github.com/Artaeon/fleetdeck/blob/main/docs/APPLICATION_COVERAGE.md"
+            >Check current application coverage
+            <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+      <section id="security" class="section wrap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">05 / SECURITY WITHOUT MAGIC CLAIMS</p>
+            <h2>Layers you can inspect.<br />Limits you can plan for.</h2>
+          </div>
+          <p>
+            FleetDeck helps maintain a secure deployment process. It cannot
+            guarantee an application has no vulnerabilities or turn
+            shared-kernel containers into isolated virtual machines.
+          </p>
+        </div>
+        <div class="security-list">
+          <details open>
+            <summary>Does every project get its own user?</summary>
+            <p>
+              New managed projects receive a no-login host account with no
+              Docker-group membership. Container users are separate: a
+              third-party image can still start as root. Generated runtime
+              controls and the watcher help you inspect that configuration. Use
+              separate VMs or hosts for mutually untrusted tenants.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Can SSH and the admin panel require additional factors?
+            </summary>
+            <p>
+              Enrolled personal SSH access can require both an SSH key and a
+              phone authenticator. Browser access uses Authelia OIDC with
+              required factors and admin-group checks; optional device
+              certificates add another access boundary. A synced passkey alone
+              does not bind access to one physical device. Test recovery before
+              enforcing factors.
+            </p>
+          </details>
+          <details>
+            <summary>Will the watcher update everything automatically?</summary>
+            <p>
+              No. The opt-in timer checks release availability, host package
+              updates, running-image vulnerabilities and runtime settings, then
+              alerts on changes. Unknown checks stay unknown. Review advisories,
+              rebuild, back up and test updates before rollout. It does not
+              cover every dependency, exploit or source repository.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Are backups and monitoring ready after one install?
+            </summary>
+            <p>
+              The tools are available; your destinations and policies need
+              setup. Configure retention and encrypted offsite copies, verify
+              delivery and run an isolated restore drill. Use an observer
+              outside the VPS so total host outages remain visible. Uptime Kuma
+              and Grafana are optional integrations, not an automatically
+              installed stack.
+            </p>
+          </details>
+        </div>
+        <a
+          class="text-link"
+          href="https://github.com/Artaeon/fleetdeck/blob/main/docs/SERVER_SECURITY.md"
+          >Read the security model <span aria-hidden="true">↗</span></a
+        >
+      </section>
+      <section class="closing">
+        <div class="wrap closing-inner">
+          <div>
+            <p class="eyebrow">OPEN CODE. YOUR INFRASTRUCTURE.</p>
+            <h2>Make the next deployment<br />easier to trust.</h2>
+            <p>
+              Start with a preview project. Verify the build. Test recovery.<br />Then
+              make the workflow your own.
+            </p>
+          </div>
+          <div class="closing-actions">
+            <a
+              class="button primary"
+              href="https://github.com/Artaeon/fleetdeck/blob/main/INSTALL.md"
+              >Read the installation guide ↗</a
+            ><a
+              class="button secondary"
+              href="https://github.com/Artaeon/fleetdeck"
+              >Explore the source ↗</a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap footer">
+      <a class="brand" href="#">FleetDeck</a>
+      <p>CLI native deployment for your Linux servers.</p>
+      <nav aria-label="Footer">
+        <a href="https://github.com/Artaeon/fleetdeck/blob/main/LICENSE"
+          >MIT license</a
+        ><a href="https://github.com/Artaeon/fleetdeck/blob/main/SECURITY.md"
+          >Report a vulnerability</a
+        ><a href="https://github.com/Artaeon/fleetdeck/blob/main/README.md"
+          >Documentation</a
+        >
+      </nav>
+    </footer>
+  </body>
+</html>
