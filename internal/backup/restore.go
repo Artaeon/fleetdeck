@@ -288,9 +288,10 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 		return fmt.Errorf("unsupported database component %q", componentName)
 	}
 	serviceName := strings.Fields(componentName)[0]
-	envVars := loadEnvFile(projectPath)
-
-	composePath := filepath.Join(projectPath, "docker-compose.yml")
+	container, envVars, err := databaseEnvironment(projectPath, serviceName)
+	if err != nil {
+		return err
+	}
 
 	if strings.Contains(componentName, "PostgreSQL") {
 		user := envVars["POSTGRES_USER"]
@@ -304,7 +305,7 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 
 		// Use shellQuote to prevent injection from env file values
 		cmd := exec.Command("bash", "-c",
-			"set -o pipefail; gunzip -c "+shellQuote(dumpPath)+" | docker compose -f "+shellQuote(composePath)+" exec -T "+shellQuote(serviceName)+" psql -X --set=ON_ERROR_STOP=on -U "+shellQuote(user)+" "+shellQuote(dbName))
+			"set -o pipefail; gunzip -c "+shellQuote(dumpPath)+" | docker exec -i "+shellQuote(container)+" psql -X --set=ON_ERROR_STOP=on -U "+shellQuote(user)+" "+shellQuote(dbName))
 		cmd.Dir = projectPath
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("psql restore: %s: %w", strings.TrimSpace(string(out)), err)
@@ -322,11 +323,11 @@ func restoreDatabase(dumpPath, projectPath, componentName string) error {
 		// Pass the password through MYSQL_PWD instead of '-p<password>' on
 		// argv. The CLI form is visible via `ps aux` to any local user for
 		// the duration of the restore; the env form is not.
-		mysqlCmd := "docker compose -f " + shellQuote(composePath) + " exec -T"
+		mysqlCmd := "docker exec -i"
 		if password != "" {
 			mysqlCmd += " -e MYSQL_PWD"
 		}
-		mysqlCmd += " " + shellQuote(serviceName) + " mysql -u root " + shellQuote(dbName)
+		mysqlCmd += " " + shellQuote(container) + " mysql -u root " + shellQuote(dbName)
 
 		cmd := exec.Command("bash", "-c",
 			"set -o pipefail; gunzip -c "+shellQuote(dumpPath)+" | "+mysqlCmd)

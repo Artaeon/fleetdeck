@@ -39,15 +39,16 @@ func BackupDatabases(projectPath, backupDir string) ([]ComponentInfo, error) {
 		return nil, fmt.Errorf("reading database services: %w", err)
 	}
 
-	envVars := loadEnvFile(projectPath)
-
 	var components []ComponentInfo
 
 	for serviceName, svc := range compose.Services {
 		image := strings.ToLower(svc.Image)
-		containerName := svc.Container
-		if containerName == "" {
-			containerName = filepath.Base(projectPath) + "-" + serviceName + "-1"
+		if !strings.HasPrefix(image, "postgres") && !strings.HasPrefix(image, "mysql") && !strings.HasPrefix(image, "mariadb") {
+			continue
+		}
+		containerName, envVars, err := databaseEnvironment(projectPath, serviceName)
+		if err != nil {
+			return nil, fmt.Errorf("database service %s: %w", serviceName, err)
 		}
 
 		switch {
