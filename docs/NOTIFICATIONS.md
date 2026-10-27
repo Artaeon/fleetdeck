@@ -22,7 +22,7 @@ Create a private JSON credential file outside all project repositories:
 }
 ```
 
-Use mode `0600` (or `0400` for a systemd credential). `chat_id` must be a nonzero
+Use mode `0600` (or `0400`). `chat_id` must be a nonzero
 number; negative IDs identify groups. Optional `message_thread_id` selects a
 forum topic. The destination is always the verified HTTPS Telegram Bot API;
 redirects are not followed. Tokens and response bodies never enter delivery
@@ -33,11 +33,17 @@ Configure the credential path, not its contents:
 
 ```toml
 [monitoring]
-telegram_config_file = "/run/credentials/fleetdeck-monitor.service/telegram.json"
-smtp_config_file = "/run/credentials/fleetdeck-monitor.service/smtp.json"
+telegram_config_file = "/run/fleetdeck-monitor/telegram.json"
+smtp_config_file = "/run/fleetdeck-monitor/smtp.json"
 ```
 
 `fleetdeck monitor start` also accepts `--telegram-config` and `--smtp-config`.
+For systemd, copy each loaded credential into the service's private
+`RuntimeDirectory` using `ExecStartPre=/usr/bin/install -m 0600 %d/telegram.json
+/run/fleetdeck-monitor/telegram.json` (one line; use the SMTP filename for email).
+The credential mount's permissions can differ from a normal private file. The
+runtime copies keep strict provider file checks without depending on those modes.
+Use `RuntimeDirectoryMode=0700`; systemd removes these copies when the service stops.
 It sends health failures after the configured threshold and subsequent recoveries.
 Health-transition delivery is currently best effort; use the durable event relay
 below for host audit events. This is not an independent external uptime observer.
