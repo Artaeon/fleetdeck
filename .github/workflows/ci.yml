@@ -16,7 +16,8 @@ jobs:
   release-config:
     name: release dry run
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Cross-compiler downloads can outlast ten minutes on a slow package mirror.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
