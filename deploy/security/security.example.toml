@@ -1,0 +1,10 @@
+# Copy outside your repository to /etc/fleetdeck/security.toml (0600).
+# Install a verified Trivy binary separately. Without it, image safety is unknown.
+[audit]
+enabled = false
+
+[monitoring]
+telegram_config_file = "/etc/fleetdeck/notifications/telegram.json"
+# Optional mail channel; remove any channel you do not configure.
+# smtp_config_file = "/etc/fleetdeck/smtp.json"
+# email_to = ["operator@example.com"]

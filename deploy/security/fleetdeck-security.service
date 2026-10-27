@@ -1,0 +1,32 @@
+[Unit]
+Description=FleetDeck update, container vulnerability and runtime checks
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# Docker inspection/scanning is trusted host administration, even with these
+# systemd protections. This is not a restricted tenant identity.
+User=root
+Group=root
+StateDirectory=fleetdeck-security
+StateDirectoryMode=0700
+CacheDirectory=fleetdeck-security
+CacheDirectoryMode=0700
+Environment=TRIVY_CACHE_DIR=/var/cache/fleetdeck-security
+ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/security.toml security check --state-file /var/lib/fleetdeck-security/state.json --server-label server --notify
+TimeoutStartSec=35min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=1G
+TasksMax=64
+CPUQuota=100%
