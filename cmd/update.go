@@ -123,7 +123,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("reading SSH key: %w", err)
 			}
-		} else {
+		} else if os.Getenv("SSH_AUTH_SOCK") == "" {
 			keyData = findSSHKey(host)
 			if keyData == nil {
 				return fmt.Errorf("no SSH key found; use --key to specify one")
@@ -158,6 +158,9 @@ Examples:
 			return fmt.Errorf("SSH connection failed: %w", connErr)
 		}
 		defer client.Close()
+		if err := client.EnableSudo(); err != nil {
+			return err
+		}
 		ui.Success("Connected to %s", host)
 		step++
 

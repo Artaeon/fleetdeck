@@ -367,6 +367,9 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 		return fmt.Errorf("SSH connection failed: %w", connErr)
 	}
 	defer client.Close()
+	if err := client.EnableSudo(); err != nil {
+		return err
+	}
 	ui.Success("Connected to %s", host)
 
 	// Step 3: Upload project

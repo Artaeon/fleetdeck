@@ -19,6 +19,7 @@ type Client struct {
 	Port string
 	User string
 	conn *ssh.Client
+	sudo bool
 }
 
 func ParsePrivateKey(data []byte, passphrase []byte) (ssh.Signer, error) {
@@ -163,6 +164,27 @@ func dialSSH(host, port, user string, config *ssh.ClientConfig) (*Client, error)
 	}, nil
 }
 
+// EnableSudo opts a trusted host administrator into root operations. Call before
+// sharing the client. Failed verification leaves ordinary user execution intact.
+func (c *Client) EnableSudo() error {
+	if c.User == "root" || c.sudo {
+		return nil
+	}
+	out, err := c.Run("sudo -n id -u")
+	if err != nil || strings.TrimSpace(out) != "0" {
+		return fmt.Errorf("remote deployment requires a trusted administrator with non-interactive sudo")
+	}
+	c.sudo = true
+	return nil
+}
+
+func (c *Client) command(command string) string {
+	if c.sudo {
+		return "sudo -n sh -c " + shellQuote(command)
+	}
+	return command
+}
+
 func (c *Client) Run(cmd string) (string, error) {
 	stdout, stderr, err := c.RunWithStderr(cmd)
 	if err != nil {
@@ -185,7 +207,7 @@ func (c *Client) RunWithStderr(cmd string) (stdout, stderr string, err error) {
 	session.Stdout = &stdoutBuf
 	session.Stderr = &stderrBuf
 
-	if err := session.Run(cmd); err != nil {
+	if err := session.Run(c.command(cmd)); err != nil {
 		return stdoutBuf.String(), stderrBuf.String(), err
 	}
 	return stdoutBuf.String(), stderrBuf.String(), nil
@@ -201,7 +223,7 @@ func (c *Client) RunStream(cmd string, stdout, stderr io.Writer) error {
 	session.Stdout = stdout
 	session.Stderr = stderr
 
-	if err := session.Run(cmd); err != nil {
+	if err := session.Run(c.command(cmd)); err != nil {
 		return err
 	}
 	return nil
