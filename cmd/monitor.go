@@ -151,6 +151,9 @@ Examples:
 		}
 
 		statePath, _ := cmd.Flags().GetString("state-file")
+		if statePath == "" {
+			statePath = cfg.Monitoring.StateFile
+		}
 		if statePath == "" && !all && len(args) == 1 {
 			statePath = filepath.Join("/opt/fleetdeck/monitor", args[0]+".json")
 		}
@@ -215,7 +218,9 @@ var monitorCheckCmd = &cobra.Command{
 		result := mon.CheckOnce(target)
 
 		fmt.Println()
-		if result.Healthy {
+		if result.HealthStatus() == "blocked" {
+			ui.Warn("%s check blocked by a Cloudflare challenge; application health is unknown", name)
+		} else if result.Healthy {
 			ui.Success("%s is healthy", name)
 		} else {
 			ui.Error("%s is unhealthy", name)
@@ -225,6 +230,7 @@ var monitorCheckCmd = &cobra.Command{
 		rows := [][]string{
 			{"URL", target.URL},
 			{"Status", fmt.Sprintf("%d", result.StatusCode)},
+			{"Check", result.HealthStatus()},
 			{"Response Time", result.ResponseTime.Round(time.Millisecond).String()},
 			{"Healthy", boolToYesNo(result.Healthy)},
 		}

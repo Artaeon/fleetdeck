@@ -208,6 +208,7 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("POST /api/servers/{name}/check", s.requireAuth(s.handleCheckServer))
 	mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
 	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
+	mux.HandleFunc("GET /api/monitor", s.requireAuth(s.handleMonitorStatus))
 	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
 	// Environment management
