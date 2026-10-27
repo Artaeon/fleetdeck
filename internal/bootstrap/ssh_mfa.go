@@ -93,11 +93,13 @@ BOOT
 systemctl daemon-reload
 systemctl enable fleetdeck-ssh-mfa-recovery.service
 systemd-run --quiet --collect --unit=fleetdeck-ssh-mfa-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh "$trial/rollback.sh"
-cp "$trial/sshd.previous" "$trial/candidate"
+printf 'LoginGraceTime 120\n' > "$trial/candidate"
+cat "$trial/sshd.previous" >> "$trial/candidate"
 printf '%s' ` + quoteShell(settings) + ` >> "$trial/candidate"
 /usr/sbin/sshd -t -f "$trial/candidate"
 /usr/sbin/sshd -T -f "$trial/candidate" -C "user=$name,host=localhost,addr=127.0.0.1" | grep -qx 'authenticationmethods publickey,keyboard-interactive:pam'
 /usr/sbin/sshd -T -f "$trial/candidate" -C "user=$name,host=localhost,addr=127.0.0.1" | grep -qx 'kbdinteractiveauthentication yes'
+/usr/sbin/sshd -T -f "$trial/candidate" | grep -qx 'logingracetime 120'
 python3 - <<'PAM'
 from pathlib import Path
 path=Path('/etc/pam.d/sshd')

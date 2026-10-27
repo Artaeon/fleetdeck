@@ -55,7 +55,13 @@ sudo fleetdeck server ssh-mfa apply --user operator
 The trial checks current key-only/root-disabled policy, enrollment and PAM layout,
 saves the original SSH and PAM files, and arms rollback **before** changing them.
 It requires both public key and PAM keyboard-interactive authentication for the
-selected user. Existing `Match` blocks and nonstandard includes/PAM authentication
+selected user.
+The trial also sets the global authentication window (`LoginGraceTime`) to two
+minutes so SSH-agent approval and phone entry can complete. The previous window
+is restored on rollback along with the original SSH configuration. Key and code
+requirements, authentication-attempt limits and enrollment rate limits remain.
+
+Existing `Match` blocks and nonstandard includes/PAM authentication
 stacks are rejected for manual integration. Other key-only users are unchanged;
 any other unrestricted administrator must be covered by a reviewed MFA policy too.
 
