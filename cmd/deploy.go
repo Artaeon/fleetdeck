@@ -117,6 +117,9 @@ For immutable releases and reviewed migrations, see 'fleetdeck release'.`,
 			strategyName = "basic"
 		}
 
+		if server == "" && cmd.Flags().Changed("env-file") {
+			return fmt.Errorf("--env-file seeds new remote projects only; configure local secrets explicitly")
+		}
 		if server != "" {
 			if fresh || strategyName != "basic" || preDeployHook != "" || postDeployHook != "" {
 				return fmt.Errorf("safe source deployments currently require basic strategy without --fresh or shell hooks; use bounded release jobs for reviewed migration/recovery workflows")

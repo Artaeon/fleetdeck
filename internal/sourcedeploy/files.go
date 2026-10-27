@@ -22,7 +22,7 @@ var composeNames = []string{"compose.yaml", "compose.yml", "docker-compose.yml",
 var skipped = map[string]bool{".git": true, ".svn": true, ".ssh": true, ".aws": true, ".kube": true, ".fleetdeck": true, "node_modules": true, ".next": true, ".nuxt": true, ".venv": true, "venv": true, "__pycache__": true, "target": true, ".cache": true, "coverage": true, ".turbo": true, ".DS_Store": true}
 
 func safeName(name string) bool {
-	return filepath.IsLocal(name) && name != "." && !strings.ContainsAny(name, "\\\x00\r\n") && filepath.ToSlash(filepath.Clean(name)) == name
+	return filepath.IsLocal(name) && name != "." && !strings.ContainsAny(name, "\\:\x00\r\n") && filepath.ToSlash(filepath.Clean(name)) == name
 }
 func sensitive(name string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(name), "/") {
@@ -347,10 +347,14 @@ func Extract(input io.Reader, dir string) ([]string, error) {
 		if len(files) >= MaxFiles || total > MaxArchiveBytes || limited.N <= 0 {
 			return nil, fmt.Errorf("source archive exceeds limits")
 		}
-		if err = root.MkdirAll(filepath.Dir(h.Name), 0700); err != nil {
+		if err = root.MkdirAll(filepath.Dir(h.Name), 0755); err != nil {
 			return nil, err
 		}
-		f, err := root.OpenFile(h.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(h.Mode)&0777)
+		mode := os.FileMode(h.Mode) & 0777
+		if h.Name == ".env" {
+			mode = 0600
+		}
+		f, err := root.OpenFile(h.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err != nil {
 			return nil, err
 		}
