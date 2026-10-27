@@ -222,3 +222,11 @@ writing can discard valid business data.
 The apply command writes one bounded JSON result to stdout. Runtime failures
 use a non-zero process exit and return a step plus stable error code; raw
 command output and credentials are never part of the result contract.
+
+## Restricted CI transport
+
+For a dedicated staging identity, use `fleetdeck release receive --target TARGET`
+behind an operator-owned SSH forced command. It accepts only literal `status` and
+`apply`, requires an exact component/image-repository allowlist and refuses
+production. See [GitHub Actions and gated staging](GITHUB_STAGING.md) for the
+workflow, account policy, deployment protections and setup tests.

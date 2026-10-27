@@ -1,0 +1,24 @@
+# Root-owned 0600. Register a separate staging project before enabling CI.
+[server]
+base_path = "/opt/fleetdeck"
+[audit]
+enabled = true
+journal = true
+log_path = "/var/log/fleetdeck/audit.log"
+[release]
+enabled = true
+allow_production = false
+[release.targets.example-staging]
+project = "example-staging"
+environment = "staging"
+profile = "standard"
+compose_file = "compose.yaml"
+health_profile = "staging-http"
+# The public route is password-gated. Check a separate, operator-configured
+# loopback-only health route or supply authentication in private server config.
+health_urls = ["http://127.0.0.1:18080/health"]
+health_max_attempts = 30
+health_retry_interval = "2s"
+health_timeout = "120s"
+[release.targets.example-staging.image_repositories]
+web = "ghcr.io/example/application"

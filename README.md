@@ -127,6 +127,7 @@ not yet implemented.** Each server runs its own FleetDeck instance and panel.
 | [Notifications and monitoring](docs/NOTIFICATIONS.md) | [Update / vulnerability watcher](docs/SECURITY_WATCHER.md) |
 | [SMTP configuration](docs/SMTP.md) | [Migration and restore runbook](docs/EXISTING_SERVER_MIGRATION.md) |
 | [Cloudflare origins](docs/CLOUDFLARE.md) | [Release jobs](docs/RELEASE_JOBS.md) |
+| [GitHub Actions and gated staging](docs/GITHUB_STAGING.md) | [Private project targets](docs/PROJECT_DEPLOY.md) |
 | [Public repository boundary](docs/PUBLIC_REPOSITORY_BOUNDARY.md) | [Release verification](docs/RELEASE_SECURITY.md) |
 
 Use `fleetdeck --help` and `fleetdeck <command> --help` for the current command

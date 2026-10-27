@@ -1,0 +1,100 @@
+# Copy to the application's .github/workflows/fleetdeck-staging.yml.
+# Create the protected GitHub environment "staging" and restrict it to the
+# staging branch before adding its dedicated CI SSH key.
+name: FleetDeck staging
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fleetdeck-staging
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build and publish immutable image
+        id: image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          repository="ghcr.io/${REPOSITORY,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT
+          docker buildx build --platform linux/amd64 --push \
+            --tag "$repository:staging-$GITHUB_SHA" --metadata-file "$RUNNER_TEMP/image.json" .
+          digest="$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf 'image=%s@%s\n' "$repository" "$digest" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment: staging
+    permissions: {}
+    steps:
+      # No repository checkout, build scripts or third-party actions receive
+      # the deployment credential. Only this fixed transport step uses it.
+      - name: Submit bounded release job
+        env:
+          FD_HOST: ${{ vars.FLEETDECK_HOST }}
+          FD_USER: ${{ vars.FLEETDECK_CI_USER }}
+          FD_PORT: ${{ vars.FLEETDECK_SSH_PORT }}
+          FD_TARGET: ${{ vars.FLEETDECK_TARGET }}
+          FD_KEY: ${{ secrets.FLEETDECK_CI_SSH_KEY }}
+          FD_KNOWN_HOSTS: ${{ secrets.FLEETDECK_KNOWN_HOSTS }}
+          FD_IMAGE: ${{ needs.build.outputs.image }}
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, re, subprocess, tempfile
+          e = os.environ
+          assert re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.:-]{0,252}', e['FD_HOST'])
+          assert re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', e['FD_USER'])
+          assert re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}', e['FD_TARGET'])
+          port = int(e.get('FD_PORT') or '22')
+          assert 1 <= port <= 65535
+          assert re.fullmatch(r'[a-z0-9._/-]+@sha256:[a-f0-9]{64}', e['FD_IMAGE'])
+          os.umask(0o077)
+          with tempfile.TemporaryDirectory() as temporary:
+              directory = pathlib.Path(temporary)
+              key, hosts = directory/'key', directory/'known_hosts'
+              key.write_text(e['FD_KEY'] + '\n')
+              hosts.write_text(e['FD_KNOWN_HOSTS'] + '\n')
+              key.chmod(0o600)
+              # Never use ssh-keyscan at deployment time as a trust decision.
+              ssh = ['ssh', '-F', '/dev/null', '-i', str(key), '-p', str(port),
+                     '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none',
+                     '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile='+str(hosts),
+                     '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=30',
+                     '-o', 'ServerAliveCountMax=3', '-l', e['FD_USER'], e['FD_HOST']]
+              current = json.loads(subprocess.check_output(ssh+['status'], timeout=45))
+              assert current['target'] == e['FD_TARGET']
+              images = [{'component': 'web', 'reference': e['FD_IMAGE']}]
+              manifest = 'sha256:'+hashlib.sha256(json.dumps(images, sort_keys=True).encode()).hexdigest()
+              job = {
+                  'schema_version': 2,
+                  'job_id': 'gha-'+e['GITHUB_RUN_ID']+'-'+e['GITHUB_RUN_ATTEMPT'],
+                  'idempotency_key': 'gha-'+e['GITHUB_RUN_ID']+'-'+e['GITHUB_RUN_ATTEMPT'],
+                  'release_id': 'git-'+e['GITHUB_SHA'], 'manifest_digest': manifest,
+                  'target': {'id': e['FD_TARGET'], 'environment': 'staging', 'profile': 'standard',
+                             'expected_current_release_id': current['current_release_id']},
+                  'images': images, 'backup': {'required': False},
+                  'migration': {'mode': 'none', 'compatibility': 'not-applicable'},
+                  'recovery': {'mode': 'manual'}, 'health_profile': 'staging-http',
+              }
+              subprocess.run(ssh+['apply'], input=json.dumps(job).encode(), check=True, timeout=1950)
