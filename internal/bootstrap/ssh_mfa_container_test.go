@@ -144,4 +144,19 @@ PY`)
 	}
 	run("cmp /run/original-sshd /etc/ssh/sshd_config; cmp /run/original-pam /etc/pam.d/sshd")
 	run(keyOnly)
+	// Simulate boot: the transient timer and old daemon are gone, while the
+	// persistent trial and boot recovery command remain available.
+	run("echo 45 > /run/timer-delay")
+	if err := ApplySSHMFA(r, "testoperator"); err != nil {
+		t.Fatal(err)
+	}
+	run(`test -f /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
+systemctl stop fleetdeck-ssh-mfa-rollback.timer
+kill "$(cat /run/sshd.pid)"
+sh /var/lib/fleetdeck/ssh-mfa-trial/rollback.sh
+cmp /run/original-sshd /etc/ssh/sshd_config
+cmp /run/original-pam /etc/pam.d/sshd
+test ! -e /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
+/usr/sbin/sshd -E /run/sshd-auth.log`)
+	run(keyOnly)
 }
