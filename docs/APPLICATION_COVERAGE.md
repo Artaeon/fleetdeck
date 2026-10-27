@@ -49,3 +49,12 @@ orchestrator. A shared UI should consume narrowly scoped per-server identities;
 monitoring should remain usable without granting deployment authority. Multi-VPS
 deployment alone does not provide replicated databases, coordinated failover or
 consistent backups across servers.
+
+## One-time migration services
+
+Declare a trusted migration service with `restart: "no"`, the label
+`io.fleetdeck.lifecycle: oneshot`, and make the application depend on it using
+`condition: service_completed_successfully`. FleetDeck waits while that job runs
+and accepts only an explicit exit code of zero as completed. Missing exit codes,
+failed jobs and ordinary stopped services remain unhealthy. Do not put this label
+on a long-running application to suppress its failures.

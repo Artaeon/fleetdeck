@@ -25,10 +25,12 @@ type HealthReport struct {
 
 // composePSEntry mirrors the JSON fields emitted by docker compose ps --format json.
 type composePSEntry struct {
-	Name   string `json:"Name"`
-	State  string `json:"State"`
-	Status string `json:"Status"`
-	Health string `json:"Health"`
+	Name     string `json:"Name"`
+	State    string `json:"State"`
+	Status   string `json:"Status"`
+	Health   string `json:"Health"`
+	Labels   string `json:"Labels"`
+	ExitCode *int   `json:"ExitCode"`
 }
 
 // CheckProject inspects the running containers for the compose project at
@@ -145,6 +147,18 @@ func parseComposeJSON(raw string) ([]composePSEntry, error) {
 // health strings: "healthy", "unhealthy", "restarting", "unknown".
 func classifyHealth(e composePSEntry) string {
 	state := strings.ToLower(e.State)
+	for _, label := range strings.Split(e.Labels, ",") {
+		if label != "io.fleetdeck.lifecycle=oneshot" {
+			continue
+		}
+		if state == "exited" && e.ExitCode != nil && *e.ExitCode == 0 {
+			return "completed"
+		}
+		if state == "running" || state == "created" {
+			return "starting"
+		}
+		return "unhealthy"
+	}
 	if state == "restarting" {
 		return "restarting"
 	}

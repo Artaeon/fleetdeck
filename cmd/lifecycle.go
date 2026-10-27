@@ -148,7 +148,7 @@ func printHealthReport(report *health.HealthReport) {
 	}
 	for _, svc := range report.Services {
 		switch svc.Health {
-		case "healthy":
+		case "healthy", "completed":
 			ui.Success("  %s: %s", svc.Name, svc.Health)
 		case "restarting":
 			ui.Warn("  %s: %s (crash loop detected)", svc.Name, svc.Health)
