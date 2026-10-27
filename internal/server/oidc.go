@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -129,11 +130,14 @@ func (s *Server) beginOIDC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
-	fail := func() {
+	fail := func(reason string) {
+		// Only fixed local reason codes belong here. Provider errors, tokens,
+		// callback parameters and identity claims can contain private values.
+		log.Printf("OIDC sign-in rejected reason=%s", reason)
 		writeError(w, http.StatusUnauthorized, "sign-in failed; restart login and verify your factors and admin access")
 	}
 	if !s.cfg.Server.OIDC.Enabled || !s.oidcRequestAllowed(r) {
-		fail()
+		fail("request_origin")
 		return
 	}
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -141,7 +145,7 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 	state := query.Get("state")
 	cookie, err := r.Cookie(oidcPendingCookie)
 	if err != nil || len(state) != 64 || subtle.ConstantTimeCompare([]byte(state), []byte(cookie.Value)) != 1 || len(query["state"]) != 1 {
-		fail()
+		fail("state_cookie")
 		return
 	}
 	o := s.oidc
@@ -151,29 +155,57 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 	delete(o.pending, hash)
 	o.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: oidcPendingCookie, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-	if !found || !time.Now().Before(pending.expires) || pending.device != requestDevice(r) || query.Get("error") != "" || len(query["code"]) != 1 || query.Get("code") == "" {
-		fail()
+	if !found {
+		fail("pending_missing")
+		return
+	}
+	if !time.Now().Before(pending.expires) {
+		fail("pending_expired")
+		return
+	}
+	if pending.device != requestDevice(r) {
+		fail("device_binding")
+		return
+	}
+	if query.Get("error") != "" {
+		fail("provider_error")
+		return
+	}
+	if len(query["code"]) != 1 || query.Get("code") == "" {
+		fail("authorization_code")
 		return
 	}
 	ctx, cancel := context.WithTimeout(oidc.ClientContext(r.Context(), o.client), 10*time.Second)
 	defer cancel()
 	token, err := o.oauth.Exchange(ctx, query.Get("code"), oauth2.VerifierOption(pending.verifier))
-	if err != nil || token.AccessToken == "" || !strings.EqualFold(token.TokenType, "Bearer") {
-		fail()
+	if err != nil {
+		fail("token_exchange")
+		return
+	}
+	if token.AccessToken == "" || !strings.EqualFold(token.TokenType, "Bearer") {
+		fail("token_response")
 		return
 	}
 	raw, ok := token.Extra("id_token").(string)
 	if !ok {
-		fail()
+		fail("id_token_missing")
 		return
 	}
 	id, err := o.verifier.Verify(ctx, raw)
-	if err != nil || id.Subject == "" || subtle.ConstantTimeCompare([]byte(id.Nonce), []byte(pending.nonce)) != 1 {
-		fail()
+	if err != nil {
+		fail("id_token_verification")
+		return
+	}
+	if id.Subject == "" {
+		fail("id_subject")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(id.Nonce), []byte(pending.nonce)) != 1 {
+		fail("nonce")
 		return
 	}
 	if id.AccessTokenHash != "" && id.VerifyAccessToken(token.AccessToken) != nil {
-		fail()
+		fail("access_token_hash")
 		return
 	}
 	var claims struct {
@@ -181,26 +213,42 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 		AuthTime int64    `json:"auth_time"`
 		AZP      string   `json:"azp"`
 	}
-	if id.Claims(&claims) != nil || !allowedAMR(claims.AMR, o.settings.AuthenticationMethod) || (claims.AZP != "" && claims.AZP != o.settings.ClientID) || (len(id.Audience) > 1 && claims.AZP != o.settings.ClientID) {
-		fail()
+	if id.Claims(&claims) != nil {
+		fail("id_claims")
+		return
+	}
+	if !allowedAMR(claims.AMR, o.settings.AuthenticationMethod) {
+		fail("authentication_factors")
+		return
+	}
+	if (claims.AZP != "" && claims.AZP != o.settings.ClientID) || (len(id.Audience) > 1 && claims.AZP != o.settings.ClientID) {
+		fail("authorized_party")
 		return
 	}
 	now := time.Now()
 	authTime := time.Unix(claims.AuthTime, 0)
 	if claims.AuthTime == 0 || authTime.After(now.Add(30*time.Second)) || now.Sub(authTime) > oidcLoginWindow || id.IssuedAt.After(now.Add(30*time.Second)) {
-		fail()
+		fail("authentication_age")
 		return
 	}
 	info, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
-	if err != nil || info.Subject != id.Subject {
-		fail()
+	if err != nil {
+		fail("userinfo_response")
+		return
+	}
+	if info.Subject != id.Subject {
+		fail("userinfo_subject")
 		return
 	}
 	var user struct {
 		Groups []string `json:"groups"`
 	}
-	if info.Claims(&user) != nil || !slices.Contains(user.Groups, o.settings.AdminGroup) {
-		fail()
+	if info.Claims(&user) != nil {
+		fail("userinfo_claims")
+		return
+	}
+	if !slices.Contains(user.Groups, o.settings.AdminGroup) {
+		fail("admin_group")
 		return
 	}
 	expires := now.Add(oidcSessionLifetime)
