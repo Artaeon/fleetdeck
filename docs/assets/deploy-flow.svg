@@ -1,13 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 330" role="img" aria-labelledby="title desc">
-<title id="title">Protected source deployment sequence</title><desc id="desc">Lock and validate, preserve server secrets, stop writers and verify a backup, build the candidate, replace source and wait for readiness. Backup or build failure retains source and attempts to restart writers. Startup failure keeps the backup for reviewed recovery.</desc>
-<rect width="1120" height="330" rx="20" fill="#101b23"/>
-<g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
-<text x="34" y="42" fill="#a2e3ca" font-size="13" letter-spacing="2">FLEETDECK / PROTECTED SOURCE UPDATE</text>
-<path d="M100 135H1000" stroke="#71c7ac" stroke-width="2"/>
-<g fill="#1c2c36" stroke="#54796c"><rect x="32" y="80" width="195" height="142" rx="10"/><rect x="247" y="80" width="195" height="142" rx="10"/><rect x="462" y="80" width="195" height="142" rx="10"/><rect x="677" y="80" width="195" height="142" rx="10"/><rect x="892" y="80" width="195" height="142" rx="10"/></g>
-<g fill="#a2e3ca" font-size="14"><text x="50" y="108">01</text><text x="265" y="108">02</text><text x="480" y="108">03</text><text x="695" y="108">04</text><text x="910" y="108">05</text></g>
-<g fill="#fff" font-size="18" font-weight="600"><text x="50" y="145">Lock + validate</text><text x="265" y="145">Keep secrets</text><text x="480" y="145">Verify backup</text><text x="695" y="145">Build candidate</text><text x="910" y="145">Apply + check</text></g>
-<g fill="#c1d2da" font-size="13"><text x="50" y="177">Bounded archive</text><text x="50" y="199">Check project identity</text><text x="265" y="177">Server values win</text><text x="265" y="199">Data stays on server</text><text x="480" y="177">Quiesce stateful writers</text><text x="480" y="199">Save data + old source</text><text x="695" y="177">Exclude private files</text><text x="695" y="199">Retain previous images</text><text x="910" y="177">Compose readiness</text><text x="910" y="199">Keep recovery snapshot</text></g>
-<text x="34" y="267" fill="#e4c99b" font-size="15">Failed backup/build → retain old source, attempt writer restart. Startup failure → reviewed recovery.</text>
-<text x="34" y="296" fill="#afc1c9" font-size="14">Stateful updates have a maintenance window. Local snapshot verification is not an offsite restore drill.</text>
-</g></svg>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1120 330"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">Protected source deployment sequence</title>
+  <desc id="desc">
+    Lock and validate, preserve server secrets, stop writers and verify a
+    backup, build the candidate, replace source and wait for readiness. Backup
+    or build failure retains source and attempts to restart writers. Startup
+    failure keeps the backup for reviewed recovery.
+  </desc>
+  <rect width="1120" height="330" rx="20" fill="#101b23" />
+  <g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+    <text x="34" y="42" fill="#a2e3ca" font-size="13" letter-spacing="2">
+      FLEETDECK / PROTECTED SOURCE UPDATE
+    </text>
+    <path d="M100 135H1000" stroke="#71c7ac" stroke-width="2" />
+    <g fill="#1c2c36" stroke="#54796c">
+      <rect x="32" y="80" width="195" height="142" rx="10" />
+      <rect x="247" y="80" width="195" height="142" rx="10" />
+      <rect x="462" y="80" width="195" height="142" rx="10" />
+      <rect x="677" y="80" width="195" height="142" rx="10" />
+      <rect x="892" y="80" width="195" height="142" rx="10" />
+    </g>
+    <g fill="#a2e3ca" font-size="14">
+      <text x="50" y="108">01</text>
+      <text x="265" y="108">02</text>
+      <text x="480" y="108">03</text>
+      <text x="695" y="108">04</text>
+      <text x="910" y="108">05</text>
+    </g>
+    <g fill="#fff" font-size="18" font-weight="600">
+      <text x="50" y="145">Lock + validate</text>
+      <text x="265" y="145">Keep secrets</text>
+      <text x="480" y="145">Verify backup</text>
+      <text x="695" y="145">Build candidate</text>
+      <text x="910" y="145">Apply + check</text>
+    </g>
+    <g fill="#c1d2da" font-size="13">
+      <text x="50" y="177">Bounded archive</text>
+      <text x="50" y="199">Check project identity</text>
+      <text x="265" y="177">Server values win</text>
+      <text x="265" y="199">Data stays on server</text>
+      <text x="480" y="177">Quiesce stateful writers</text>
+      <text x="480" y="199">Save data + old source</text>
+      <text x="695" y="177">Exclude private files</text>
+      <text x="695" y="199">Retain previous images</text>
+      <text x="910" y="177">Compose readiness</text>
+      <text x="910" y="199">Keep recovery snapshot</text>
+    </g>
+    <text x="34" y="267" fill="#e4c99b" font-size="15">
+      Failed backup/build → retain old source, attempt writer restart. Startup
+      failure → reviewed recovery.
+    </text>
+    <text x="34" y="296" fill="#afc1c9" font-size="14">
+      Stateful updates have a maintenance window. Local snapshot verification is
+      not an offsite restore drill.
+    </text>
+  </g>
+</svg>

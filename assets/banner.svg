@@ -1,7 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
-<title id="title">FleetDeck</title><desc id="desc">Your servers. Your deployments. Open-source Docker Compose deployment from the terminal.</desc>
-<rect width="1200" height="300" rx="20" fill="#101b23"/>
-<g stroke="#243a45" fill="none"><path d="M700 0v300M800 0v300M900 0v300M1000 0v300M1100 0v300M650 50h550M650 150h550M650 250h550"/></g>
-<g fill="none" stroke="#a2e3ca" stroke-width="3"><rect x="900" y="82" width="160" height="52" rx="10"/><rect x="900" y="148" width="160" height="52" rx="10"/><path d="M800 141h60v-34h40M860 141v33h40"/><circle cx="780" cy="141" r="20"/></g>
-<g fill="#a2e3ca"><circle cx="924" cy="108" r="4"/><circle cx="924" cy="174" r="4"/></g>
-<g font-family="system-ui,-apple-system,Segoe UI,sans-serif"><text x="55" y="65" fill="#a2e3ca" font-size="13" letter-spacing="3">OPEN SOURCE · CLI NATIVE · SELF HOSTED</text><text x="52" y="152" fill="#fff" font-size="70" font-weight="650" letter-spacing="-3">FleetDeck</text><text x="55" y="208" fill="#c5d4db" font-size="25">Your servers. Your deployments.</text><text x="55" y="255" fill="#92a9b6" font-size="16">Docker Compose · Protected updates · Recovery · Monitoring</text></g></svg>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 300"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">FleetDeck</title>
+  <desc id="desc">
+    Your servers. Your deployments. Open-source Docker Compose deployment from
+    the terminal.
+  </desc>
+  <rect width="1200" height="300" rx="20" fill="#101b23" />
+  <g stroke="#243a45" fill="none">
+    <path
+      d="M700 0v300M800 0v300M900 0v300M1000 0v300M1100 0v300M650 50h550M650 150h550M650 250h550"
+    />
+  </g>
+  <g fill="none" stroke="#a2e3ca" stroke-width="3">
+    <rect x="900" y="82" width="160" height="52" rx="10" />
+    <rect x="900" y="148" width="160" height="52" rx="10" />
+    <path d="M800 141h60v-34h40M860 141v33h40" />
+    <circle cx="780" cy="141" r="20" />
+  </g>
+  <g fill="#a2e3ca">
+    <circle cx="924" cy="108" r="4" />
+    <circle cx="924" cy="174" r="4" />
+  </g>
+  <g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+    <text x="55" y="65" fill="#a2e3ca" font-size="13" letter-spacing="3">
+      OPEN SOURCE · CLI NATIVE · SELF HOSTED
+    </text>
+    <text
+      x="52"
+      y="152"
+      fill="#fff"
+      font-size="70"
+      font-weight="650"
+      letter-spacing="-3"
+    >
+      FleetDeck
+    </text>
+    <text x="55" y="208" fill="#c5d4db" font-size="25">
+      Your servers. Your deployments.
+    </text>
+    <text x="55" y="255" fill="#92a9b6" font-size="16">
+      Docker Compose · Protected updates · Recovery · Monitoring
+    </text>
+  </g>
+</svg>
