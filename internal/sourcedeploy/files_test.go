@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -92,6 +93,8 @@ func TestDynamicPrivateReferencesFailClosed(t *testing.T) {
 }
 
 func TestExtractForcesPrivateEnvironmentAndUsableSourceDirectories(t *testing.T) {
+	oldMask := syscall.Umask(0077)
+	defer syscall.Umask(oldMask)
 	var b bytes.Buffer
 	tw := tar.NewWriter(&b)
 	for _, name := range []string{".env", "nested/source.txt"} {
@@ -112,5 +115,33 @@ func TestExtractForcesPrivateEnvironmentAndUsableSourceDirectories(t *testing.T)
 	}
 	if nested.Mode().Perm()&0005 != 0005 {
 		t.Fatal("non-root image users cannot read copied source")
+	}
+}
+
+func TestSourceCopyPreservesPermissionsUnderPrivateUmask(t *testing.T) {
+	fromDir, toDir := t.TempDir(), t.TempDir()
+	put(t, fromDir, "nested/app.txt", "source")
+	if err := os.Chmod(filepath.Join(fromDir, "nested/app.txt"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	from, err := os.OpenRoot(fromDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer from.Close()
+	to, err := os.OpenRoot(toDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer to.Close()
+	oldMask := syscall.Umask(0077)
+	defer syscall.Umask(oldMask)
+	if err := copyRootFile(from, to, "nested/app.txt", 0); err != nil {
+		t.Fatal(err)
+	}
+	file, _ := to.Stat("nested/app.txt")
+	dir, _ := to.Stat("nested")
+	if file.Mode().Perm() != 0644 || dir.Mode().Perm() != 0755 {
+		t.Fatalf("source copy lost permissions: %o %o", file.Mode().Perm(), dir.Mode().Perm())
 	}
 }
