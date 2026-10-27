@@ -463,3 +463,16 @@ func TestHandleGitHubWebhookWithHMACValidation(t *testing.T) {
 		t.Error("valid signature should not return 401")
 	}
 }
+
+func TestWebhookStagingMappingCannotDeployProductionPath(t *testing.T) {
+	srv, database := setupTestServer(t)
+	srv.webhookSecret = testWebhookSecret
+	if err := database.CreateProject(&db.Project{Name: "isolated-app", Domain: "example.com", LinuxUser: "fleetdeck-isolated-app", ProjectPath: t.TempDir(), GitHubRepo: "example/app", BranchMappings: `{"develop":"staging"}`}); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	srv.server.Handler.ServeHTTP(w, signedWebhookRequest(t, `{"ref":"refs/heads/develop","after":"abc123","repository":{"full_name":"example/app"}}`, "push"))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}

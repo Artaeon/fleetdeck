@@ -108,6 +108,12 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ignored", "reason": "branch not mapped"})
 		return
 	}
+	// The legacy deployment runner operates on the registered project path;
+	// it cannot select a separate environment safely.
+	if targetEnv != "production" {
+		writeError(w, http.StatusConflict, "use a bounded release target for staging deployments")
+		return
+	}
 
 	commitSHA := payload.After
 	if len(commitSHA) > 12 {
@@ -491,11 +497,10 @@ func resolveBranchEnvironment(p *db.Project, branch string) string {
 	// Check explicit branch mappings first
 	if p.BranchMappings != "" {
 		var mappings map[string]string
-		if err := json.Unmarshal([]byte(p.BranchMappings), &mappings); err == nil {
-			if env, ok := mappings[branch]; ok {
-				return env
-			}
+		if err := json.Unmarshal([]byte(p.BranchMappings), &mappings); err != nil {
+			return ""
 		}
+		return mappings[branch]
 	}
 
 	// Default: main/master -> production

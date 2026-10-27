@@ -56,12 +56,18 @@ func TestResolveBranchEnvironment(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "invalid JSON mappings falls through to default",
+			name: "invalid JSON mappings fail closed",
 			project: &db.Project{
 				BranchMappings: "not-json",
 			},
 			branch:   "main",
-			expected: "production",
+			expected: "",
+		},
+		{
+			name:     "unmapped main does not fall back to production",
+			project:  &db.Project{BranchMappings: `{"develop":"staging"}`},
+			branch:   "main",
+			expected: "",
 		},
 	}
 
