@@ -13,7 +13,7 @@ import (
 func TestDatabaseDumpFailureReachesBackupCaller(t *testing.T) {
 	for _, image := range []string{"postgres:17", "mysql:8", "mariadb:11"} {
 		t.Run(image, func(t *testing.T) {
-			putFakeDockerOnPath(t, "printf 'partial SQL output'\nexit 23\n")
+			putFakeDockerOnPath(t, fakeDatabaseEnvironment+"printf 'partial SQL output'\nexit 23\n")
 			projectDir, backupDir := t.TempDir(), t.TempDir()
 			os.WriteFile(filepath.Join(projectDir, "docker-compose.yml"), []byte("services:\n  db:\n    image: "+image+"\n"), 0600)
 			os.WriteFile(filepath.Join(projectDir, ".env"), []byte("MYSQL_DATABASE=fixture\n"), 0600)
@@ -98,7 +98,7 @@ func TestDatabaseDumpsArePrivate(t *testing.T) {
 }
 
 func TestRestoreRejectsFailedDecompressionEvenWhenClientSucceeds(t *testing.T) {
-	putFakeDockerOnPath(t, "cat >/dev/null\nexit 0\n")
+	putFakeDockerOnPath(t, fakeDatabaseEnvironment+"cat >/dev/null\nexit 0\n")
 	for _, engine := range []string{"PostgreSQL", "MySQL"} {
 		t.Run(engine, func(t *testing.T) {
 			dir := t.TempDir()
@@ -115,7 +115,7 @@ func TestRestoreRejectsFailedDecompressionEvenWhenClientSucceeds(t *testing.T) {
 func TestPostgresRestoreDisablesStartupFilesAndStopsOnSQLError(t *testing.T) {
 	// Simulate psql's default success after a SQL error. It returns error 3
 	// only when error-stop is set and a startup file cannot override it.
-	putFakeDockerOnPath(t, `cat >/dev/null
+	putFakeDockerOnPath(t, fakeDatabaseEnvironment+`cat >/dev/null
 case " $* " in
   *" psql -X --set=ON_ERROR_STOP=on "*) exit 3 ;;
   *) exit 0 ;;

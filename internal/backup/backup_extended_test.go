@@ -35,8 +35,14 @@ func putFakeDockerOnPath(t *testing.T, scriptBody string) {
 // verify a genuine successful dump deterministically, regardless of whether a
 // real Docker daemon is present on the host.
 func withFakeDocker(t *testing.T) {
-	putFakeDockerOnPath(t, "i=0\nwhile [ $i -lt 400 ]; do\n  echo \"INSERT INTO t VALUES ($i, 'row-$i-payload-abcdefghijklmnop');\"\n  i=$((i+1))\ndone\n")
+	putFakeDockerOnPath(t, fakeDatabaseEnvironment+"i=0\nwhile [ $i -lt 400 ]; do\n  echo \"INSERT INTO t VALUES ($i, 'row-$i-payload-abcdefghijklmnop');\"\n  i=$((i+1))\ndone\n")
 }
+
+const fakeDatabaseEnvironment = `case "$*" in
+  "compose ps -q "*) echo fixture-container; exit 0 ;;
+  "inspect "*) echo '["POSTGRES_USER=fixture_user","POSTGRES_DB=fixture_db","MYSQL_DATABASE=fixture_db","MYSQL_ROOT_PASSWORD=fixture-only"]'; exit 0 ;;
+esac
+`
 
 // ---------------------------------------------------------------------------
 // CreateBackup — full flow with mock project data
