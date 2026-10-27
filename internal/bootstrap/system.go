@@ -83,6 +83,7 @@ func RollbackSSH(runner CommandRunner) error {
 const sshTrialScript = `set -eu
 exec 9>/run/fleetdeck-ssh.lock
 flock -x 9
+test ! -e /var/lib/fleetdeck/ssh-mfa-trial
 trial=/run/fleetdeck-ssh-trial
 # Never overwrite another operator's pending access trial.
 mkdir -m 0700 "$trial"
