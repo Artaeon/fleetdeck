@@ -166,3 +166,26 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestGenerateMissingFilesPreservesAllComposeFilenames(t *testing.T) {
+	for _, name := range []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			original := []byte("services: {app: {image: 'example/app:1'}}\n")
+			if err := os.WriteFile(filepath.Join(dir, name), original, 0644); err != nil {
+				t.Fatal(err)
+			}
+			result := &detect.Result{AppType: "node", Port: 3000}
+			generated := generateMissingFiles(dir, "demo", "demo.example.test", result)
+			for _, file := range generated {
+				if file == "docker-compose.yml" {
+					t.Fatal("generated a competing Compose model")
+				}
+			}
+			actual, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil || string(actual) != string(original) {
+				t.Fatal("existing Compose was changed", err)
+			}
+		})
+	}
+}

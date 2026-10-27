@@ -434,8 +434,16 @@ func generateMissingFiles(dir, name, domain string, result *detect.Result) []str
 		}
 	}
 
-	// Generate docker-compose.yml if missing
-	if !fileExistsInDir(dir, "docker-compose.yml") {
+	// Compose accepts several base filenames. Do not create a competing model
+	// when a project already supplies any one of them.
+	hasCompose := false
+	for _, file := range []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"} {
+		if fileExistsInDir(dir, file) {
+			hasCompose = true
+			break
+		}
+	}
+	if !hasCompose {
 		port := result.Port
 		if port == 0 {
 			port = 3000
