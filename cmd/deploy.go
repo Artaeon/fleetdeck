@@ -88,6 +88,10 @@ Examples:
 			return fmt.Errorf("%s is not a valid directory", dir)
 		}
 
+		if err := applyProjectTarget(cmd, absDir); err != nil {
+			return err
+		}
+
 		domain, _ := cmd.Flags().GetString("domain")
 		server, _ := cmd.Flags().GetString("server")
 		profileName, _ := cmd.Flags().GetString("profile")
@@ -623,6 +627,7 @@ func fileExistsInDir(dir, name string) bool {
 
 func init() {
 	deployCmd.Flags().String("domain", "", "Domain for the application (required)")
+	deployCmd.Flags().String("server-config", "/etc/fleetdeck/config.toml", "Operator-owned FleetDeck configuration on the remote server")
 	deployCmd.Flags().String("server", "", "Remote server (user@host or registered name) for remote deployment")
 	deployCmd.Flags().String("port", "22", "SSH port for remote deployment")
 	deployCmd.Flags().String("key", "", "Path to SSH private key for remote deployment")
