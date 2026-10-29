@@ -209,6 +209,33 @@ the overview unavailable; workloads, on-node monitoring and alert delivery keep
 running independently. Global visibility is not continuously collected while the
 workstation is off.
 
+### Browser trust and device-key prompts
+
+Server-certificate trust, permission to use the browser's private device key, and
+Authelia login are separate checks. A trusted server certificate does not grant a
+browser permission to use the device key. Denying that private-key request can
+cause a TLS handshake failure before the login page appears; it does not by
+itself mean the dashboard process has stopped.
+
+On macOS, verify the exact device identity and the requesting application before
+approving access. An operator may deliberately permit the intended, signed
+browser to perform signature operations with that one identity. Avoid blanket
+access for all applications or private-key export permissions. One-time approval
+can cause repeated prompts on new connections: FleetDeck deliberately disables
+TLS session resumption so every connection must present the allowed certificate.
+
+Firefox may need its own explicit server-CA trust configuration even when Safari
+already trusts the endpoint. Use a dedicated CA restricted to `localhost` and
+the required loopback addresses, with constraints tested in the actual browser.
+Do not solve this by disabling certificate verification or importing an
+unrestricted development CA without reviewing its wider authority. Document the
+identity, issuer, fingerprints, authorized browsers and renewal date privately.
+
+Certificates expire. Schedule renewal before the earliest server or client leaf
+expiry; issue replacements, update the explicit pins on both sides and test a
+new connection before revoking the old material. FleetDeck does not currently
+automate browser enrollment, trust-store permissions or certificate renewal.
+
 ## 4. Add three servers and group them
 
 Repeat the observer setup and independent credential issuance for `node-b` and
