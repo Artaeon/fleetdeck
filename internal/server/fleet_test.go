@@ -238,3 +238,63 @@ func TestFleetRequiresLocalDeviceAndPasskey(t *testing.T) {
 		t.Fatal("public origin accepted")
 	}
 }
+
+func TestFleetOIDCGroupsComeFromVerifiedProvider(t *testing.T) {
+	f := setupOIDCFixture(t)
+	f.groups = []string{"fleetdeck-admins", "view-alpha"}
+	state, cookie := f.begin(t)
+	w := f.callback(state, cookie)
+	if w.Code != 303 {
+		t.Fatal(w.Body.String())
+	}
+	for _, c := range w.Result().Cookies() {
+		if c.Name == f.server.sessionCookieName() {
+			e, ok := f.server.sessions.identity(c.Value, "")
+			if !ok || !f.server.cfg.Server.OIDC.Enabled || !fContains(e.groups, "view-alpha") {
+				t.Fatal("verified groups not retained")
+			}
+			e.groups[1] = "detail-beta"
+			again, _ := f.server.sessions.identity(c.Value, "")
+			if fContains(again.groups, "detail-beta") {
+				t.Fatal("session permissions mutable")
+			}
+			return
+		}
+	}
+	t.Fatal("session not issued")
+}
+
+func fContains(groups []string, value string) bool {
+	for _, g := range groups {
+		if g == value {
+			return true
+		}
+	}
+	return false
+}
+
+func TestFleetDoesNotFollowRedirectsOrEnvironmentProxy(t *testing.T) {
+	f := newFleetFixture(t, "alpha")
+	var requests atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1) }))
+	defer destination.Close()
+	t.Setenv("HTTPS_PROXY", destination.URL)
+	t.Setenv("HTTP_PROXY", destination.URL)
+	redirect := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, destination.URL, 302) }))
+	redirect.TLS = f.tls.TLS.Clone()
+	redirect.StartTLS()
+	defer redirect.Close()
+	n := f.node
+	n.URL = redirect.URL
+	n.Address = redirect.Listener.Addr().String()
+	clients, err := fleet.NewClients(fleet.Config{Enabled: true, Servers: []fleet.Node{n}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients[n.ID].Fetch(context.Background()); err == nil {
+		t.Fatal("redirect accepted")
+	}
+	if requests.Load() != 0 {
+		t.Fatal("credentials or requests forwarded")
+	}
+}

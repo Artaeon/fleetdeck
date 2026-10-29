@@ -283,6 +283,9 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 
 	// Wrap the mux with metrics counting and rate limiting.
 	metricsMiddleware := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Fleet.Enabled {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		}
 		s.metrics.incRequests()
 		sw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		mux.ServeHTTP(sw, r)

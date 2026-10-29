@@ -22,7 +22,7 @@ func ValidateFleetMode(c *config.Config, addr string, t *tls.Config) error {
 	if !c.Fleet.Enabled {
 		return nil
 	}
-	host, _, err := net.SplitHostPort(addr)
+	host, port, err := net.SplitHostPort(addr)
 	ip := net.ParseIP(host)
 	if err != nil || ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("central fleet dashboard must bind a literal loopback address")
@@ -36,6 +36,13 @@ func ValidateFleetMode(c *config.Config, addr string, t *tls.Config) error {
 	u, err := url.Parse(c.Server.OIDC.PublicURL)
 	if err != nil || u.Scheme != "https" || (u.Hostname() != "localhost" && !net.ParseIP(u.Hostname()).IsLoopback()) {
 		return fmt.Errorf("central fleet OIDC public_url must use HTTPS on localhost or loopback")
+	}
+	urlPort := u.Port()
+	if urlPort == "" {
+		urlPort = "443"
+	}
+	if urlPort != port {
+		return fmt.Errorf("central fleet OIDC public_url must match the local listener port")
 	}
 	return c.Fleet.Validate()
 }
