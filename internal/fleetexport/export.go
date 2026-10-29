@@ -50,7 +50,7 @@ func Export(database *db.DB, node, version, commit, monitorPath, securityPath st
 			if m.Unhealthy > 0 {
 				m.Status = "attention"
 			}
-			if m.Unknown > 0 {
+			if m.Unknown > 0 && m.Unhealthy == 0 {
 				m.Status = "unknown"
 			}
 			if state.UpdatedAt.IsZero() || state.UpdatedAt.After(now.Add(30*time.Second)) || now.Sub(state.UpdatedAt) > fleet.MaxAge {
@@ -100,7 +100,9 @@ func Export(database *db.DB, node, version, commit, monitorPath, securityPath st
 			if v.Critical+v.High+v.RuntimeFindings > 0 {
 				v.Status = "attention"
 			}
-			if v.Unknown > 0 {
+			// Keep known findings actionable even when another check is incomplete.
+			// Unknown counts remain visible; stale reports never enter this branch.
+			if v.Unknown > 0 && v.Status != "attention" {
 				v.Status = "unknown"
 			}
 		}
