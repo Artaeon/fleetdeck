@@ -3,7 +3,10 @@
 A clean APT upgrade simulation means no upgrades are offered by the configured
 repositories. It does not prove that every CVE has a patch, that every installed
 service uses current libraries, or that application container images are current.
-FleetDeck reports available updates; it does not run unattended upgrades or reboot.
+The security watcher reports available updates and never installs them. A separate,
+explicit [OS security-update policy](SERVER_SETUP.md#automatic-os-security-updates)
+can configure unattended-upgrades in a maintenance window, without automatic
+reboots. Follow the procedure below for manual maintenance and recovery.
 
 1. Verify a fresh administrative login with the configured MFA and a separate
    recovery console. Keep the authenticated session open. Record the active SSH
