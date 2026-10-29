@@ -1,0 +1,29 @@
+[Unit]
+Description=FleetDeck private read-only status observer (edit enrollment before use)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=fleetdeck-observer
+Group=fleetdeck-observer
+ExecStart=/usr/local/bin/fleetdeck fleet agent --node-id node-a --snapshot /var/lib/fleetdeck-observer/snapshot.json --addr 10.77.0.11:9443 --tls-cert /etc/fleetdeck/observer/server.pem --tls-key /etc/fleetdeck/observer/server-key.pem --client-ca /etc/fleetdeck/observer/management-ca.pem --allow-client-cert /etc/fleetdeck/observer/workstation-node-a.pem
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=128M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

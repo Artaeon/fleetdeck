@@ -34,6 +34,12 @@ that is not a highly available cluster. Database replication/failover, shared
 uploads, load balancing, fencing and cross-host recovery require a separate
 design and testing. Do not describe multiple independent VPS deployments as HA.
 
+The opt-in [local central overview](FLEET_OVERVIEW.md) adds per-server summary/detail
+grants and read-only observers. It requires loopback HTTPS, a browser device
+certificate and WebAuthn OIDC. Enrollment, private networking and PKI are explicit;
+there are no remote write operations. Use the [cluster guide](CLUSTERS.md) to
+distinguish a management group from a real orchestrator and replicated data.
+
 For trusted projects, separate accounts/networks and non-root containers are
 useful controls. A trusted Docker administrator can still control the host and
 all its containers. Use stronger isolation for mutually untrusted tenants.

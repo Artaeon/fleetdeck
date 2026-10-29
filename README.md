@@ -48,6 +48,7 @@ before directing production traffic. See [the full workflow](docs/PROJECT_DEPLOY
 | Source secret checks | Offline Gitleaks content rules built into the CLI; remote source deployments check the exact upload and check again on the receiver. Findings and incomplete checks block deployment. [Scope and limits](docs/SECRET_CHECKS.md). |
 | Recovery | Configuration, supported database dumps, volume archives, integrity verification, restore commands and immutable release jobs. Offsite delivery and restore drills need configuration. |
 | Admin panel | Per-server project view, bounded release jobs, monitoring view and server inventory. Authelia OIDC, required factors/admin group and optional device certificates. |
+| Central overview | Opt-in workstation-only HTTPS panel with required device certificate + WebAuthn login, per-server summary/detail grants, and separate read-only mTLS observers. [Enrollment and limits](docs/FLEET_OVERVIEW.md). |
 | Monitoring | HTTP/service checks, Prometheus metrics, challenge-aware HTTP results, Telegram/email alerts and durable SSH/activity event relay. |
 | Security watcher | Scheduled release/package checks, Trivy scans of running image IDs and runtime-setting findings. Changed alerts only; incomplete checks stay unknown. |
 | Workstation setup | Named servers, last observed server version/commit, SSH agent support and interactive SSH TOTP for enrolled hosts. |
@@ -117,7 +118,9 @@ For deployments using prebuilt immutable images and explicit migration jobs, use
 
 Multiple named servers are supported. **Automatic HA clustering, replicated
 databases, coordinated failover and a complete cross-server control plane are
-not yet implemented.** Each server runs its own FleetDeck instance and panel.
+not yet implemented.** A [local central overview](docs/FLEET_OVERVIEW.md) can group
+explicitly enrolled servers without exposing a public management panel. It has
+no cross-server write actions. See [management groups versus HA](docs/CLUSTERS.md).
 
 ## Documentation
 
@@ -126,6 +129,7 @@ not yet implemented.** Each server runs its own FleetDeck instance and panel.
 | [Installation](INSTALL.md) | [Host firewall and isolation](docs/SERVER_SECURITY.md) |
 | [Production readiness](docs/PRODUCTION_READINESS.md) | [Investigating vulnerabilities](docs/SECURITY_TRIAGE.md) |
 | [Workstation and server inventory](docs/LOCAL_CLIENT.md) | [SSH MFA and recovery](docs/SSH_ACCESS.md) |
+| [Private central server overview](docs/FLEET_OVERVIEW.md) | [Server groups and HA boundaries](docs/CLUSTERS.md) |
 | [Protected project deployment](docs/PROJECT_DEPLOY.md) | [Authelia and passkeys](docs/AUTHELIA.md) |
 | [Application coverage](docs/APPLICATION_COVERAGE.md) | [Admin access](docs/ADMIN_ACCESS.md) |
 | [Notifications and monitoring](docs/NOTIFICATIONS.md) | [Update / vulnerability watcher](docs/SECURITY_WATCHER.md) |

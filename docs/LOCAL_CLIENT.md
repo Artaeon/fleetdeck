@@ -30,6 +30,11 @@ observed version and check time. An absent/older binary shows `unknown`; cached
 observations are not proof of current availability or compatibility. Merely
 registering multiple servers does not create replication, load balancing or HA.
 
+For a combined read-only panel, use the separately configured
+[device-local fleet overview](FLEET_OVERVIEW.md). CLI destinations are never
+automatically enrolled as observers. The central panel uses narrowly scoped mTLS
+identities instead of SSH administrator keys and does not read this registry.
+
 Keep environment secrets in the password manager and private deployment files.
 A repository may contain a generic Compose file, Dockerfile and documented build
 settings; do not commit your personal server inventory, bot tokens or SMTP data.

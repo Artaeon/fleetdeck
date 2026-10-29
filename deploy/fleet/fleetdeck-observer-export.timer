@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh FleetDeck read-only observations every minute
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=5
+Unit=fleetdeck-observer-export.service
+
+[Install]
+WantedBy=timers.target
