@@ -1,0 +1,29 @@
+[Unit]
+Description=Import local Gatus observations for the private FleetDeck overview
+After=network.target
+
+[Service]
+Type=oneshot
+User=fleetdeck-monitor
+Group=fleetdeck-monitor
+StateDirectory=fleetdeck-monitor
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 -I /usr/local/lib/fleetdeck/gatus_state.py --endpoint http://127.0.0.1:8090/api/v1/endpoints/statuses --output /var/lib/fleetdeck-monitor/state.json --interval 60
+TimeoutStartSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=128M
+TasksMax=16
