@@ -3,6 +3,18 @@ package server
 import "net/http"
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Fleet.Enabled {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if _, ok := s.fleetIdentity(w, r); !ok {
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(fleetHTML))
+		return
+	}
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -17,6 +29,11 @@ func (s *Server) handleProjectPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJS(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Fleet.Enabled {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(fleetJS))
+		return
+	}
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Write([]byte(appJS))
 }
