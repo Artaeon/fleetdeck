@@ -5,7 +5,7 @@ binary=${FLEETDECK_BINARY:?Set FLEETDECK_BINARY to a Linux CLI}
 source_dir=$(cd "$(dirname "$0")" && pwd)
 base=$(mktemp -d)
 name="fleetdeck-oidc-$$"
-authelia=authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54
+authelia=${FLEETDECK_AUTHELIA_IMAGE:-authelia/authelia:4.39.28@sha256:bd97cff4fcbf715b5ff1f9ae286afbe6033afce385302520b0368122d43a6f54}
 browser=mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
 proxy=caddy:2@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
 cleanup() {
