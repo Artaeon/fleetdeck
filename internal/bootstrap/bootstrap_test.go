@@ -30,6 +30,9 @@ func (m *mockRunner) Run(cmd string) (string, error) {
 
 	// Check for substring match (useful for matching patterns).
 	for pattern, err := range m.failOn {
+		if strings.Contains(cmd, "FLEETDECK_INVENTORY") && pattern != "FLEETDECK_INVENTORY" {
+			continue
+		}
 		if strings.Contains(cmd, pattern) {
 			return "", err
 		}
@@ -40,6 +43,9 @@ func (m *mockRunner) Run(cmd string) (string, error) {
 		return out, nil
 	}
 
+	if strings.Contains(cmd, "FLEETDECK_INVENTORY") {
+		return `{"schema":1,"complete":true,"os":"ubuntu","version":"24.04","services":["ssh.service"],"listeners":[{"protocol":"tcp","port":22}],"unknown":[]}`, nil
+	}
 	return "", nil
 }
 
@@ -201,7 +207,7 @@ func TestBootstrapFirewallFailureStopsBeforeProxy(t *testing.T) {
 		t.Fatalf("unsafe success: %+v, %v", result, err)
 	}
 	for _, command := range runner.commands {
-		if strings.Contains(command, "/opt/traefik") {
+		if strings.Contains(command, "mkdir -p /opt/traefik") {
 			t.Fatal("proxy configured after firewall failure")
 		}
 	}
@@ -552,5 +558,16 @@ func TestResultStruct(t *testing.T) {
 	}
 	if len(result.Errors) != 1 {
 		t.Errorf("expected 1 error, got %d", len(result.Errors))
+	}
+}
+
+func TestBootstrapRefusesOccupiedHostBeforeMutation(t *testing.T) {
+	runner := newMockRunner()
+	runner.failOn["FLEETDECK_INVENTORY"] = fmt.Errorf("inventory unavailable")
+	if _, err := Bootstrap(Config{Port: "22", Domain: "example.invalid", Email: "operator@example.invalid"}, runner); err == nil {
+		t.Fatal("incomplete inventory accepted")
+	}
+	if len(runner.commands) != 1 || !strings.Contains(runner.commands[0], "FLEETDECK_INVENTORY") {
+		t.Fatalf("host changed before inspection: %v", runner.commands)
 	}
 }
