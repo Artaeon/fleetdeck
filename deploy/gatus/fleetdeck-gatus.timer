@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the local Gatus observation import
+
+[Timer]
+OnBootSec=15
+OnUnitActiveSec=30
+AccuracySec=5
+Unit=fleetdeck-gatus.service
+
+[Install]
+WantedBy=timers.target
