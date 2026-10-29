@@ -12,11 +12,26 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
+
+const registryDriver = "fleetdeck-sqlite3"
+
+func init() {
+	// Keep SQLite's WAL sidecars after the last connection closes. A later
+	// read-only observer must not need directory writes to recreate them.
+	// Set this on every pooled connection, not only the first writer.
+	sql.Register(registryDriver, &sqlite3.SQLiteDriver{ConnectHook: func(c *sqlite3.SQLiteConn) error {
+		if c.GetFilename("main") == "" {
+			return nil // In-memory databases have no WAL files to retain.
+		}
+		return c.SetFileControlInt("main", sqlite3.SQLITE_FCNTL_PERSIST_WAL, 1)
+	}})
+}
 
 type DB struct {
 	conn          *sql.DB
+	readOnly      bool
 	encryptionKey []byte    // optional 32-byte AES-256 key for secret encryption
 	plaintextWarn sync.Once // warn once if a secret is stored without a key
 }
@@ -87,7 +102,7 @@ func Open(path string) (*DB, error) {
 	//                              writers can't both READ, both try to
 	//                              upgrade, and deadlock.
 	dsn := path + "?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000&_txlock=immediate"
-	conn, err := sql.Open("sqlite3", dsn)
+	conn, err := sql.Open(registryDriver, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +179,9 @@ func (db *DB) Ping() error {
 }
 
 func (db *DB) Close() error {
+	if db.readOnly {
+		return db.conn.Close()
+	}
 	// Checkpoint WAL on close for a clean shutdown
 	if err := db.walCheckpoint(); err != nil {
 		log.Printf("WAL checkpoint on close failed: %v", err)
