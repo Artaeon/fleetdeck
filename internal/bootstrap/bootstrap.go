@@ -1,6 +1,9 @@
 package bootstrap
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/onboarding"
+)
 
 // CommandRunner abstracts command execution so bootstrap steps work over SSH
 // or locally.
@@ -35,6 +38,18 @@ type Result struct {
 func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 	res := &Result{}
 	if _, err := validatedSSHPort(cfg.Port); err != nil {
+		return res, err
+	}
+
+	// Refuse occupied or incompletely inspected machines before any mutation.
+	if err := onboarding.RequireFresh(runner, effectiveSSHPort(cfg.Port)); err != nil {
+		return res, err
+	}
+	network := cfg.TraefikNetwork
+	if network == "" {
+		network = "traefik"
+	}
+	if err := validateBootstrapInputs(cfg.Domain, cfg.Email, network); err != nil {
 		return res, err
 	}
 
@@ -84,10 +99,6 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 
 	res.SSHTrial = true
 	// 5. Traefik
-	network := cfg.TraefikNetwork
-	if network == "" {
-		network = "traefik"
-	}
 	if err := setupTraefik(runner, cfg.Domain, cfg.Email, network); err != nil {
 		res.Errors = append(res.Errors, fmt.Sprintf("setup traefik: %v", err))
 		return res, fmt.Errorf("setting up traefik: %w", err)
@@ -95,4 +106,11 @@ func Bootstrap(cfg Config, runner CommandRunner) (*Result, error) {
 	res.TraefikConfigured = true
 
 	return res, nil
+}
+
+func effectiveSSHPort(port string) string {
+	if port == "" {
+		return "22"
+	}
+	return port
 }

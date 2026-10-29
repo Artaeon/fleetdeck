@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fleetdeck/fleetdeck/internal/bootstrap"
+	"github.com/fleetdeck/fleetdeck/internal/onboarding"
 	"github.com/fleetdeck/fleetdeck/internal/remote"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -99,6 +100,19 @@ The server must be accessible via SSH with key-based auth.`,
 		}
 		defer client.Close()
 		ui.Success("Connected to %s", host)
+
+		// Inspect before creating users or changing any host configuration.
+		var inventoryRunner onboarding.Runner = client
+		if user != "root" {
+			inventoryRunner = bootstrap.SudoRunner{Runner: client}
+		}
+		if err := onboarding.RequireFresh(inventoryRunner, port); err != nil {
+			return err
+		}
+		fresh, _ := cmd.Flags().GetBool("fresh")
+		if !fresh {
+			return fmt.Errorf("review the inventory with fleetdeck setup on the server; --fresh explicitly acknowledges a disposable new server with no workloads")
+		}
 
 		// Prove a separate administrator connection before removing root access.
 		if user == "root" {
@@ -224,6 +238,7 @@ func parseTarget(target string) (host, user string) {
 }
 
 func init() {
+	serverSetupCmd.Flags().Bool("fresh", false, "Acknowledge this is a new disposable server; occupied or unverified hosts still fail closed")
 	serverSetupCmd.Flags().String("admin-user", "fleetdeck-admin", "Dedicated host administrator created during root bootstrap")
 	serverSetupCmd.Flags().String("admin-key", "", "Public key for the new administrator; must match the current key/agent")
 	serverSetupCmd.Flags().String("port", "22", "SSH port")
