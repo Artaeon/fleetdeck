@@ -7,7 +7,7 @@ Verify the server's host key through the VPS provider console before first conne
 For a new VPS whose initial access is root:
 
 ```sh
-fleetdeck server setup root@server.example.com \
+fleetdeck server setup root@server.example.com --fresh \
   --admin-key ~/.ssh/fleetdeck-admin.pub \
   --domain example.com --email operator@example.com
 fleetdeck deploy ./app --server fleetdeck-admin@server.example.com --domain app.example.com
