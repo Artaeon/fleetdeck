@@ -3,7 +3,7 @@
 This workflow is for a trusted operator deploying a reviewed Docker Compose
 application to a Linux FleetDeck server. Use it from an interactive workstation,
 including hosts with enrolled SSH key + phone TOTP authentication. Both client
-and server must advertise source deployment protocol `1`; an older server is
+and server must advertise source deployment protocol `2`; an older server is
 refused rather than falling back to an unprotected upload.
 
 ## Link once, deploy again
@@ -14,6 +14,7 @@ fleetdeck server add production operator@server.example.com
 fleetdeck project link ./my-app --server production --name my-app \
   --domain preview.example.com --profile saas
 fleetdeck project show ./my-app
+fleetdeck security secrets ./my-app
 fleetdeck deploy ./my-app --env-file /private/path/production.env
 # Subsequent updates preserve the server's existing secrets:
 fleetdeck deploy ./my-app
@@ -44,7 +45,9 @@ project domain and does not yet provide a dedicated worker-only wizard.
 
 1. Acquire a per-project lock. Validate the bounded source archive and the
    existing project identity. New projects receive a no-login host account,
-   private group and no Docker-group membership.
+   private group and no Docker-group membership. Independently scan incoming
+   source for potential secrets before preserving credentials or stopping writers.
+   The client has already checked the same archive before connecting over SSH.
 2. Preserve existing `.env`, Compose `env_file`, secret/config file references
    and writable bind mounts. Exclude known secret filenames, VCS directories,
    caches and persistent bind data from the upload. An explicit local `.env`
@@ -62,7 +65,8 @@ project domain and does not yet provide a dedicated worker-only wizard.
    candidate before replacing source files. Docker Buildx / BuildKit is required;
    generated Dockerfile-specific ignore rules exclude preserved private files
    even after user negation rules. Never pass production secrets as build args
-   or write them into source: filename exclusions cannot discover arbitrary secrets.
+   or write them into source: pattern detection and exclusions cannot discover
+   every secret. See [source secret checks](SECRET_CHECKS.md) for scope and limits.
 6. Replace regular source files, prepare the project edge network, then start
    without another pull/build and wait for Compose readiness. Without an actual
    health check, Compose readiness establishes only that the service is running.

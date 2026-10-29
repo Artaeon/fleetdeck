@@ -357,6 +357,17 @@
           </p>
         </div>
         <div class="security-list">
+          <details>
+            <summary>Can FleetDeck catch secrets before deployment?</summary>
+            <p>
+              Remote source deployments run embedded Gitleaks content rules
+              before upload and again on the receiver. Potential secrets and
+              incomplete checks stop the deployment. Reports show file, line
+              and rule metadata, never matched values. Private env files,
+              Git history and image layers need separate checks; this is not
+              a guarantee that every credential can be detected.
+            </p>
+          </details>
           <details open>
             <summary>Does every project get its own user?</summary>
             <p>
