@@ -122,6 +122,15 @@ For immediate revocation, stop/restart the FleetDeck dashboard to invalidate all
 sessions and disable/remove the identity or device in Authelia. This release does
 not implement OIDC back-channel logout or continuous session introspection.
 
+## Provider image maintenance
+
+Scan the provider's immutable image separately from FleetDeck. The stable
+4.39.28 image used by the examples needs a reviewed patched build for its Go/x-net
+findings. The optional [maintenance recipe](../deploy/authelia/security-build/README.md)
+pins stable source and base images, patches the toolchain/network library and
+includes a weekly real-login/image-scan workflow. It is an operator build, not an
+upstream release, and is never selected or installed silently.
+
 ## Recovery and rollout
 
 Keep an independently tested SSH recovery path before enabling OIDC. An Authelia

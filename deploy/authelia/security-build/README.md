@@ -31,7 +31,9 @@ retains upstream entrypoint/user defaults; non-root execution is enforced by the
 operator's Compose service. If systemd supervises an attached Compose process, stop/start that unit around
 the image replacement: a parallel `compose up -d` can trigger its restart policy
 and stop the candidate. Preserve the unit and verify its readiness after each
-transition. Confirm new authentication and existing registrations
+transition. Restart dependent services (including the dashboard) that were stopped
+through systemd dependencies, and verify their protected endpoints too.
+Confirm new authentication and existing registrations
 before considering the rollout complete. Never downgrade or replace a live identity
 database automatically after new writes.
 
