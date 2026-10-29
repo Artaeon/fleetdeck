@@ -1,0 +1,21 @@
+[Unit]
+Description=Export sanitized FleetDeck observations without network access
+
+[Service]
+Type=oneshot
+User=root
+Group=fleetdeck-observer
+ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/config.toml fleet snapshot --node-id node-a --output /var/lib/fleetdeck-observer/snapshot.json --security-state /var/lib/fleetdeck-security/state.json
+NoNewPrivileges=true
+PrivateNetwork=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/fleetdeck-observer
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+UMask=0027
+TimeoutStartSec=30
