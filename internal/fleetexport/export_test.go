@@ -14,6 +14,9 @@ import (
 
 func TestExportPreservesFindingsAndExcludesPrivateFields(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	d, err := db.Open(filepath.Join(dir, "registry.db"))
 	if err != nil {
 		t.Fatal(err)
