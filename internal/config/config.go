@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/fleetdeck/fleetdeck/internal/fleet"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 )
 
 type Config struct {
+	Fleet      fleet.Config     `toml:"fleet"`
 	Server     ServerConfig     `toml:"server"`
 	Traefik    TraefikConfig    `toml:"traefik"`
 	GitHub     GitHubConfig     `toml:"github"`
