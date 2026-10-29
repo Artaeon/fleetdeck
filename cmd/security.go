@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var securityCmd = &cobra.Command{Use: "security", Short: "Check updates, image vulnerabilities and container runtime settings"}
+var securityCmd = &cobra.Command{Use: "security", Short: "Check source secrets, updates, image vulnerabilities and runtime settings"}
 var securityCheckCmd = &cobra.Command{
 	Use: "check", Short: "Run read-only security checks; use the supplied systemd timer for recurring checks", Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
