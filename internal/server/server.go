@@ -24,6 +24,7 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/backup"
 	"github.com/fleetdeck/fleetdeck/internal/config"
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/fleet"
 	"github.com/fleetdeck/fleetdeck/internal/health"
 	"github.com/fleetdeck/fleetdeck/internal/project"
 	"github.com/fleetdeck/fleetdeck/internal/templates"
@@ -48,6 +49,8 @@ type Server struct {
 	deploymentMu  sync.Map // maps project name -> *sync.Mutex
 	rateLimiter   *ipLimiter
 	metrics       *Metrics
+	fleetClients  map[string]*fleet.Client
+	fleetSlots    chan struct{}
 
 	// asyncJobs tracks long-running goroutines (webhook deployments,
 	// manual deploys) so Shutdown can wait for them to finish before
@@ -183,79 +186,88 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 		shutdownCancel: shutdownCancel,
 	}
 
-	s.metrics.startCacheRefresh(s)
+	if !cfg.Fleet.Enabled {
+		s.metrics.startCacheRefresh(s)
+	}
 
 	mux := http.NewServeMux()
+	if cfg.Fleet.Enabled {
+		s.fleetSlots = make(chan struct{}, 8)
+		mux.HandleFunc("GET /api/fleet", s.requireAuth(s.handleFleet))
+		mux.HandleFunc("GET /api/fleet/{node}", s.requireAuth(s.handleFleetDetail))
+		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
+	} else {
 
-	// API routes (require auth)
-	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
-	mux.HandleFunc("POST /api/projects", s.requireAuth(s.handleCreateProject))
-	mux.HandleFunc("GET /api/projects/{name}", s.requireAuth(s.handleGetProject))
-	mux.HandleFunc("DELETE /api/projects/{name}", s.requireAuth(s.handleDeleteProject))
-	mux.HandleFunc("POST /api/projects/{name}/start", s.requireAuth(s.handleStartProject))
-	mux.HandleFunc("POST /api/projects/{name}/stop", s.requireAuth(s.handleStopProject))
-	mux.HandleFunc("POST /api/projects/{name}/restart", s.requireAuth(s.handleRestartProject))
-	mux.HandleFunc("GET /api/projects/{name}/logs", s.requireAuth(s.handleProjectLogs))
-	mux.HandleFunc("GET /api/projects/{name}/health", s.requireAuth(s.handleProjectHealth))
-	mux.HandleFunc("GET /api/projects/{name}/backups", s.requireAuth(s.handleListBackups))
-	mux.HandleFunc("POST /api/projects/{name}/backup", s.requireAuth(s.handleCreateBackup))
-	mux.HandleFunc("POST /api/projects/{name}/backup/{id}/restore", s.requireAuth(s.handleRestoreBackup))
-	mux.HandleFunc("DELETE /api/projects/{name}/backup/{id}", s.requireAuth(s.handleDeleteBackup))
-	mux.HandleFunc("GET /api/projects/{name}/deployments", s.requireAuth(s.handleListDeployments))
-	mux.HandleFunc("GET /api/servers", s.requireAuth(s.handleListServers))
-	mux.HandleFunc("POST /api/servers", s.requireAuth(s.handleCreateServer))
-	mux.HandleFunc("DELETE /api/servers/{name}", s.requireAuth(s.handleDeleteServer))
-	mux.HandleFunc("POST /api/servers/{name}/check", s.requireAuth(s.handleCheckServer))
-	mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
-	mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
-	mux.HandleFunc("GET /api/monitor", s.requireAuth(s.handleMonitorStatus))
-	mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
+		// API routes (require auth)
+		mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
+		mux.HandleFunc("POST /api/projects", s.requireAuth(s.handleCreateProject))
+		mux.HandleFunc("GET /api/projects/{name}", s.requireAuth(s.handleGetProject))
+		mux.HandleFunc("DELETE /api/projects/{name}", s.requireAuth(s.handleDeleteProject))
+		mux.HandleFunc("POST /api/projects/{name}/start", s.requireAuth(s.handleStartProject))
+		mux.HandleFunc("POST /api/projects/{name}/stop", s.requireAuth(s.handleStopProject))
+		mux.HandleFunc("POST /api/projects/{name}/restart", s.requireAuth(s.handleRestartProject))
+		mux.HandleFunc("GET /api/projects/{name}/logs", s.requireAuth(s.handleProjectLogs))
+		mux.HandleFunc("GET /api/projects/{name}/health", s.requireAuth(s.handleProjectHealth))
+		mux.HandleFunc("GET /api/projects/{name}/backups", s.requireAuth(s.handleListBackups))
+		mux.HandleFunc("POST /api/projects/{name}/backup", s.requireAuth(s.handleCreateBackup))
+		mux.HandleFunc("POST /api/projects/{name}/backup/{id}/restore", s.requireAuth(s.handleRestoreBackup))
+		mux.HandleFunc("DELETE /api/projects/{name}/backup/{id}", s.requireAuth(s.handleDeleteBackup))
+		mux.HandleFunc("GET /api/projects/{name}/deployments", s.requireAuth(s.handleListDeployments))
+		mux.HandleFunc("GET /api/servers", s.requireAuth(s.handleListServers))
+		mux.HandleFunc("POST /api/servers", s.requireAuth(s.handleCreateServer))
+		mux.HandleFunc("DELETE /api/servers/{name}", s.requireAuth(s.handleDeleteServer))
+		mux.HandleFunc("POST /api/servers/{name}/check", s.requireAuth(s.handleCheckServer))
+		mux.HandleFunc("GET /api/status", s.requireAuth(s.handleServerStatus))
+		mux.HandleFunc("GET /api/health", s.requireAuth(s.handleSystemHealth))
+		mux.HandleFunc("GET /api/monitor", s.requireAuth(s.handleMonitorStatus))
+		mux.HandleFunc("GET /api/audit", s.requireAuth(s.handleAuditLog))
 
-	// Environment management
-	mux.HandleFunc("GET /api/projects/{name}/environments", s.requireAuth(s.handleListEnvironments))
-	mux.HandleFunc("POST /api/projects/{name}/environments", s.requireAuth(s.handleCreateEnvironment))
-	mux.HandleFunc("DELETE /api/projects/{name}/environments/{env}", s.requireAuth(s.handleDeleteEnvironment))
-	mux.HandleFunc("POST /api/projects/{name}/environments/promote", s.requireAuth(s.handlePromoteEnvironment))
+		// Environment management
+		mux.HandleFunc("GET /api/projects/{name}/environments", s.requireAuth(s.handleListEnvironments))
+		mux.HandleFunc("POST /api/projects/{name}/environments", s.requireAuth(s.handleCreateEnvironment))
+		mux.HandleFunc("DELETE /api/projects/{name}/environments/{env}", s.requireAuth(s.handleDeleteEnvironment))
+		mux.HandleFunc("POST /api/projects/{name}/environments/promote", s.requireAuth(s.handlePromoteEnvironment))
 
-	// DNS management
-	mux.HandleFunc("GET /api/dns/{domain}", s.requireAuth(s.handleListDNSRecords))
-	mux.HandleFunc("POST /api/dns/{domain}/setup", s.requireAuth(s.handleSetupDNS))
-	mux.HandleFunc("DELETE /api/dns/{domain}/{type}/{record}", s.requireAuth(s.handleDeleteDNSRecord))
+		// DNS management
+		mux.HandleFunc("GET /api/dns/{domain}", s.requireAuth(s.handleListDNSRecords))
+		mux.HandleFunc("POST /api/dns/{domain}/setup", s.requireAuth(s.handleSetupDNS))
+		mux.HandleFunc("DELETE /api/dns/{domain}/{type}/{record}", s.requireAuth(s.handleDeleteDNSRecord))
 
-	// Scheduling
-	mux.HandleFunc("GET /api/schedule", s.requireAuth(s.handleListSchedules))
-	mux.HandleFunc("POST /api/schedule/{project}/enable", s.requireAuth(s.handleEnableSchedule))
-	mux.HandleFunc("POST /api/schedule/{project}/disable", s.requireAuth(s.handleDisableSchedule))
+		// Scheduling
+		mux.HandleFunc("GET /api/schedule", s.requireAuth(s.handleListSchedules))
+		mux.HandleFunc("POST /api/schedule/{project}/enable", s.requireAuth(s.handleEnableSchedule))
+		mux.HandleFunc("POST /api/schedule/{project}/disable", s.requireAuth(s.handleDisableSchedule))
 
-	// Volumes
-	mux.HandleFunc("GET /api/volumes", s.requireAuth(s.handleListVolumes))
-	mux.HandleFunc("DELETE /api/volumes/{name}", s.requireAuth(s.handleDeleteVolume))
+		// Volumes
+		mux.HandleFunc("GET /api/volumes", s.requireAuth(s.handleListVolumes))
+		mux.HandleFunc("DELETE /api/volumes/{name}", s.requireAuth(s.handleDeleteVolume))
 
-	// Deploy
-	mux.HandleFunc("POST /api/projects/{name}/deploy", s.requireAuth(s.handleDeployProject))
+		// Deploy
+		mux.HandleFunc("POST /api/projects/{name}/deploy", s.requireAuth(s.handleDeployProject))
 
-	// Domain update
-	mux.HandleFunc("PUT /api/projects/{name}/domain", s.requireAuth(s.handleUpdateProjectDomain))
+		// Domain update
+		mux.HandleFunc("PUT /api/projects/{name}/domain", s.requireAuth(s.handleUpdateProjectDomain))
 
-	// Templates
-	mux.HandleFunc("GET /api/templates", s.requireAuth(s.handleListTemplates))
+		// Templates
+		mux.HandleFunc("GET /api/templates", s.requireAuth(s.handleListTemplates))
 
-	// Discovery
-	mux.HandleFunc("POST /api/discover", s.requireAuth(s.handleDiscover))
-	mux.HandleFunc("POST /api/discover/import", s.requireAuth(s.handleDiscoverImport))
+		// Discovery
+		mux.HandleFunc("POST /api/discover", s.requireAuth(s.handleDiscover))
+		mux.HandleFunc("POST /api/discover/import", s.requireAuth(s.handleDiscoverImport))
 
-	// Config
-	mux.HandleFunc("GET /api/config", s.requireAuth(s.handleGetConfig))
-	mux.HandleFunc("GET /api/config/webhook-url", s.requireAuth(s.handleGetWebhookURL))
+		// Config
+		mux.HandleFunc("GET /api/config", s.requireAuth(s.handleGetConfig))
+		mux.HandleFunc("GET /api/config/webhook-url", s.requireAuth(s.handleGetWebhookURL))
 
-	// Prometheus metrics endpoint (auth required)
-	mux.HandleFunc("GET /metrics", s.requireMetricsAuth(s.handleMetrics))
+		// Prometheus metrics endpoint (auth required)
+		mux.HandleFunc("GET /metrics", s.requireMetricsAuth(s.handleMetrics))
 
-	// Unauthenticated health check for load balancers
-	mux.HandleFunc("GET /healthz", s.handleHealthz)
+		// Unauthenticated health check for load balancers
+		mux.HandleFunc("GET /healthz", s.handleHealthz)
 
-	// Webhook routes (GitHub uses HMAC auth; manual deploy uses bearer token)
-	s.AddWebhookRoutes(mux)
+		// Webhook routes (GitHub uses HMAC auth; manual deploy uses bearer token)
+		s.AddWebhookRoutes(mux)
+	}
 
 	// Dashboard UI (requires an authenticated browser session)
 	mux.HandleFunc("GET /login", s.handleLogin)
@@ -263,7 +275,9 @@ func New(cfg *config.Config, database *db.DB, addr string) *Server {
 	mux.HandleFunc("GET /auth/callback", loginRateLimit(s.completeOIDC))
 	mux.HandleFunc("POST /logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("GET /", s.requirePageAuth(s.handleDashboard))
-	mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
+	if !cfg.Fleet.Enabled {
+		mux.HandleFunc("GET /project/{name}", s.requirePageAuth(s.handleProjectPage))
+	}
 	mux.HandleFunc("GET /static/app.js", s.handleJS)
 	mux.HandleFunc("GET /static/style.css", s.handleCSS)
 
@@ -443,6 +457,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start() error {
+	if s.cfg.Fleet.Enabled {
+		if err := ValidateFleetMode(s.cfg, s.server.Addr, s.server.TLSConfig); err != nil {
+			return err
+		}
+		clients, err := fleet.NewClients(s.cfg.Fleet)
+		if err != nil {
+			return err
+		}
+		s.fleetClients = clients
+	}
 	auth := s.cfg.Server
 	auth.APIToken, auth.MetricsToken = s.apiToken, s.metricsToken
 	if err := ValidateDashboardAuth(auth); err != nil {

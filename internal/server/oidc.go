@@ -254,11 +254,21 @@ func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request) {
 		fail("admin_group")
 		return
 	}
+	if len(user.Groups) > 256 {
+		fail("group_limits")
+		return
+	}
+	for _, group := range user.Groups {
+		if len(group) > 100 {
+			fail("group_limits")
+			return
+		}
+	}
 	expires := now.Add(oidcSessionLifetime)
 	if id.Expiry.Before(expires) {
 		expires = id.Expiry
 	}
-	session, err := s.sessions.createIdentity(requestDevice(r), id.Subject, expires)
+	session, err := s.sessions.createIdentityGroups(requestDevice(r), id.Subject, user.Groups, expires)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "unable to create session")
 		return
