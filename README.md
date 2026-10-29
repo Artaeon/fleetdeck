@@ -23,6 +23,7 @@ fleetdeck project link ./my-app --server production --name my-app \
   --domain preview.example.com
 
 # Explicitly provide the first private .env if the application needs one:
+fleetdeck security secrets ./my-app
 fleetdeck deploy ./my-app --env-file /private/path/production.env
 
 # Next time: same target, existing server secrets, verified pre-update backup.
@@ -43,6 +44,7 @@ before directing production traffic. See [the full workflow](docs/PROJECT_DEPLOY
 | --- | --- |
 | Server setup | Docker/Compose, HTTPS proxy, SSH hardening, dedicated administrator, host firewall and Docker forwarding guard. Review existing hosts before migration. |
 | Project deployment | Private saved targets, bounded source transfer, per-project locks, preservation of server secrets/data, verified backups before replacement and Compose readiness checks. |
+| Source secret checks | Offline Gitleaks content rules built into the CLI; remote source deployments check the exact upload and check again on the receiver. Findings and incomplete checks block deployment. [Scope and limits](docs/SECRET_CHECKS.md). |
 | Recovery | Configuration, supported database dumps, volume archives, integrity verification, restore commands and immutable release jobs. Offsite delivery and restore drills need configuration. |
 | Admin panel | Per-server project view, bounded release jobs, monitoring view and server inventory. Authelia OIDC, required factors/admin group and optional device certificates. |
 | Monitoring | HTTP/service checks, Prometheus metrics, challenge-aware HTTP results, Telegram/email alerts and durable SSH/activity event relay. |

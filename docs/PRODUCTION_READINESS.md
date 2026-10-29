@@ -16,7 +16,7 @@ before moving a real public domain or importing production data.
 | Firewall and isolation | External checks of allowed ports; no database host ports; per-project networks and reviewed runtime UID, capabilities, mounts and limits. | [Server security](SERVER_SECURITY.md) |
 | Admin panel | HTTPS, trusted proxy configuration, correct OIDC factors/groups, unauthenticated API denial, fresh passkey login and a tested identity-backup restore. | [Authelia](AUTHELIA.md) |
 | Project behavior | A real health check, tested login/CMS/API/background jobs, correct public URL, production SMTP where needed and an explicit migration plan. | [Application coverage](APPLICATION_COVERAGE.md) |
-| Secrets | Private server credentials survive an update; repository/build context contains no secrets; rotation is separate from a normal deploy. | [Project deploy](PROJECT_DEPLOY.md) |
+| Secrets | Source checks pass on client and receiver; review excluded files, Git history and image layers separately. Private server credentials survive an update; rotate any exposed value. | [Secret checks](SECRET_CHECKS.md) |
 | Backups | Native database dump and persistent files covered, independent encrypted copy, retention, restore drill and available previous image/configuration. | [Recovery](EXISTING_SERVER_MIGRATION.md) |
 | Monitoring | Successful test notification on each configured channel, fresh internal health results and an independent external uptime check. | [Notifications](NOTIFICATIONS.md) |
 | Updates | Current scanner database, reviewed findings and unknown checks, maintenance process for host/app updates and a recovery window. | [Watcher](SECURITY_WATCHER.md) |
