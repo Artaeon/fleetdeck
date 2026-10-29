@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/fleet"
 	"github.com/fleetdeck/fleetdeck/internal/server"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
@@ -26,12 +28,24 @@ var dashboardCmd = &cobra.Command{
 		key, _ := cmd.Flags().GetString("tls-key")
 		ca, _ := cmd.Flags().GetString("client-ca")
 		clients, _ := cmd.Flags().GetStringArray("allow-client-cert")
+		if cfg.Fleet.Enabled {
+			if err := fleet.PrivateKey(key); err != nil {
+				return err
+			}
+		}
 		options := server.ListenerOptions{CertFile: cert, KeyFile: key, ClientCAFile: ca, AllowedClients: clients}
-		if _, err := options.TLSConfig(addr); err != nil {
+		tlsConfig, err := options.TLSConfig(addr)
+		if err != nil {
+			return err
+		}
+		if err := server.ValidateFleetMode(cfg, addr, tlsConfig); err != nil {
 			return err
 		}
 
-		d := openDB()
+		var d *db.DB
+		if !cfg.Fleet.Enabled {
+			d = openDB()
+		}
 		srv := server.New(cfg, d, addr)
 		defer srv.Shutdown(context.Background())
 		if err := srv.ConfigureListener(options); err != nil {

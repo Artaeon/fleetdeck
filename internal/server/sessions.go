@@ -22,6 +22,7 @@ type sessionEntry struct {
 	expires time.Time
 	device  string
 	subject string
+	groups  []string
 }
 
 func newSessionStore() *sessionStore {
@@ -37,6 +38,10 @@ func (s *sessionStore) createForDevice(device string) (string, error) {
 }
 
 func (s *sessionStore) createIdentity(device, subject string, expires time.Time) (string, error) {
+	return s.createIdentityGroups(device, subject, nil, expires)
+}
+
+func (s *sessionStore) createIdentityGroups(device, subject string, groups []string, expires time.Time) (string, error) {
 	token, err := GenerateAPIToken()
 	if err != nil {
 		return "", err
@@ -55,8 +60,19 @@ func (s *sessionStore) createIdentity(device, subject string, expires time.Time)
 	if !expires.After(now) {
 		return "", fmt.Errorf("session has already expired")
 	}
-	s.entries[sha256.Sum256([]byte(token))] = sessionEntry{expires: expires, device: device, subject: subject}
+	s.entries[sha256.Sum256([]byte(token))] = sessionEntry{expires: expires, device: device, subject: subject, groups: append([]string(nil), groups...)}
 	return token, nil
+}
+
+func (s *sessionStore) identity(token, device string) (sessionEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[sha256.Sum256([]byte(token))]
+	if len(token) != 64 || !ok || e.subject == "" || e.device != device || !s.now().Before(e.expires) {
+		return sessionEntry{}, false
+	}
+	e.groups = append([]string(nil), e.groups...)
+	return e, true
 }
 
 func (s *sessionStore) valid(token string) bool {
