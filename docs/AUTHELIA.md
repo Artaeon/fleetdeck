@@ -17,6 +17,13 @@ the HTTPS proxy; preserve Host and overwrite forwarding headers. Trust only the
 immediate proxy IP through `FLEETDECK_TRUST_PROXY_IPS`. Direct remote listeners
 still require the device-certificate options described in [admin access](ADMIN_ACCESS.md).
 
+RSA signing keys published in the provider's JWKS must be at most 4096 bits.
+FleetDeck keeps go-jose's parsing limit enabled to prevent excessive CPU work
+from oversized keys ([upstream security advisory](https://github.com/go-jose/go-jose/security/advisories/GHSA-mgcc-cww5-fp2q)).
+Providers using larger keys need a supported signing key before upgrading;
+do not raise the parser limit as a workaround. This concerns OIDC signing keys,
+not TLS device certificates or SSH keys.
+
 ```sh
 sudo install -d -m 0700 /etc/fleetdeck/auth
 sudo fleetdeck dashboard setup-authelia \
