@@ -112,6 +112,14 @@ an absent registry is an error. Exports omit domains, credentials, filesystem
 paths, raw errors/logs, container IDs and image IDs. Review project names as
 potentially private metadata before granting detail access.
 
+Current FleetDeck writers retain SQLite's private `-wal` and `-shm` sidecars so
+exports also work on a read-only filesystem after the last writer closes. After
+upgrading an older installation, run an ordinary registry command once as the
+operator before starting the protected exporter. Keep those sidecars private and
+do not manually delete them or copy only the main database during writes. See
+[SQLite's WAL guidance](https://sqlite.org/wal.html). The observer's read-only
+connection neither migrates the registry nor checkpoints it on close.
+
 The exporter writes mode `0640` atomically. Run it with primary group
 `fleetdeck-observer`, as in the example service, so the observer can read it.
 Schedule it every minute. See the reviewable service/timer examples in

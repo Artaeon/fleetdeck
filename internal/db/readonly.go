@@ -25,7 +25,7 @@ func OpenReadOnly(path string) (*DB, error) {
 	q.Set("_query_only", "on")
 	q.Set("_busy_timeout", "5000")
 	u.RawQuery = q.Encode()
-	c, err := sql.Open("sqlite3", u.String())
+	c, err := sql.Open(registryDriver, u.String())
 	if err != nil {
 		return nil, err
 	}
@@ -33,5 +33,5 @@ func OpenReadOnly(path string) (*DB, error) {
 		c.Close()
 		return nil, err
 	}
-	return &DB{conn: c}, nil
+	return &DB{conn: c, readOnly: true}, nil
 }
