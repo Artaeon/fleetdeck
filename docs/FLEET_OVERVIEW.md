@@ -83,6 +83,11 @@ environment proxy, HTTP redirect or URL supplied by the browser is used.
 Carrier-grade NAT ranges are not accepted by this initial address policy; use an
 RFC1918/ULA management address or a reviewed local tunnel.
 
+For hosts without a private management network, the
+[restricted SSH transport guide](OBSERVER_SSH_TUNNEL.md) describes a loopback
+observer with a separate forwarding-only account. Personal SSH MFA is preserved;
+the observer continues to require its independent, per-node mTLS identity.
+
 ## 2. Export and serve one node
 
 On the intended Linux node, create a dedicated account without a login shell,
