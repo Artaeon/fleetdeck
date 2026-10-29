@@ -3,6 +3,8 @@ package sourcedeploy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +19,37 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/db"
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 )
+
+func TestReceiverIndependentlyBlocksSecretsBeforeExistingProjectChanges(t *testing.T) {
+	e, r, path, src := fixture(t)
+	h := sha256.Sum256([]byte("synthetic receiver secret regression fixture"))
+	put(t, src, "app.txt", "ghp_"+hex.EncodeToString(h[:])[:36])
+	result, err := e.Apply(context.Background(), opts(), archive(t, src), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "potential secrets detected") {
+		t.Fatalf("secret not blocked: %v", err)
+	}
+	if len(r.events) != 0 || result.BackupID != "" || result.Healthy {
+		t.Fatal("changed project before secret check", r.events)
+	}
+	source, _ := os.ReadFile(filepath.Join(path, "app.txt"))
+	env, _ := os.ReadFile(filepath.Join(path, ".env"))
+	if string(source) != "old source" || string(env) != "SECRET=server-value\n" {
+		t.Fatal("modified existing source or credentials")
+	}
+}
+
+func TestReceiverBlocksIncompleteSecretScan(t *testing.T) {
+	e, r, path, src := fixture(t)
+	put(t, src, "payload.zip", "unreviewed compressed source")
+	_, err := e.Apply(context.Background(), opts(), archive(t, src), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "secret scan incomplete") || len(r.events) != 0 {
+		t.Fatalf("incomplete scan changed project: %v %v", err, r.events)
+	}
+	source, _ := os.ReadFile(filepath.Join(path, "app.txt"))
+	if string(source) != "old source" {
+		t.Fatal("changed existing source")
+	}
+}
 
 type fixtureRunner struct {
 	t              *testing.T

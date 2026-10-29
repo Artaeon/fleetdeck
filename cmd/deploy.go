@@ -312,6 +312,15 @@ func deployLocal(cmd *cobra.Command, dir, name, domain string, prof *profiles.Pr
 }
 
 func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *profiles.Profile, strategyName string, timeout time.Duration, preDeployHook, postDeployHook string, noCache, fresh bool) error {
+	// Check the complete materialized payload before keys, SSH or server changes.
+	envFile, _ := cmd.Flags().GetString("env-file")
+	archive, _, err := checkedSourceArchive(cmd.Context(), dir, envFile)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(archive.Name())
+	defer archive.Close()
+	ui.Info("Source secret check passed for this upload; private env files and image contents are outside its scope")
 	port, _ := cmd.Flags().GetString("port")
 	keyFile, _ := cmd.Flags().GetString("key")
 	passphrase, _ := cmd.Flags().GetString("passphrase")
@@ -385,21 +394,6 @@ func deployRemote(cmd *cobra.Command, dir, name, domain, server string, prof *pr
 	serverConfig, _ := cmd.Flags().GetString("server-config")
 	if !filepath.IsAbs(serverConfig) || strings.ContainsAny(serverConfig, "\x00\r\n") {
 		return fmt.Errorf("server-config must be an absolute path")
-	}
-	envFile, _ := cmd.Flags().GetString("env-file")
-	// Materialize privately before starting SSH so local errors cannot deliver a
-	// truncated archive that looks like a complete deployment to the receiver.
-	archive, err := os.CreateTemp("", "fleetdeck-source-*.tar")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(archive.Name())
-	defer archive.Close()
-	if err = sourcedeploy.ArchiveWithEnv(dir, archive, envFile); err != nil {
-		return err
-	}
-	if _, err = archive.Seek(0, 0); err != nil {
-		return err
 	}
 	args := []string{"fleetdeck", "--config", serverConfig, "deploy", "receive", "--name", name, "--domain", domain, "--profile", prof.Name, "--timeout", timeout.String()}
 	if noCache {

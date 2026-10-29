@@ -79,6 +79,21 @@ receive
 [ "$(stat -c %a "$base/projects/$name/.env")" = 600 ]
 [ "$(compose exec -T app cat /app/release.txt)" = version-one ]
 compose exec -T app sh -c 'test ! -f /app/.env'
+# A direct receiver invocation must not trust a client's claimed scan. Keep the
+# synthetic credential out of shell logs and verify no existing workload changes.
+python3 - "$base/source/release.txt" <<'PY'
+import hashlib,pathlib,sys
+pathlib.Path(sys.argv[1]).write_text('ghp_'+hashlib.sha256(b'fleetdeck synthetic receiver test').hexdigest()[:36])
+PY
+pack
+if receive > "$base/secret-rejection.log" 2>&1; then echo 'receiver accepted a potential secret'; exit 1; fi
+grep -q 'potential secrets detected' "$base/secret-rejection.log"
+[ "$(compose exec -T app cat /app/release.txt)" = version-one ]
+python3 - "$base/source/release.txt" "$base/secret-rejection.log" <<'PY'
+import pathlib,sys
+assert pathlib.Path(sys.argv[1]).read_text() not in pathlib.Path(sys.argv[2]).read_text()
+PY
+printf 'version-one\n' > "$base/source/release.txt"
 compose exec -T db psql -U fixture -d fixture -c "CREATE TABLE recovery_probe (value text); INSERT INTO recovery_probe VALUES ('before');" >/dev/null
 volume=$(docker volume ls -q --filter "label=com.docker.compose.project=$name" --filter label=com.docker.compose.volume=uploads)
 docker run --rm --network none -v "$volume:/data" alpine:3.21 sh -c 'echo before > /data/marker'
@@ -108,4 +123,4 @@ compose -f "$backup_path/runtime-images.json" up -d --no-build --pull never --wa
 compose stop db >/dev/null
 if receive > "$base/failed-receive.log" 2>&1; then echo 'deployment bypassed failed database backup'; exit 1; fi
 [ "$(cat "$base/projects/$name/release.txt")" = version-one ]
-echo 'Source deployment passed: account, first seed, secret preservation, verified backup, data recovery, old-image rollback, failed-backup refusal.'
+echo 'Source deployment passed: secret rejection, account, first seed, secret preservation, verified backup, data recovery, old-image rollback, failed-backup refusal.'

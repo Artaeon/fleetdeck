@@ -20,9 +20,10 @@ import (
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/edge"
 	"github.com/fleetdeck/fleetdeck/internal/project"
+	"github.com/fleetdeck/fleetdeck/internal/secretscan"
 )
 
-const Protocol = "1"
+const Protocol = "2"
 
 type Options struct {
 	Name, Domain, Profile string
@@ -238,6 +239,14 @@ func (e *Engine) Apply(ctx context.Context, o Options, input io.Reader, progress
 	}
 	files, err := Extract(input, stage)
 	if err != nil {
+		return result, err
+	}
+	// Do not trust a client's claimed scan. Check incoming source independently,
+	// before preserving server credentials, stopping writers or creating backups.
+	scanCtx, cancelScan := context.WithTimeout(ctx, 3*time.Minute)
+	report := secretscan.Files(scanCtx, stage, files)
+	cancelScan()
+	if err = report.RequireClean(); err != nil {
 		return result, err
 	}
 	compose, private, err := Protected(stage)
