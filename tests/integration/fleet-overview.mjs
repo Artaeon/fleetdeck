@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+const library=await import(pathToFileURL(process.env.FLEETDECK_PLAYWRIGHT_MODULE).href);
+const {chromium}=library.default ?? library;
+const origin=process.env.FLEETDECK_UI_TEST_URL;
+assert.equal(new URL(origin).hostname,'127.0.0.1','fixture must use loopback only');
+const browser=await chromium.launch({headless:true,executablePath:process.env.FLEETDECK_BROWSER_EXECUTABLE||undefined});
+try {
+ const context=await browser.newContext();
+ await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(origin);
+ await page.getByText('3 permitted servers',{exact:true}).waitFor();
+ assert.equal(await page.locator('#servers tr').count(),3);
+ assert.equal(await page.evaluate(()=>window.injected),undefined);
+ assert.equal(await page.locator('#servers img').count(),0);
+ assert.equal(await page.getByRole('button',{name:'Project details'}).count(),1);
+ await page.getByRole('button',{name:'Project details'}).click();
+ await page.getByText('example-app',{exact:true}).waitFor();
+ await page.locator('#group').selectOption('staging');
+ assert.equal(await page.locator('#servers tr').count(),1);
+ assert.equal(await page.locator('#detail').isVisible(),false);
+ await page.locator('#group').selectOption('');
+ if(process.env.FLEETDECK_UI_SCREENSHOT)await page.screenshot({path:process.env.FLEETDECK_UI_SCREENSHOT,fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.evaluate(()=>document.body.scrollWidth<=innerWidth+1),'page overflows mobile viewport');
+ await page.route('**/api/fleet',route=>route.fulfill({status:503,body:'unavailable'}));
+ await page.getByRole('button',{name:'Refresh',exact:true}).click();
+ await page.getByText('Current state unavailable. Access may have changed.',{exact:true}).waitFor();
+ assert.equal(await page.locator('#servers tr').count(),0,'stale rows retained after failure');
+ assert.equal(await page.locator('#detail').isVisible(),false);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: server groups, scoped details, escaped labels, failure clearing and mobile layout');
+} finally {await browser.close();}

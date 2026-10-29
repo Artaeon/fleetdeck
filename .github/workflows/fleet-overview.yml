@@ -1,0 +1,44 @@
+name: Private fleet overview
+
+on:
+  pull_request:
+    paths:
+      - 'internal/fleet/**'
+      - 'internal/fleetexport/**'
+      - 'internal/server/**'
+      - 'internal/db/readonly*'
+      - 'cmd/fleet.go'
+      - 'cmd/dashboard.go'
+      - 'tests/integration/fleet-overview.mjs'
+      - '.github/workflows/fleet-overview.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/fleet/**'
+      - 'internal/fleetexport/**'
+      - 'internal/server/**'
+      - 'tests/integration/fleet-overview.mjs'
+      - '.github/workflows/fleet-overview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-fleet:
+    name: Private fleet permissions and browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Install isolated browser test dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/fleet-browser" --ignore-scripts --no-audit --no-fund playwright@1.64.1
+          "$RUNNER_TEMP/fleet-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify permissions, transport, exports and UI with synthetic nodes
+        run: |
+          export FLEETDECK_PLAYWRIGHT_MODULE="$RUNNER_TEMP/fleet-browser/node_modules/playwright/index.mjs"
+          go test -race ./internal/fleet ./internal/fleetexport ./internal/db ./internal/server -run 'TestFleet|TestSnapshot|TestPermissions|TestExport|TestReadOnlyRegistry' -count=1
