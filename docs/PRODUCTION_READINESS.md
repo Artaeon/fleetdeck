@@ -40,7 +40,9 @@ all its containers. Use stronger isolation for mutually untrusted tenants.
 
 ## What remains manual
 
-The setup guides currently require several explicit steps for SSH MFA, Authelia,
+The [setup assistant](SERVER_SETUP.md) inventories existing hosts and offers private
+registry initialization. OS security updates have a separate explicit policy.
+The setup guides still require several steps for SSH MFA, Authelia,
 SMTP, alerts, the watcher and offsite backups. Framework detection generates a
 starting point; it does not validate every CMS plugin, external service or data
 migration. Prefer a rehearsal on a protected preview with synthetic data, then
