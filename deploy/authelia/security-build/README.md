@@ -28,7 +28,10 @@ and database in isolation, verify the storage encryption key with the candidate,
 and retain the previous image/configuration. Preserve the service's non-root
 UID/GID, restrictive mounts, network isolation and HTTPS proxy policy. The image
 retains upstream entrypoint/user defaults; non-root execution is enforced by the
-operator's Compose service. Confirm new authentication and existing registrations
+operator's Compose service. If systemd supervises an attached Compose process, stop/start that unit around
+the image replacement: a parallel `compose up -d` can trigger its restart policy
+and stop the candidate. Preserve the unit and verify its readiness after each
+transition. Confirm new authentication and existing registrations
 before considering the rollout complete. Never downgrade or replace a live identity
 database automatically after new writes.
 
