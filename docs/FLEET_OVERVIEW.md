@@ -112,6 +112,11 @@ an absent registry is an error. Exports omit domains, credentials, filesystem
 paths, raw errors/logs, container IDs and image IDs. Review project names as
 potentially private metadata before granting detail access.
 
+If the host already uses Gatus, the optional
+[local Gatus adapter](../deploy/gatus/README.md) imports its existing observations
+without repeating probes or changing its alert delivery. An unconfigured or
+unavailable monitoring source stays unknown.
+
 Current FleetDeck writers retain SQLite's private `-wal` and `-shm` sidecars so
 exports also work on a read-only filesystem after the last writer closes. After
 upgrading an older installation, run an ordinary registry command once as the
