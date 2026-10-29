@@ -44,6 +44,21 @@ Review these examples for the intended host. They are not installed automaticall
 5. Validate the units, run the import once, and inspect the aggregate result
    before enabling the timer. There is no need to restart existing applications.
 
+### Docker port publishing and the network filter
+
+If Gatus runs in Docker with a loopback-published port, DNAT can make the
+container's address visible to systemd's packet filter. `IPAddressAllow=localhost`
+alone may then time out even though the same request works in an operator shell.
+Inspect the intended container, its pinned image and its loopback port mapping.
+Verify the filtered connection with a temporary unit before adding a service
+drop-in that permits **only that container's exact IPv4 `/32` or IPv6 `/128`**.
+Keep `IPAddressDeny=any`, the loopback allowlist and the adapter's URL validation.
+Do not allow an entire Docker subnet or remove the filter.
+
+Record this private address in the operator runbook. Recreating the container can
+change it; revalidate and update the narrow allowlist after such a change. An
+outdated pin should produce unknown monitoring, not a broader fallback route.
+
 The default interval is 60 seconds; use the shortest expected interval when Gatus
 has mixed schedules. A slower check may correctly become stale rather than appear
 continuously healthy. Gatus and the operator must keep their clocks accurate.
