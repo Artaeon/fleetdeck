@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/fleetdeck/fleetdeck/internal/sourcedeploy"
 	"github.com/fleetdeck/fleetdeck/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -202,7 +203,7 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		asJSON, _ := cmd.Flags().GetBool("json")
 		if asJSON {
-			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"version": Version, "commit": Commit, "os": runtime.GOOS, "arch": runtime.GOARCH, "source_deploy_protocol": "1"})
+			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"version": Version, "commit": Commit, "os": runtime.GOOS, "arch": runtime.GOARCH, "source_deploy_protocol": sourcedeploy.Protocol})
 			return
 		}
 		fmt.Printf("fleetdeck %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
