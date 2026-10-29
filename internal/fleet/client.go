@@ -73,7 +73,7 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid or duplicate fleet node")
 		}
 		seen[n.ID] = true
-		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || u.Opaque != "" || !PrivateAddress(n.Address) {
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Path != "" || u.Opaque != "" || !PrivateAddress(n.Address) {
 			return fmt.Errorf("fleet node requires an HTTPS origin and pinned private IP:port")
 		}
 		_, port, _ := net.SplitHostPort(n.Address)
