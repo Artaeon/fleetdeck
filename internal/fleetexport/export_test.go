@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/db"
+	"github.com/fleetdeck/fleetdeck/internal/monitor"
 	"github.com/fleetdeck/fleetdeck/internal/securitywatch"
 )
 
@@ -39,7 +40,7 @@ func TestExportPreservesFindingsAndExcludesPrivateFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Security.High != 1 || s.Security.Unknown != 1 || s.Security.Status != "unknown" || s.Monitoring.Status != "unknown" || s.Projects[0].LastBackup == nil {
+	if s.Security.High != 1 || s.Security.Unknown != 1 || s.Security.Status != "attention" || s.Monitoring.Status != "unknown" || s.Projects[0].LastBackup == nil {
 		t.Fatalf("lost evidence: %+v", s)
 	}
 	b, _ := json.Marshal(s)
@@ -56,10 +57,66 @@ func TestExportPreservesFindingsAndExcludesPrivateFields(t *testing.T) {
 	if info.Mode().Perm() != 0640 {
 		t.Fatal("export permissions")
 	}
+	state.Report.Images = nil
+	if err := securitywatch.Save(path, state); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Export(d, "alpha", "test", "commit", "", path, now)
+	if err != nil || s.Security.Status != "unknown" || s.Security.Unknown != 1 {
+		t.Fatal("incomplete check without known findings must stay unknown")
+	}
+	state.Report.Images = []securitywatch.Image{{Status: "checked", Findings: []securitywatch.Finding{{Severity: "critical"}}}}
 	state.Report.CheckedAt = now.Add(-48 * time.Hour)
 	securitywatch.Save(path, state)
 	s, err = Export(d, "alpha", "test", "commit", "", path, now)
 	if err != nil || s.Security.Status != "unknown" {
 		t.Fatal("old report promoted")
+	}
+}
+
+func TestExportKeepsKnownMonitoringFailureActionable(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	d, err := db.Open(filepath.Join(dir, "registry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	now := time.Now()
+	failed := monitor.Target{Name: "failed"}
+	missing := monitor.Target{Name: "missing"}
+	state := monitor.MonitorState{
+		Targets: []monitor.Target{failed, missing},
+		Results: map[string]monitor.CheckResult{
+			failed.Name: {Target: failed, CheckedAt: now, Healthy: false},
+		},
+		UpdatedAt: now,
+	}
+	path := filepath.Join(dir, "monitor.json")
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{"current mixed evidence", now, "attention"},
+		{"stale source", now.Add(-10 * time.Minute), "unknown"},
+		{"future source", now.Add(2 * time.Minute), "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state.UpdatedAt = tc.at
+			data, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := Export(d, "alpha", "test", "commit", path, "", now)
+			if err != nil || s.Monitoring.Status != tc.want || s.Monitoring.Unhealthy != 1 || s.Monitoring.Unknown != 1 {
+				t.Fatalf("monitoring evidence: %+v, error: %v", s.Monitoring, err)
+			}
+		})
 	}
 }

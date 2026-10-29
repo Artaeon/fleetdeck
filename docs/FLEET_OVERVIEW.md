@@ -265,6 +265,8 @@ There is no `fleetdeck cluster create` command in this release.
   Previously received success is not retained as current after a failed refresh.
 * Monitoring and security timestamps remain separate. Old scan evidence is
   unknown after 26 hours; an unknown release/host/image check stays visible.
+  Current known failures or findings show `attention` even when another check
+  is incomplete; the unknown count remains visible. Stale evidence stays unknown.
   Findings may overlap across images. A fresh export is not a fresh scan.
 * Registry status is recorded state, not a Docker health probe. A backup timestamp
   is a database record, not a verified file, offsite copy or restoration test.
