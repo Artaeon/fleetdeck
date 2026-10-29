@@ -1,0 +1,50 @@
+name: Authelia maintenance image
+
+on:
+  pull_request:
+    paths:
+      - deploy/authelia/security-build/**
+      - tests/integration/authelia-login.*
+      - .github/workflows/authelia-maintenance.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/authelia/security-build/**
+      - tests/integration/authelia-login.*
+      - .github/workflows/authelia-maintenance.yml
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authelia-maintenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authentication-image:
+    name: Patched identity image and real login
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Build CLI and reviewed provider image
+        run: |
+          go build -trimpath -o /tmp/fleetdeck-auth-maintenance .
+          docker build --pull -t fleetdeck-authelia-maintenance:ci deploy/authelia/security-build
+      - name: Check known image vulnerabilities, including unfixed findings
+        run: |
+          image=$(docker image inspect --format '{{.Id}}' fleetdeck-authelia-maintenance:ci)
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --timeout 10m "$image"
+      - name: Verify password, passkey and OIDC with synthetic identities
+        run: |
+          image=$(docker image inspect --format '{{.Id}}' fleetdeck-authelia-maintenance:ci)
+          sudo env FLEETDECK_BINARY=/tmp/fleetdeck-auth-maintenance \
+            FLEETDECK_AUTHELIA_IMAGE="$image" tests/integration/authelia-login.sh
