@@ -90,9 +90,9 @@ Host github.com
 		{"myserver.com", keyPath},
 		{"app.work.io", key2Path},
 		{"other.work.io", key2Path},
-		{"github.com", ""},          // key file doesn't exist
-		{"unknown.com", ""},          // no matching host
-		{"work.io", ""},              // *.work.io doesn't match work.io
+		{"github.com", ""},  // key file doesn't exist
+		{"unknown.com", ""}, // no matching host
+		{"work.io", ""},     // *.work.io doesn't match work.io
 	}
 
 	for _, tt := range tests {
@@ -187,10 +187,10 @@ func TestFindSSHKey_CustomKeyFromConfig(t *testing.T) {
 	os.WriteFile(customKeyPath, []byte(keyContent), 0600)
 
 	// Write SSH config pointing to custom key
-	config := "Host 164.68.121.198\n    IdentityFile " + customKeyPath + "\n"
+	config := "Host 192.0.2.10\n    IdentityFile " + customKeyPath + "\n"
 	os.WriteFile(filepath.Join(sshDir, "config"), []byte(config), 0644)
 
-	data := findSSHKey("164.68.121.198")
+	data := findSSHKey("192.0.2.10")
 	if data == nil {
 		t.Fatal("expected to find SSH key from config, got nil")
 	}
