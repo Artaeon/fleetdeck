@@ -12,10 +12,28 @@ func SSHMFASettings(user string) (string, error) {
 // ApplySSHMFA supports the standard Debian/Ubuntu PAM stack on a dedicated
 // key-only host. Enrollment is deliberately a separate human terminal action.
 func ApplySSHMFA(runner CommandRunner, user string) error {
+	return ApplySSHMFAWithOptions(runner, user, SSHMFAOptions{})
+}
+
+// DisableRootLogin transitions an existing root-key host in the same reversible
+// transaction. The operator must first prove access and sudo as the enrolled user.
+type SSHMFAOptions struct {
+	DisableRootLogin bool
+}
+
+func ApplySSHMFAWithOptions(runner CommandRunner, user string, options SSHMFAOptions) error {
 	settings, err := SSHMFASettings(user)
 	if err != nil {
 		return err
 	}
+	rootPolicyCheck := "/usr/sbin/sshd -T | grep -qx 'permitrootlogin no'"
+	rootPolicyPrefix := ""
+	if options.DisableRootLogin {
+		// Never accept a password-capable root policy during this transition.
+		rootPolicyCheck = "/usr/sbin/sshd -T | grep -Eq '^permitrootlogin (no|without-password|prohibit-password)$'"
+		rootPolicyPrefix = "PermitRootLogin no\n"
+	}
+
 	script := `set -eu
 exec 9>/run/fleetdeck-ssh.lock
 flock -x 9
@@ -23,12 +41,12 @@ test ! -e /run/fleetdeck-ssh-trial
 test ! -e /var/lib/fleetdeck-ssh-mfa-trial
 test ! -e /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
 name=` + quoteShell(user) + `
-id "$name" >/dev/null
+test "$(id -u "$name")" -ne 0
 dpkg-query -W -f='${Status}' libpam-google-authenticator | grep -qx 'install ok installed'
 /usr/sbin/sshd -T | grep -qx 'usepam yes'
 /usr/sbin/sshd -T | grep -qx 'passwordauthentication no'
 /usr/sbin/sshd -T | grep -qx 'kbdinteractiveauthentication no'
-/usr/sbin/sshd -T | grep -qx 'permitrootlogin no'
+` + rootPolicyCheck + `
 python3 - "$name" <<'CHECK'
 import pathlib,re,stat,sys
 user=sys.argv[1]
@@ -93,13 +111,14 @@ BOOT
 systemctl daemon-reload
 systemctl enable fleetdeck-ssh-mfa-recovery.service
 systemd-run --quiet --collect --unit=fleetdeck-ssh-mfa-rollback --on-active=5m --timer-property=AccuracySec=1s /bin/sh "$trial/rollback.sh"
-printf 'LoginGraceTime 120\n' > "$trial/candidate"
+printf '%s' ` + quoteShell(rootPolicyPrefix+"LoginGraceTime 120\n") + ` > "$trial/candidate"
 cat "$trial/sshd.previous" >> "$trial/candidate"
 printf '%s' ` + quoteShell(settings) + ` >> "$trial/candidate"
 /usr/sbin/sshd -t -f "$trial/candidate"
 /usr/sbin/sshd -T -f "$trial/candidate" -C "user=$name,host=localhost,addr=127.0.0.1" | grep -qx 'authenticationmethods publickey,keyboard-interactive:pam'
 /usr/sbin/sshd -T -f "$trial/candidate" -C "user=$name,host=localhost,addr=127.0.0.1" | grep -qx 'kbdinteractiveauthentication yes'
 /usr/sbin/sshd -T -f "$trial/candidate" | grep -qx 'logingracetime 120'
+/usr/sbin/sshd -T -f "$trial/candidate" -C 'user=root,host=localhost,addr=127.0.0.1' | grep -qx 'permitrootlogin no'
 python3 - <<'PAM'
 from pathlib import Path
 path=Path('/etc/pam.d/sshd')
@@ -125,6 +144,7 @@ trial=/var/lib/fleetdeck-ssh-mfa-trial
 test -f "$trial/user"
 systemctl is-active --quiet fleetdeck-ssh-mfa-rollback.timer
 name=$(cat "$trial/user")
+/usr/sbin/sshd -T -C 'user=root,host=localhost,addr=127.0.0.1' | grep -qx 'permitrootlogin no'
 /usr/sbin/sshd -T -C "user=$name,host=localhost,addr=127.0.0.1" | grep -qx 'authenticationmethods publickey,keyboard-interactive:pam'
 python3 - <<'VERIFY'
 import json,subprocess
