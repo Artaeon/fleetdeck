@@ -24,6 +24,11 @@ docker run -d --name "$name-server" --network "$name" --cap-drop ALL --security-
     -v "$FLEETDECK_TRANSPORT_FIXTURE:/fixture:ro" --entrypoint /fixture alpine:3.21 >/dev/null
 docker run -d --name "$name-peer" --network "$name" --cap-drop ALL --security-opt no-new-privileges alpine:3.21 sleep 300 >/dev/null
 pid=$(docker inspect --format '{{.State.Pid}}' "$name-server")
+if test "$pid" -le 0; then
+    docker logs "$name-server"
+    echo 'Fixture exited; build a static Linux binary with CGO_ENABLED=0'
+    exit 1
+fi
 started=$(docker inspect --format '{{.State.StartedAt}}' "$name-server")
 old_mptcp=$(nsenter -t "$pid" -n sysctl -n net.mptcp.enabled)
 probe() {
