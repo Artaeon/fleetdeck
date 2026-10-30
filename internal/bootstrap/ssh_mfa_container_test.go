@@ -13,6 +13,14 @@ func TestContainerSSHMFAAndRecovery(t *testing.T) {
 	if os.Getenv("FLEETDECK_SSH_MFA_CONTAINER_TEST") != "1" {
 		t.Skip("opt-in disposable Linux SSH/PAM test")
 	}
+	for _, transition := range []bool{false, true} {
+		t.Run(fmt.Sprintf("root-transition-%t", transition), func(t *testing.T) {
+			testContainerSSHMFAAndRecovery(t, transition)
+		})
+	}
+}
+
+func testContainerSSHMFAAndRecovery(t *testing.T, transition bool) {
 	name := fmt.Sprintf("fleetdeck-mfa-test-%d", time.Now().UnixNano())
 	out, err := exec.Command("docker", "run", "-d", "--rm", "--name", name, "--memory=384m", "--cpus=1", "debian:bookworm-slim", "sleep", "600").CombinedOutput()
 	if err != nil {
@@ -53,6 +61,15 @@ PubkeyAuthentication yes
 PermitEmptyPasswords no
 LoginGraceTime 30
 CONFIG
+useradd -m -s /bin/bash testautomation
+passwd -d testautomation >/dev/null
+install -d -m 0700 -o testautomation -g testautomation /home/testautomation/.ssh
+printf 'restrict,command="printf automation-ok" ' > /home/testautomation/.ssh/authorized_keys
+cat /run/client-key.pub >> /home/testautomation/.ssh/authorized_keys
+chown testautomation:testautomation /home/testautomation/.ssh/authorized_keys
+chmod 0600 /home/testautomation/.ssh/authorized_keys
+install -d -m 0700 /root/.ssh
+cp /run/client-key.pub /root/.ssh/authorized_keys
 cp /etc/ssh/sshd_config /run/original-sshd
 cp /etc/pam.d/sshd /run/original-pam
 install -d -m 0700 /etc/fleetdeck/ssh-mfa
@@ -96,12 +113,39 @@ cat /run/askpass-value
 SH
 chmod 0755 /usr/local/bin/systemctl /usr/local/bin/systemd-run /usr/local/bin/journalctl /run/askpass
 `)
+	apply := func() error {
+		return ApplySSHMFAWithOptions(r, "testoperator", SSHMFAOptions{DisableRootLogin: transition})
+	}
+	rootLogin := `ssh -p 2222 -i /run/client-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1 'id -un'`
+	automation := `ssh -p 2222 -i /run/client-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testautomation@127.0.0.1 ignored`
+	if transition {
+		// An include takes precedence over the main file's existing root policy.
+		run(`mkdir -p /etc/ssh/sshd_config.d
+printf 'PermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/00-fixture.conf
+sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+cp /etc/ssh/sshd_config /run/original-sshd
+systemctl reload ssh.service`)
+		run(rootLogin)
+		if err := ApplySSHMFA(r, "testoperator"); err == nil {
+			t.Fatal("root transition accepted without explicit option")
+		}
+		run("cmp /run/original-sshd /etc/ssh/sshd_config; test ! -e /var/lib/fleetdeck-ssh-mfa-trial")
+	}
+	if out := run(automation); !strings.Contains(out, "automation-ok") {
+		t.Fatal("automation fixture did not execute its forced command")
+	}
 	keyOnly := `ssh -p 2222 -i /run/client-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null testoperator@127.0.0.1 'id -un'`
 	run(keyOnly)
-	if err := ApplySSHMFA(r, "testoperator"); err != nil {
+	if err := apply(); err != nil {
 		t.Fatal(err)
 	}
 	run("/usr/sbin/sshd -T | grep -qx 'logingracetime 120'")
+	if _, err := r.Run(rootLogin); err == nil {
+		t.Fatal("root SSH remained available during MFA trial")
+	}
+	if out := run(automation); !strings.Contains(out, "automation-ok") {
+		t.Fatal("MFA trial changed restricted automation access")
+	}
 	if _, err := r.Run(keyOnly); err == nil {
 		t.Fatal("key alone bypassed MFA")
 	}
@@ -129,12 +173,12 @@ PY`)
 	}
 	run("test ! -e /run/test-mfa-timer; test ! -e /var/lib/fleetdeck-ssh-mfa-trial")
 	run(`cp /run/original-sshd /etc/ssh/sshd_config; cp /run/original-pam /etc/pam.d/sshd; systemctl reload ssh.service; mv /etc/fleetdeck/ssh-mfa/testoperator /run/enrolled-secret`)
-	if err := ApplySSHMFA(r, "testoperator"); err == nil {
+	if err := apply(); err == nil {
 		t.Fatal("applied without enrollment")
 	}
 	run(keyOnly)
 	run(`mv /run/enrolled-secret /etc/fleetdeck/ssh-mfa/testoperator; echo 2 > /run/timer-delay`)
-	if err := ApplySSHMFA(r, "testoperator"); err != nil {
+	if err := apply(); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(15 * time.Second)
@@ -146,10 +190,13 @@ PY`)
 	}
 	run("cmp /run/original-sshd /etc/ssh/sshd_config; cmp /run/original-pam /etc/pam.d/sshd")
 	run(keyOnly)
+	if transition {
+		run(rootLogin)
+	}
 	// Simulate boot: the transient timer and old daemon are gone, while the
 	// persistent trial and boot recovery command remain available.
 	run("echo 45 > /run/timer-delay")
-	if err := ApplySSHMFA(r, "testoperator"); err != nil {
+	if err := apply(); err != nil {
 		t.Fatal(err)
 	}
 	run(`test -f /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
@@ -161,4 +208,7 @@ cmp /run/original-pam /etc/pam.d/sshd
 test ! -e /etc/systemd/system/fleetdeck-ssh-mfa-recovery.service
 /usr/sbin/sshd -E /run/sshd-auth.log`)
 	run(keyOnly)
+	if transition {
+		run(rootLogin)
+	}
 }
