@@ -52,6 +52,25 @@ fleetdeck server ssh-mfa preview --user operator
 sudo fleetdeck server ssh-mfa apply --user operator
 ```
 
+On an existing key-only server that still permits root SSH, first prepare a
+non-root administrator with the intended public key and prove a **fresh** login
+and `sudo -n true` as that account. Then use:
+
+```sh
+sudo fleetdeck server ssh-mfa apply --user operator --disable-root-login
+```
+
+This explicit option disables root SSH and enables the operator's second factor
+in the **same** rollback-protected transaction. An unconfirmed trial restores
+both the previous root policy and PAM configuration; no separate root-lockout
+step is needed. Password-capable root policies are rejected. The override is
+placed before existing includes, and the effective root policy is checked before
+activation and confirmation. Only the selected operator is enrolled: inventory
+other SSH accounts and unrestricted keys first. Restricted forced-command
+automation identities retain their key-only access; they must not provide an
+unrestricted shell or general sudo access. Keep the original session open until
+the fresh key-plus-code login succeeds, then close it.
+
 The trial checks current key-only/root-disabled policy, enrollment and PAM layout,
 saves the original SSH and PAM files, and arms rollback **before** changing them.
 It requires both public key and PAM keyboard-interactive authentication for the
