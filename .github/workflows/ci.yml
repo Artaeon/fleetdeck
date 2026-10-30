@@ -108,6 +108,10 @@ jobs:
           sudo tests/integration/ipv4-options.sh
           go run -tags=integration tests/integration/origin_fixture.go > /tmp/fleetdeck-origin-test.nft
           sudo tests/integration/origin-firewall.sh /tmp/fleetdeck-origin-test.nft
+      - name: Verify firewall installation preserves Docker
+        run: |
+          go build -tags=integration -o /tmp/fleetdeck-firewall-service-test tests/integration/firewall_service_fixture.go
+          sudo env FLEETDECK_INTEGRATION=true /tmp/fleetdeck-firewall-service-test
       - name: Run deploy integration tests
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:

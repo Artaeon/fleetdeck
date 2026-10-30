@@ -21,7 +21,7 @@ func TestDockerFirewallStopsOnInvalidRules(t *testing.T) {
 
 func TestDockerFirewallFailureStopsBootstrap(t *testing.T) {
 	runner := newMockRunner()
-	runner.failOn["restart fleetdeck-firewall"] = fmt.Errorf("failed")
+	runner.failOn["systemctl reload fleetdeck-firewall"] = fmt.Errorf("failed")
 	result, err := Bootstrap(Config{Domain: "example.com"}, runner)
 	if err == nil || result.FirewallConfigured || result.TraefikConfigured {
 		t.Fatalf("unsafe bootstrap: %+v %v", result, err)
