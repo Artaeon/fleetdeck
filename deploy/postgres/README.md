@@ -1,12 +1,12 @@
 # PostgreSQL with an explicit non-root startup user
 
-This optional recipe derives from a pinned official PostgreSQL 17 Alpine image,
-removes the unused `gosu` privilege-switching helper and sets user/group `70:70`.
-It preserves the upstream database binaries and entrypoint. It does not patch
+These optional recipes derive from pinned official PostgreSQL 15 and 17 Alpine
+images, remove the unused `gosu` privilege-switching helper and set user/group `70:70`.
+They preserve the upstream database binaries and entrypoint. They do not patch
 PostgreSQL itself or claim that the remaining image has no vulnerabilities.
 
-Use it only for PostgreSQL 17 installations whose data and socket directories
-are already writable by UID/GID 70. Existing initialized Alpine volumes normally
+Use the recipe matching the existing PostgreSQL major version. The data and
+socket directories must already be writable by UID/GID 70. Existing initialized Alpine volumes normally
 use that identity; verify ownership and PostgreSQL major version yourself. A
 blank Docker volume may be root-owned and must be provisioned before use. Do not
 recursively change ownership of an unknown or mounted production database.
@@ -14,8 +14,13 @@ This recipe deliberately cannot initialize data by starting as root and dropping
 privileges. Do not override it with `user: root`.
 
 ```sh
-docker build -t local/postgres-nonroot:reviewed deploy/postgres
-tests/integration/postgres-nonroot.sh local/postgres-nonroot:reviewed
+# PostgreSQL 17
+docker build -t local/postgres-nonroot:17-reviewed deploy/postgres
+tests/integration/postgres-nonroot.sh local/postgres-nonroot:17-reviewed 17
+
+# PostgreSQL 15: preserve the major version of an existing installation.
+docker build -f deploy/postgres/Dockerfile.15 -t local/postgres-nonroot:15-reviewed deploy/postgres
+tests/integration/postgres-nonroot.sh local/postgres-nonroot:15-reviewed 15
 ```
 
 The test starts two temporary databases without network access or host ports,
@@ -47,5 +52,14 @@ volume. See [database identification](../../docs/PROJECT_DEPLOY.md#custom-databa
 
 This is an operator-maintained derived image. FleetDeck does not publish it,
 automatically rebuild it, or silently replace database images. Review new
-upstream PostgreSQL 17 releases, pin their digest, rerun the tests and rescan.
+upstream releases for the selected PostgreSQL major, pin their digest, rerun the
+tests and rescan.
 Major-version upgrades require their own migration procedure.
+
+A single database instance must be recreated to run a new image. This recipe is
+not a zero-downtime rollout mechanism. If the service must remain online, prepare
+and validate a replica/failover plan first; do not restart the only writer or
+attach its live data directory to a second PostgreSQL process. A dump/restore
+fixture proves recoverability, not replication, failover or ongoing-write safety.
+Build, scan and sign production artifacts in the project's reviewed release
+pipeline; the local commands above are for qualification.
