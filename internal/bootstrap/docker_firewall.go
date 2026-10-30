@@ -41,7 +41,8 @@ func ConfigureDockerFirewall(runner CommandRunner) error {
 		"cat > /etc/systemd/system/docker.service.d/fleetdeck-firewall.conf <<'FLEETDECK_EOF'\n[Unit]\nRequires=fleetdeck-firewall.service\nAfter=fleetdeck-firewall.service\nFLEETDECK_EOF",
 		"systemctl daemon-reload",
 		"systemctl enable fleetdeck-firewall.service",
-		"systemctl restart fleetdeck-firewall.service",
+		// Restarting a required unit can stop Docker and its containers.
+		"if systemctl is-active --quiet fleetdeck-firewall.service; then systemctl reload fleetdeck-firewall.service; else systemctl start fleetdeck-firewall.service; fi",
 	}
 	for _, command := range commands {
 		if _, err := runner.Run(command); err != nil {
