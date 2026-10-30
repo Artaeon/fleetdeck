@@ -42,6 +42,11 @@ Validate web, application-to-database, DNS and outbound dependencies after a cha
 
 ## MPTCP inspection and its limits
 
+For reviewed Docker hosts, the optional [container transport guard](../deploy/transport/README.md)
+adds namespace-local IPv4-option filtering without restarting applications. It
+includes independent timed rollback and real DNS/packet tests. Read its limits:
+existing sockets remain open and newly created namespaces have a startup window.
+
 FleetDeck explicitly requests ordinary TCP for its dashboard and observer listeners,
 including HTTPS/mTLS. This avoids depending on Go's MPTCP defaults. Other Go services
 can still create MPTCP listeners; audit them separately.
