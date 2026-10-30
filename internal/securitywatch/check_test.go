@@ -126,6 +126,18 @@ func TestMismatchedScanAndStaleIndexesAreUnknown(t *testing.T) {
 	}
 }
 
+func TestImageScanUsesConfiguredBudgetAndSequentialLayers(t *testing.T) {
+	c, r := testChecker(t, "")
+	c.ScanTimeout = 15 * time.Minute
+	if result := c.scan(context.Background(), imageID); result.Status != "checked" {
+		t.Fatal(result)
+	}
+	args := strings.Join(r.calls[len(r.calls)-1], " ")
+	if !strings.Contains(args, "--timeout 15m0s") || !strings.Contains(args, "--parallel 1") {
+		t.Fatal(args)
+	}
+}
+
 type provider struct {
 	name string
 	fail bool

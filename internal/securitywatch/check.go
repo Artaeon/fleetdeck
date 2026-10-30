@@ -274,7 +274,9 @@ func (c *Checker) scan(ctx context.Context, id string) Image {
 	result := Image{ID: id, Status: "unknown", Findings: []Finding{}}
 	ctx, cancel := context.WithTimeout(ctx, c.ScanTimeout)
 	defer cancel()
-	data, err := c.Runner.Run(ctx, "trivy", "image", "--quiet", "--scanners", "vuln", "--format", "json", "--severity", "HIGH,CRITICAL", "--exit-code", "0", "--image-src", "docker", "--timeout", c.ScanTimeout.String(), "--", id)
+	// Keep layer analysis sequential: parallel extraction of large images can
+	// exhaust a small VPS's memory even though images are scanned one at a time.
+	data, err := c.Runner.Run(ctx, "trivy", "image", "--quiet", "--scanners", "vuln", "--format", "json", "--severity", "HIGH,CRITICAL", "--exit-code", "0", "--image-src", "docker", "--parallel", "1", "--timeout", c.ScanTimeout.String(), "--", id)
 	if err != nil {
 		result.Code = "vulnerability_scan_failed_or_unavailable"
 		return result
