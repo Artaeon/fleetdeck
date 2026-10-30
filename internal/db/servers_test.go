@@ -27,7 +27,7 @@ func TestCreateAndGetServer(t *testing.T) {
 
 	s := &Server{
 		Name:    "prod",
-		Host:    "164.68.121.198",
+		Host:    "192.0.2.10",
 		Port:    "22",
 		User:    "root",
 		KeyPath: "/home/user/.ssh/id_ed25519",
@@ -47,8 +47,8 @@ func TestCreateAndGetServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetServer: %v", err)
 	}
-	if got.Host != "164.68.121.198" {
-		t.Errorf("expected host 164.68.121.198, got %q", got.Host)
+	if got.Host != "192.0.2.10" {
+		t.Errorf("expected host 192.0.2.10, got %q", got.Host)
 	}
 	if got.User != "root" {
 		t.Errorf("expected user root, got %q", got.User)

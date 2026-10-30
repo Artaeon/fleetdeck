@@ -22,7 +22,7 @@ var serverAddCmd = &cobra.Command{
 The server is tested for SSH connectivity during registration.
 
 Examples:
-  fleetdeck server add prod root@164.68.121.198
+  fleetdeck server add prod root@192.0.2.10
   fleetdeck server add staging deploy@staging.example.com --port 2222
   fleetdeck server add dev root@10.0.0.5 --key ~/.ssh/dev_key`,
 	Args: cobra.ExactArgs(2),
