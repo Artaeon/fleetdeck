@@ -1,0 +1,12 @@
+# Temporary exposure reduction for a reviewed public interface, not a CVE fix.
+# Replace public0 with the audited external interface. Ordinary IPv4 and IPv6
+# traffic is unchanged; IPv4 packets carrying header options are discarded.
+# Take a snapshot and arm an independent rollback before loading this example.
+# Own only this table; never flush the ruleset, UFW, or Docker tables.
+destroy table inet fleetdeck_packet_guard
+table inet fleetdeck_packet_guard {
+    chain ingress {
+        type filter hook prerouting priority -310; policy accept;
+        iifname "public0" ip hdrlength > 5 counter drop
+    }
+}
