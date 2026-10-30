@@ -7,6 +7,10 @@ sandbox: Docker containers share a kernel, and a rootful Docker daemon can mount
 host paths or start privileged containers. Use separate VMs/hosts or a separately
 reviewed rootless runtime for mutually untrusted tenants.
 
+For a kernel vulnerability awaiting a vendor update, follow the
+[exposure review and timed-change runbook](KERNEL_EXPOSURE.md). Firewall rules
+and authentication are additional protections, not replacements for kernel fixes.
+
 ## Firewall
 
 Fresh `fleetdeck server setup` runs stop if firewall setup fails, before starting
