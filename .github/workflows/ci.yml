@@ -116,6 +116,10 @@ jobs:
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
           FLEETDECK_INTEGRATION: "true"
+      - name: Verify container namespace policy and timed rollback
+        run: |
+          go build -tags=integration -o /tmp/fleetdeck-transport-fixture tests/integration/transport_fixture.go
+          sudo env FLEETDECK_TRANSPORT_FIXTURE=/tmp/fleetdeck-transport-fixture tests/integration/container-transport.sh
       - name: Verify optional non-root PostgreSQL image and restore
         run: |
           docker build -t fleetdeck-postgres-nonroot:test deploy/postgres
