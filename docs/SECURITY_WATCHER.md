@@ -20,8 +20,15 @@ The watcher inspects only required Docker fields and never fetches container
 `Env`. Reports contain IDs and finding codes, not environment values or scan
 output. Read access to Docker is nevertheless host-administration authority.
 
-Limits: 200 running containers, 100 unique images, five minutes per image and
-30 minutes overall. Larger inventories or timed-out scans are incomplete.
+Limits: 200 running containers and 100 unique images. The CLI defaults to five
+minutes per image and 30 minutes overall. Use `--scan-timeout` (1–30 minutes)
+and `--timeout` (5 minutes–2 hours, at least the per-image budget) for larger
+images. Images and their layer analysis run sequentially to limit memory use.
+The supplied service allows 15 minutes per image and one hour overall, with a
+512 MiB Go heap target and a 1 GiB service memory limit. The heap target is not
+a hard process memory cap. Larger inventories or timed-out scans are incomplete.
+Keep systemd's `TimeoutStartSec` above the CLI budget so FleetDeck can save and
+notify about an incomplete report; a forced service termination cannot do so.
 Stopped images, source trees, dependency lockfiles, browser assets, runtime-only
 plugins, host configuration vulnerabilities and unknown exploits are not fully
 covered. Use application CI scanners and an independent external monitor too.
