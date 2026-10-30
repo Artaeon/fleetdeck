@@ -1,0 +1,7 @@
+# Same-major alternative for existing PostgreSQL 15 installations.
+# Review and scan a new upstream digest before updating this pin.
+FROM postgres:15-alpine@sha256:54e0dd8e8cddcdbb9156c2486eed5a43eccb7214d7c6828097d41ce049fb3984
+USER root
+# Startup as UID 70 makes the upstream root-to-postgres helper unnecessary.
+RUN rm /usr/local/bin/gosu
+USER 70:70

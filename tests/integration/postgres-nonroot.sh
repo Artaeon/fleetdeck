@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Only task-owned containers with volatile databases; no host ports or volumes.
 set -euo pipefail
-image=${1:?Usage: postgres-nonroot.sh IMAGE}
+image=${1:?Usage: postgres-nonroot.sh IMAGE [EXPECTED_MAJOR]}
+expected_major=${2:-17}
 base=$(mktemp -d)
 name="fleetdeck-pg-nonroot-$$"
 cleanup() {
@@ -19,11 +20,15 @@ for suffix in source restore; do
     -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=fixture \
     -e POSTGRES_DB=fixture "$image" >/dev/null
   for attempt in $(seq 1 60); do
-    if docker exec "$name-$suffix" pg_isready -U fixture -d fixture >/dev/null 2>&1; then break; fi
+    # initdb briefly starts a temporary server; wait for the final PID 1 too.
+    if [ "$(docker exec "$name-$suffix" cat /proc/1/comm 2>/dev/null || true)" = postgres ] &&
+       docker exec "$name-$suffix" pg_isready -U fixture -d fixture >/dev/null 2>&1; then break; fi
     if [ "$attempt" = 60 ]; then echo 'Database did not become ready' >&2; exit 1; fi
     sleep 1
   done
   test "$(docker exec "$name-$suffix" id -u)" = 70
+  version=$(docker exec "$name-$suffix" psql -X -At -U fixture -d fixture -c 'SHOW server_version_num')
+  test "$((version / 10000))" -eq "$expected_major"
   docker exec "$name-$suffix" sh -c 'test ! -e /usr/local/bin/gosu'
 done
 docker exec "$name-source" psql -X -v ON_ERROR_STOP=1 -U fixture -d fixture \

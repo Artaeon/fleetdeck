@@ -124,8 +124,12 @@ jobs:
           sudo env FLEETDECK_TRANSPORT_FIXTURE=/tmp/fleetdeck-transport-fixture tests/integration/container-transport.sh
       - name: Verify optional non-root PostgreSQL image and restore
         run: |
-          docker build -t fleetdeck-postgres-nonroot:test deploy/postgres
-          tests/integration/postgres-nonroot.sh fleetdeck-postgres-nonroot:test
+          for variant in 17 15; do
+            recipe=deploy/postgres/Dockerfile
+            if [ "$variant" = 15 ]; then recipe=deploy/postgres/Dockerfile.15; fi
+            docker build -f "$recipe" -t "fleetdeck-postgres-nonroot:${variant}-test" deploy/postgres
+            tests/integration/postgres-nonroot.sh "fleetdeck-postgres-nonroot:${variant}-test" "$variant"
+          done
       - name: Verify project accounts and CLI proxy routes
         run: |
           go build -o /tmp/fleetdeck-cli-integration .
