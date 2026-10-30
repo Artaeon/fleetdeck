@@ -486,12 +486,7 @@ func (s *Server) Start() error {
 		}
 	}
 	log.Printf("FleetDeck dashboard starting on %s", s.server.Addr)
-	var err error
-	if s.server.TLSConfig != nil {
-		err = s.server.ListenAndServeTLS("", "")
-	} else {
-		err = s.server.ListenAndServe()
-	}
+	err := ServeHTTP(s.server)
 	if err != nil && err != http.ErrServerClosed {
 		return err
 	}

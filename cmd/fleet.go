@@ -79,7 +79,7 @@ var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snaps
 			s.Shutdown(c)
 		}()
 		fmt.Fprintln(cmd.OutOrStdout(), "Read-only observer; no shell, Docker or deployment access.")
-		err = s.ListenAndServeTLS("", "")
+		err = server.ServeHTTP(s)
 		if err == http.ErrServerClosed {
 			return nil
 		}
