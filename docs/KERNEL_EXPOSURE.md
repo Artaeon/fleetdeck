@@ -107,7 +107,10 @@ No exploit traffic is needed to validate these boundaries.
 5. From an independent client, verify fresh SSH transport, expected public HTTPS,
    protected login behavior and denied direct/private ports. Also verify container
    health, DNS, database connections and monitoring against the baseline.
-6. Persist only after these checks pass. Cancel the timer last. A callback already
+6. Persist only after these checks pass. Start or reload firewall units; restarting
+   a unit required by Docker can stop Docker and its containers. On rollback,
+   remove new dependency drop-ins and reload systemd before stopping a new policy
+   unit. Check the Docker process identity as well as application health. Cancel the timer last. A callback already
    queued at the deadline must not undo a confirmed transaction. Retain a manual
    rollback that restores files, enablement, runtime rules and sysctls.
 7. Recheck the distribution fix and plan the reboot. Record remaining exposure,
