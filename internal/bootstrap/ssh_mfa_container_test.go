@@ -143,6 +143,24 @@ systemctl reload ssh.service`)
 	if _, err := r.Run(rootLogin); err == nil {
 		t.Fatal("root SSH remained available during MFA trial")
 	}
+	// A root-owned Match policy keeps the automation boundary even if the
+	// service account can replace its own authorized_keys file.
+	run(`cat > /usr/local/bin/automation-policy <<'SH'
+#!/bin/sh
+printf automation-ok
+SH
+chmod 0755 /usr/local/bin/automation-policy
+cat >> /etc/ssh/sshd_config <<'CONFIG'
+
+Match User testautomation
+    ForceCommand /usr/local/bin/automation-policy
+    DisableForwarding yes
+    PermitTTY no
+CONFIG
+/usr/sbin/sshd -t
+systemctl reload ssh.service
+su -s /bin/sh testautomation -c 'cat > ~/.ssh/authorized_keys' < /run/client-key.pub
+`)
 	if out := run(automation); !strings.Contains(out, "automation-ok") {
 		t.Fatal("MFA trial changed restricted automation access")
 	}
