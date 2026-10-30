@@ -23,6 +23,11 @@ var securityCheckCmd = &cobra.Command{
 		repo, _ := cmd.Flags().GetString("repository")
 		failFindings, _ := cmd.Flags().GetBool("fail-on-findings")
 		sourceBranch, _ := cmd.Flags().GetString("source-branch")
+		scanTimeout, _ := cmd.Flags().GetDuration("scan-timeout")
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		if err := validateSecurityTimeouts(scanTimeout, timeout); err != nil {
+			return err
+		}
 		if repo == "" {
 			repo = ReleaseRepository
 		}
@@ -49,10 +54,11 @@ var securityCheckCmd = &cobra.Command{
 				return err
 			}
 		}
-		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 		defer cancel()
 		checker := securitywatch.New()
 		checker.SourceBranch, checker.SourceCommit = sourceBranch, Commit
+		checker.ScanTimeout = scanTimeout
 		report := checker.Run(ctx, repo, Version)
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
 			return err
@@ -86,7 +92,19 @@ var securityCheckCmd = &cobra.Command{
 	},
 }
 
+func validateSecurityTimeouts(scan, total time.Duration) error {
+	if scan < time.Minute || scan > 30*time.Minute {
+		return fmt.Errorf("--scan-timeout must be between 1m and 30m")
+	}
+	if total < 5*time.Minute || total > 2*time.Hour || total < scan {
+		return fmt.Errorf("--timeout must be between 5m and 2h and at least --scan-timeout")
+	}
+	return nil
+}
+
 func init() {
+	securityCheckCmd.Flags().Duration("scan-timeout", 5*time.Minute, "Maximum time for each image scan (1m–30m)")
+	securityCheckCmd.Flags().Duration("timeout", 30*time.Minute, "Maximum time for all checks (5m–2h, at least scan-timeout)")
 	securityCheckCmd.Flags().String("repository", "", "FleetDeck release repository (defaults to this build's repository)")
 	securityCheckCmd.Flags().String("source-branch", "", "For dev builds only: compare the embedded full commit with this branch instead of a numbered release")
 	securityCheckCmd.Flags().String("state-file", "", "Private report and notification delivery state")
