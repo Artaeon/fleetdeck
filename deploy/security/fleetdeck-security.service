@@ -14,8 +14,9 @@ StateDirectoryMode=0700
 CacheDirectory=fleetdeck-security
 CacheDirectoryMode=0700
 Environment=TRIVY_CACHE_DIR=/var/cache/fleetdeck-security
-ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/security.toml security check --state-file /var/lib/fleetdeck-security/state.json --server-label server --notify
-TimeoutStartSec=35min
+Environment=GOMEMLIMIT=512MiB
+ExecStart=/usr/local/bin/fleetdeck --config /etc/fleetdeck/security.toml security check --scan-timeout 15m --timeout 1h --state-file /var/lib/fleetdeck-security/state.json --server-label server --notify
+TimeoutStartSec=65min
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
