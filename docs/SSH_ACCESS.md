@@ -68,8 +68,13 @@ placed before existing includes, and the effective root policy is checked before
 activation and confirmation. Only the selected operator is enrolled: inventory
 other SSH accounts and unrestricted keys first. Restricted forced-command
 automation identities retain their key-only access; they must not provide an
-unrestricted shell or general sudo access. Keep the original session open until
-the fresh key-plus-code login succeeds, then close it.
+unrestricted shell or general sudo access. A restriction only in a user-writable
+`authorized_keys` file is not sufficient against a compromised service account:
+review a root-owned `ForceCommand` policy, disabled forwarding/PTY access and
+narrow sudo wrappers. Integrate any service-account `Match` policy into the trial
+before confirmation; existing `Match` configurations require manual integration.
+Keep the original session open until the fresh key-plus-code login succeeds,
+then close it.
 
 The trial checks current key-only/root-disabled policy, enrollment and PAM layout,
 saves the original SSH and PAM files, and arms rollback **before** changing them.
