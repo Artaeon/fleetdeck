@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -228,8 +229,8 @@ func TestComposeFileGeneration(t *testing.T) {
 	}
 
 	// Verify Traefik image.
-	if !strings.Contains(output, "image: traefik:v3") {
-		t.Error("expected compose file to contain traefik:v3 image")
+	if !regexp.MustCompile(`(?m)^    image: traefik:v3\.[0-9]+\.[0-9]+@sha256:[a-f0-9]{64}$`).MatchString(output) {
+		t.Error("expected a versioned Traefik image pinned to an immutable digest")
 	}
 
 	// Verify port mappings.
