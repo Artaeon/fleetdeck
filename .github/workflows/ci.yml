@@ -114,6 +114,10 @@ jobs:
         run: |
           go build -tags=integration -o /tmp/fleetdeck-firewall-service-test tests/integration/firewall_service_fixture.go
           sudo env FLEETDECK_INTEGRATION=true /tmp/fleetdeck-firewall-service-test
+      - name: Verify dual-stack proxy handover and timed rollback
+        run: |
+          python3 -m unittest discover -s deploy/proxy-handover -p 'test_*.py'
+          sudo python3 tests/integration/proxy-handover.py --systemd-timer
       - name: Run deploy integration tests
         run: go test -v -tags=integration -run TestIntegration ./internal/deploy/... ./internal/edge/...
         env:
