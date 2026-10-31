@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -161,6 +162,14 @@ Examples:
 			statePath = filepath.Join("/opt/fleetdeck/monitor", "monitor-state.json")
 		}
 		mon := monitor.NewWithState(targets, providers, threshold, statePath)
+		alertPath, _ := cmd.Flags().GetString("alert-state-file")
+		if alertPath == "" {
+			alertPath = filepath.Join(statePath+".alerts", "state.json")
+		}
+		if err := mon.EnableDurableAlerts(alertPath); err != nil {
+			return err
+		}
+		defer mon.CloseAlerts()
 
 		// Try to restore previous state from disk.
 		if prev, err := monitor.LoadState(statePath); err == nil {
@@ -172,6 +181,7 @@ Examples:
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(sigCh)
 
 		for _, t := range targets {
 			ui.Success("Monitoring %s at %s (every %s)", t.Name, t.URL, interval)
@@ -181,13 +191,36 @@ Examples:
 
 		mon.Start(ctx)
 
-		<-sigCh
+		var monitorErr error
+		select {
+		case <-sigCh:
+		case monitorErr = <-mon.Errors():
+		case <-cmd.Context().Done():
+		}
 		fmt.Println()
 		ui.Info("Stopping monitor...")
 		mon.Stop()
+		if monitorErr != nil {
+			return monitorErr
+		}
 		ui.Success("Monitor stopped")
 
 		return nil
+	},
+}
+
+var monitorDeliveriesCmd = &cobra.Command{
+	Use: "deliveries", Short: "Show persistent alert backlog and per-channel delivery failures", Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path, _ := cmd.Flags().GetString("alert-state-file")
+		if path == "" {
+			return fmt.Errorf("--alert-state-file is required")
+		}
+		status, err := monitor.ReadDeliveryStatus(path)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(status)
 	},
 }
 
@@ -252,6 +285,8 @@ func init() {
 	monitorStartCmd.Flags().Duration("timeout", 10*time.Second, "HTTP timeout per check")
 	monitorStartCmd.Flags().String("targets-file", "", "Operator-owned JSON health endpoints, instead of registered project domains")
 	monitorStartCmd.Flags().String("state-file", "", "Writable monitor state path; allows a dedicated unprivileged monitor account")
+	monitorStartCmd.Flags().String("alert-state-file", "", "Private durable alert queue; defaults to <state-file>.alerts/state.json")
+	monitorDeliveriesCmd.Flags().String("alert-state-file", "", "Private durable alert queue to inspect")
 	monitorStartCmd.Flags().String("smtp-config", "", "Private SMTP JSON file; defaults to monitoring.smtp_config_file")
 	monitorStartCmd.Flags().String("telegram-config", "", "Private Telegram JSON file; defaults to monitoring.telegram_config_file")
 	monitorStartCmd.Flags().StringSlice("email-to", nil, "Notification recipient addresses")
@@ -265,5 +300,6 @@ func init() {
 
 	monitorCmd.AddCommand(monitorStartCmd)
 	monitorCmd.AddCommand(monitorCheckCmd)
+	monitorCmd.AddCommand(monitorDeliveriesCmd)
 	rootCmd.AddCommand(monitorCmd)
 }
