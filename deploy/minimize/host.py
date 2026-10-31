@@ -111,9 +111,14 @@ def apply(directory, plan, script):
          "--property=RestartSec=15s", sys.executable, str(script), "rollback",
          "--state-dir", str(directory), "--if-pending"])
     try:
-        for name in plan["units"]:
+        # Stop triggers before their service. A timer can otherwise enter the
+        # failed state while its target has already been masked.
+        for name in sorted(plan["units"], key=lambda n: (not n.endswith(".timer"), n)):
             run(["systemctl", "mask", "--runtime", "--now", name])
             current = inspect_unit(name)
+            if current["ActiveState"] == "failed" and current["UnitFileState"] == "masked-runtime":
+                run(["systemctl", "reset-failed", name])
+                current = inspect_unit(name)
             if current["UnitFileState"] != "masked-runtime" or current["ActiveState"] != "inactive":
                 raise RuntimeError("optional service did not stop")
     except Exception:
