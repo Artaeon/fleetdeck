@@ -41,6 +41,10 @@ applications. Recreating a single proxy can interrupt traffic; an uninterrupted
 service needs a separately tested handover or redundant entry point. Do not
 re-run fresh-server bootstrap as an update mechanism on an occupied server.
 
+The [shared proxy handover recipe](../deploy/proxy-handover/README.md) describes
+an operator-managed, dual-stack transition with connection draining and tested
+rollback primitives. It is not an automatic CLI update or database failover.
+
 ## Install and try once
 
 Install a supported Trivy release from its official distribution and verify the
