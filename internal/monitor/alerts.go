@@ -38,6 +38,7 @@ type AlertManager struct {
 	failureThreshold int
 	states           map[string]*targetState
 	mu               sync.Mutex
+	outbox           *alertOutbox
 }
 
 // NewAlertManager creates an AlertManager. failureThreshold is the number of
@@ -54,9 +55,25 @@ func NewAlertManager(providers []AlertProvider, failureThreshold int) *AlertMana
 }
 
 // Process evaluates a check result and sends alerts on state transitions.
-func (am *AlertManager) Process(result CheckResult) {
+func (am *AlertManager) Process(result CheckResult) error {
 	am.mu.Lock()
 	defer am.mu.Unlock()
+	if am.outbox == nil {
+		am.process(result)
+		return nil
+	}
+	previous := cloneAlertStates(am.states)
+	pending := len(am.outbox.state.Pending)
+	am.process(result)
+	if err := am.saveOutbox(); err != nil {
+		am.states = previous
+		am.outbox.state.Pending = am.outbox.state.Pending[:pending]
+		return err
+	}
+	return nil
+}
+
+func (am *AlertManager) process(result CheckResult) {
 
 	state, exists := am.states[result.Target.Name]
 	if !exists {
@@ -130,10 +147,20 @@ func (am *AlertManager) Process(result CheckResult) {
 
 // send dispatches an alert to all configured providers.
 func (am *AlertManager) send(alert Alert) {
+	if am.outbox != nil {
+		if len(am.providers) > 0 {
+			delivery := make(map[string]alertDelivery, len(am.providers))
+			for _, p := range am.providers {
+				delivery[p.Name()] = alertDelivery{}
+			}
+			am.outbox.state.Pending = append(am.outbox.state.Pending, queuedAlert{Alert: alert, Channels: delivery})
+		}
+		return
+	}
 	for _, p := range am.providers {
 		// Best-effort delivery; don't let one failing provider block others.
 		if err := p.Send(alert); err != nil {
-			fmt.Fprintf(os.Stderr, "alert provider %s failed to send alert %q: %v\n", p.Name(), alert.Title, err)
+			fmt.Fprintf(os.Stderr, "alert provider %s failed; delivery was not persisted\n", p.Name())
 		}
 	}
 }
