@@ -25,7 +25,7 @@ func NewDiscordProvider(webhookURL string) (*DiscordProvider, error) {
 	}
 	return &DiscordProvider{
 		WebhookURL: webhookURL,
-		client:     &http.Client{Timeout: 10 * time.Second},
+		client:     notificationHTTPClient(),
 	}, nil
 }
 
@@ -93,7 +93,7 @@ func (p *DiscordProvider) Send(alert Alert) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("discord returned status %d", resp.StatusCode)
 	}
 	return nil

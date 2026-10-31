@@ -5,9 +5,33 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestNotificationProvidersRejectRedirectWithoutForwardingPayload(t *testing.T) {
+	var received atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received.Add(1); w.WriteHeader(200) }))
+	defer destination.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", destination.URL)
+		w.WriteHeader(307)
+	}))
+	defer redirect.Close()
+	discord, err := NewDiscordProvider(redirect.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []AlertProvider{NewWebhookProvider(redirect.URL), NewSlackProvider(redirect.URL), discord} {
+		if err := p.Send(Alert{Title: "synthetic", Target: "fixture"}); err == nil {
+			t.Errorf("%s acknowledged redirect", p.Name())
+		}
+	}
+	if received.Load() != 0 {
+		t.Fatal("notification body forwarded to a different destination")
+	}
+}
 
 func TestWebhookProviderSend(t *testing.T) {
 	var receivedBody []byte
