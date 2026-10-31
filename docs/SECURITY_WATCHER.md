@@ -9,7 +9,7 @@ A missing tool, stale package index or failed scan is **unknown**, never healthy
 
 | Check | Scope |
 | --- | --- |
-| FleetDeck releases | Compare a versioned binary with the repository's latest GitHub release. A development build, unreachable API or unsupported version is unknown. |
+| FleetDeck releases | Compare a versioned binary with the repository's latest GitHub release. Development builds remain unknown unless source-branch tracking is explicitly selected below. An unreachable API or unsupported version remains unknown. |
 | Host packages | Simulate APT upgrades on Linux. Require a successful index-refresh stamp less than 48 hours old. Keep a separate warning while `/var/run/reboot-required` exists, even with no remaining upgrades. This is available-package detection, not a complete host CVE audit. |
 | Running images | Scan each distinct immutable local Docker image ID with Trivy for HIGH/CRITICAL vulnerabilities, including unfixed findings, and end-of-life OS status. |
 | Runtime settings | Report root/default startup user, missing `no-new-privileges`, privileged mode, host namespaces, added capabilities, unconfined settings and Docker socket mounts. |
@@ -62,6 +62,35 @@ The command prints JSON. Incomplete checks exit unsuccessfully. Add
 `--fail-on-findings` to also fail when findings exist. A `dev` binary intentionally
 cannot claim to be the latest release. No CVE findings means none were detected
 in this scan's coverage and database; it is not a guarantee of security.
+
+### Track an operator-built development binary
+
+A repository without numbered releases cannot answer the default release check.
+For an intentionally maintained `dev` build, an operator can instead select a
+branch in the build's release repository:
+
+```sh
+sudo fleetdeck --config /etc/fleetdeck/config.toml security check --source-branch main
+```
+
+This requires the binary to embed its full 40-character source commit through
+the normal build metadata. Short, missing or `-dirty` commit values are rejected;
+numbered release builds cannot use this mode. Fork maintainers must also set the
+correct build repository or pass `--repository owner/repository`. Keep the
+branch selection in the private service command when scheduling this check.
+
+The report includes `source_branch`, the installed commit and the observed branch
+commit. An exact match is `up_to_date`; a verified forward descendant is
+`update_available`. The comparison uses immutable commit IDs after resolving the
+exact branch. A force-push, divergent history, a local build ahead of the branch,
+an unavailable commit, API limits or malformed responses remain `unknown` and
+keep the command unsuccessful. Source tracking is never an automatic fallback
+from a failed numbered-release lookup.
+
+This checks source freshness only. Embedded metadata is not proof of a clean
+build, a trusted builder, a signed artifact or release approval. Image scans,
+host checks, runtime findings and notification behavior remain independent;
+matching a branch does not clear any of those findings. No update is installed.
 
 ## Schedule and notify
 
