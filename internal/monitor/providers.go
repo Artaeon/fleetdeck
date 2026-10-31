@@ -14,6 +14,12 @@ type WebhookProvider struct {
 	URL string
 }
 
+func notificationHTTPClient() *http.Client {
+	return &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+}
+
 func NewWebhookProvider(url string) *WebhookProvider {
 	return &WebhookProvider{URL: url}
 }
@@ -26,14 +32,14 @@ func (p *WebhookProvider) Send(alert Alert) error {
 		return fmt.Errorf("marshaling alert: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := notificationHTTPClient()
 	resp, err := client.Post(p.URL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("sending webhook: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
 	return nil
@@ -85,7 +91,7 @@ func (p *SlackProvider) Send(alert Alert) error {
 		return fmt.Errorf("marshaling slack payload: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := notificationHTTPClient()
 	resp, err := client.Post(p.WebhookURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("sending slack message: %w", err)
