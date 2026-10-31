@@ -22,6 +22,7 @@ var securityCheckCmd = &cobra.Command{
 		label, _ := cmd.Flags().GetString("server-label")
 		repo, _ := cmd.Flags().GetString("repository")
 		failFindings, _ := cmd.Flags().GetBool("fail-on-findings")
+		sourceBranch, _ := cmd.Flags().GetString("source-branch")
 		if repo == "" {
 			repo = ReleaseRepository
 		}
@@ -50,7 +51,9 @@ var securityCheckCmd = &cobra.Command{
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 		defer cancel()
-		report := securitywatch.New().Run(ctx, repo, Version)
+		checker := securitywatch.New()
+		checker.SourceBranch, checker.SourceCommit = sourceBranch, Commit
+		report := checker.Run(ctx, repo, Version)
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
 			return err
 		}
@@ -85,6 +88,7 @@ var securityCheckCmd = &cobra.Command{
 
 func init() {
 	securityCheckCmd.Flags().String("repository", "", "FleetDeck release repository (defaults to this build's repository)")
+	securityCheckCmd.Flags().String("source-branch", "", "For dev builds only: compare the embedded full commit with this branch instead of a numbered release")
 	securityCheckCmd.Flags().String("state-file", "", "Private report and notification delivery state")
 	securityCheckCmd.Flags().String("server-label", "", "Operator-chosen label for security notifications")
 	securityCheckCmd.Flags().Bool("notify", false, "Notify configured Telegram/SMTP channels on changed findings")

@@ -26,6 +26,7 @@ type Check struct {
 	Latest         string `json:"latest,omitempty"`
 	Count          int    `json:"count,omitempty"`
 	RebootRequired bool   `json:"reboot_required,omitempty"`
+	SourceBranch   string `json:"source_branch,omitempty"`
 }
 type Finding struct {
 	ID       string `json:"id"`
@@ -82,6 +83,8 @@ type Checker struct {
 	HostOS       string
 	IndexStamp   string
 	RebootMarker string
+	SourceCommit string
+	SourceBranch string
 }
 
 func New() *Checker {
@@ -205,6 +208,9 @@ func (c *Checker) Run(ctx context.Context, repository, installed string) Report 
 	return report
 }
 func (c *Checker) release(ctx context.Context, repo, installed string) Check {
+	if c.SourceBranch != "" {
+		return c.sourceRelease(ctx, repo, installed)
+	}
 	result := Check{Status: "unknown", Installed: installed}
 	if !repositoryPattern.MatchString(repo) {
 		result.Code = "invalid_release_repository"
