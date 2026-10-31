@@ -44,6 +44,7 @@ before directing production traffic. See [the full workflow](docs/PROJECT_DEPLOY
 | --- | --- |
 | Server setup | Read-only inventory and adoption assistant; fresh provisioning refuses occupied or unverified hosts. [Setup guide](docs/SERVER_SETUP.md). |
 | Host security updates | Explicit OS security-update policy, maintenance window, configuration recovery and no automatic reboots. Application releases remain separate. |
+| Optional host minimization | Review selected peripheral services, test temporary shutdown with automatic recovery, then confirm permanent masks. [Operator guide](deploy/minimize/README.md). |
 | Project deployment | Private saved targets, bounded source transfer, per-project locks, preservation of server secrets/data, verified backups before replacement and Compose readiness checks. |
 | Source secret checks | Offline Gitleaks content rules built into the CLI; remote source deployments check the exact upload and check again on the receiver. Findings and incomplete checks block deployment. [Scope and limits](docs/SECRET_CHECKS.md). |
 | Recovery | Configuration, supported database dumps, volume archives, integrity verification, restore commands and immutable release jobs. Offsite delivery and restore drills need configuration. |

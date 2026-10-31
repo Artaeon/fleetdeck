@@ -58,5 +58,23 @@ class MinimizationTest(unittest.TestCase):
             host.rollback(Path("/unused"), state, if_pending=True)
             run.assert_not_called()
 
+    def test_timers_stop_before_services(self):
+        unit = dict(self.plan["units"]["ModemManager.service"])
+        unit.update(Id="fwupd-refresh.timer", FragmentPath="/usr/lib/systemd/system/fwupd-refresh.timer")
+        self.plan["units"]["fwupd-refresh.timer"] = unit
+        reads = {}
+        def inspect(name):
+            reads[name] = reads.get(name, 0) + 1
+            current = dict(self.plan["units"][name])
+            if reads[name] > 1:
+                current.update(ActiveState="inactive", UnitFileState="masked-runtime")
+            return current
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(host, "identity", return_value="fixture"), \
+                patch.object(host, "inspect_unit", side_effect=inspect), patch.object(host, "run") as run:
+            host.apply(Path(folder), self.plan, Path("/root/helper.py"))
+            mutations = [call.args[0] for call in run.call_args_list if call.args[0][:2] == ["systemctl", "mask"]]
+            self.assertEqual(mutations[0][-1], "fwupd-refresh.timer")
+
 
 if __name__ == "__main__": unittest.main()
