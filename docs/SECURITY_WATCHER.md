@@ -28,6 +28,19 @@ covered. Use application CI scanners and an independent external monitor too.
 FleetDeck's own repository already runs daily Go vulnerability checks and uses
 Dependabot; those checks do not scan your separate application repositories.
 
+## Pinned proxy image and existing servers
+
+New bootstrap configurations pin Traefik to a reviewed version and immutable
+multi-platform digest. Updating FleetDeck's source or binary does not change the
+image of an existing proxy. The running-image scan continues to assess the actual
+local image ID, including an older proxy that has not yet been replaced.
+
+Before changing a shared proxy, save its configuration and certificate state,
+scan the exact candidate digest, and test its routing and TLS against the intended
+applications. Recreating a single proxy can interrupt traffic; an uninterrupted
+service needs a separately tested handover or redundant entry point. Do not
+re-run fresh-server bootstrap as an update mechanism on an occupied server.
+
 ## Install and try once
 
 Install a supported Trivy release from its official distribution and verify the
