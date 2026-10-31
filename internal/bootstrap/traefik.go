@@ -70,7 +70,7 @@ func setupTraefik(runner CommandRunner, domain, email, network string) error {
 func composeFile(_ string, email, network string) string {
 	return fmt.Sprintf(`services:
   traefik:
-    image: traefik:v3
+    image: traefik:v3.7.17@sha256:30ff62491aacdb862ceb8c9edcf2627da638d7deafdd4b6dab32fe34f8aa3e90
     restart: unless-stopped
     labels:
       io.fleetdeck.proxy: "true"

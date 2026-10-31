@@ -70,7 +70,7 @@ func TestDockerPreviewGate(t *testing.T) {
 	docker("network", "create", "--label", "io.fleetdeck.edge=true", edge)
 	t.Cleanup(func() { exec.Command("docker", "network", "rm", edge).Run() })
 	proxy := o.Name + "-proxy"
-	docker("run", "-d", "--name", proxy, "--network", edge, "-p", "127.0.0.1::443", "-v", "/var/run/docker.sock:/var/run/docker.sock:ro", "traefik@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65", "--providers.docker=true", "--providers.docker.exposedbydefault=false", "--entrypoints.websecure.address=:443")
+	docker("run", "-d", "--name", proxy, "--network", edge, "-p", "127.0.0.1::443", "-v", "/var/run/docker.sock:/var/run/docker.sock:ro", "traefik@sha256:30ff62491aacdb862ceb8c9edcf2627da638d7deafdd4b6dab32fe34f8aa3e90", "--providers.docker=true", "--providers.docker.exposedbydefault=false", "--entrypoints.websecure.address=:443")
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", proxy).Run() })
 	docker("compose", "-f", file, "up", "-d", "--pull", "never")
 	t.Cleanup(func() { exec.Command("docker", "compose", "-f", file, "down", "--volumes").Run() })

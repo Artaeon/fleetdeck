@@ -34,7 +34,7 @@ proxy_start() {
     docker run -d --name "$proxy" --restart unless-stopped \
       --label io.fleetdeck.proxy=true -p 127.0.0.1:18443:443 \
       -v /var/run/docker.sock:/var/run/docker.sock:ro \
-      traefik@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65 \
+      traefik@sha256:30ff62491aacdb862ceb8c9edcf2627da638d7deafdd4b6dab32fe34f8aa3e90 \
       --api=false --providers.docker=true --providers.docker.exposedbydefault=false \
       --entrypoints.websecure.address=:443 >/dev/null
 }
