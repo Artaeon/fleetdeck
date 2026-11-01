@@ -50,11 +50,35 @@ Create and verify another FleetDeck backup after the image change. Its manifest
 must contain a PostgreSQL database component, not a live copy of the database
 volume. See [database identification](../../docs/PROJECT_DEPLOY.md#custom-database-images).
 
-This is an operator-maintained derived image. FleetDeck does not publish it,
-automatically rebuild it, or silently replace database images. Review new
-upstream releases for the selected PostgreSQL major, pin their digest, rerun the
-tests and rescan.
+The [maintenance image workflow](../../.github/workflows/postgres-images.yml)
+builds and publishes Linux/amd64 candidates after successful CI for a push to the
+same repository's `main`. A pull request or a successful workflow from another
+repository cannot publish a candidate. It repeats the non-root restore test,
+rejects all HIGH/CRITICAL findings including unfixed ones, records an SBOM and
+signs the immutable image digest and candidate metadata with the workflow identity.
+Each run uses a distinct tag; deployments must use the digest, not the tag.
+
+Daily Dependabot checks propose upstream Docker updates for review. They do not
+merge or deploy updates. Keep the selected PostgreSQL major, review the upstream
+release and scan results, and use the backup/restore procedure above before
+adopting a signed candidate. The workflow has no production SSH credentials and
+the candidate metadata explicitly sets `productionAuthorized: false`.
 Major-version upgrades require their own migration procedure.
+
+For this repository, verify image signatures with the exact publisher identity:
+
+```sh
+cosign verify \
+  --certificate-identity https://github.com/Artaeon/fleetdeck/.github/workflows/postgres-images.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/artaeon/fleetdeck-postgres-17@sha256:REVIEWED_DIGEST
+```
+
+Forks must use their own repository and workflow identity. Also verify the signed
+`candidate.json` bundle from the matching workflow run and compare its source
+commit, database major, platform and image digest against the reviewed change.
+A valid signature establishes provenance, not compatibility with a production
+database or current absence of vulnerabilities. Rescan before deployment.
 
 A single database instance must be recreated to run a new image. This recipe is
 not a zero-downtime rollout mechanism. If the service must remain online, prepare

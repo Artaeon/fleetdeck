@@ -1,0 +1,118 @@
+name: PostgreSQL maintenance images
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-images-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Qualify and sign PostgreSQL ${{ matrix.major }}
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - major: '15'
+            recipe: deploy/postgres/Dockerfile.15
+          - major: '17'
+            recipe: deploy/postgres/Dockerfile
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_REPOSITORY: ${{ github.repository }}
+      REGISTRY_OWNER: ${{ github.repository_owner }}
+      MAJOR: ${{ matrix.major }}
+      RECIPE: ${{ matrix.recipe }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Build exact source without production access
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          owner="${REGISTRY_OWNER,,}"
+          repository="ghcr.io/${owner}/fleetdeck-postgres-${MAJOR}"
+          tag="${repository}:sha-${SOURCE_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "IMAGE_REPOSITORY=${repository}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${tag}" >> "$GITHUB_ENV"
+          docker build --pull --platform linux/amd64 -f "$RECIPE" \
+            --label "org.opencontainers.image.source=https://github.com/${SOURCE_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${SOURCE_SHA}" \
+            --label "io.fleetdeck.backup.database=postgres" \
+            -t "$tag" deploy/postgres
+      - name: Test non-root startup and isolated restore
+        run: tests/integration/postgres-nonroot.sh "$IMAGE_TAG" "$MAJOR"
+      - name: Reject all high and critical findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ env.IMAGE_TAG }}
+          format: json
+          output: scan.json
+          exit-code: '1'
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln
+      - name: Record SBOM
+        run: trivy image --scanners vuln --format cyclonedx --output sbom.json "$IMAGE_TAG"
+      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push qualified artifact and record immutable reference
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE_TAG"
+          ref=$(docker image inspect "$IMAGE_TAG" --format '{{index .RepoDigests 0}}')
+          test "${ref%@sha256:*}" = "$IMAGE_REPOSITORY"
+          digest="${ref##*@}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "IMAGE_REF=${ref}" >> "$GITHUB_ENV"
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+      - name: Sign image and SBOM; verify workflow identity
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${SOURCE_REPOSITORY}/.github/workflows/postgres-images.yml@refs/heads/main"
+          cosign sign --yes "$IMAGE_REF"
+          cosign verify --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REF"
+          cosign attest --yes --type cyclonedx --predicate sbom.json "$IMAGE_REF"
+          jq -n --arg image "$IMAGE_REF" --arg source "$SOURCE_SHA" \
+            --arg identity "$identity" --arg major "$MAJOR" \
+            '{image:$image,sourceCommit:$source,certificateIdentity:$identity,postgresMajor:$major,platform:"linux/amd64",productionAuthorized:false}' > candidate.json
+          cosign sign-blob --yes --bundle candidate.bundle.json candidate.json
+          cosign verify-blob --bundle candidate.bundle.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com candidate.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: postgres-${{ matrix.major }}-candidate
+          path: |
+            candidate.json
+            candidate.bundle.json
+            sbom.json
+            scan.json
+          if-no-files-found: error
+          retention-days: 30
