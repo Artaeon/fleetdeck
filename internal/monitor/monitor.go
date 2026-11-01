@@ -60,6 +60,7 @@ type Monitor struct {
 	saveMu    sync.Mutex
 	cancel    context.CancelFunc
 	done      chan struct{}
+	errors    chan error
 	StatePath string
 }
 
@@ -75,6 +76,7 @@ func New(targets []Target, providers []AlertProvider, failureThreshold int) *Mon
 		alerts:  NewAlertManager(providers, failureThreshold),
 		results: make(map[string]CheckResult),
 		done:    make(chan struct{}),
+		errors:  make(chan error, 1),
 	}
 }
 
@@ -86,6 +88,29 @@ func NewWithState(targets []Target, providers []AlertProvider, failureThreshold 
 	return m
 }
 
+// EnableDurableAlerts must be called before Start. The caller closes the queue
+// after Stop, so another monitor cannot steal its delivery checkpoint.
+func (m *Monitor) EnableDurableAlerts(path string) error {
+	am, err := NewDurableAlertManager(m.alerts.providers, m.alerts.failureThreshold, path)
+	if err != nil {
+		return err
+	}
+	m.alerts = am
+	return nil
+}
+
+func (m *Monitor) CloseAlerts() error   { return m.alerts.Close() }
+func (m *Monitor) Errors() <-chan error { return m.errors }
+func (m *Monitor) fail(err error) {
+	select {
+	case m.errors <- err:
+	default:
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
+}
+
 // Start begins the monitoring loop. It runs until Stop is called or the
 // context is cancelled.
 func (m *Monitor) Start(ctx context.Context) {
@@ -93,16 +118,38 @@ func (m *Monitor) Start(ctx context.Context) {
 
 	go func() {
 		defer close(m.done)
+		var wg sync.WaitGroup
+		if m.alerts.outbox != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					if err := m.alerts.RetryPending(time.Now()); err != nil {
+						m.fail(err)
+						return
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+					}
+				}
+			}()
+		}
 
 		// Initial check on all targets.
 		for _, t := range m.targets {
+			if ctx.Err() != nil {
+				break
+			}
 			r := m.CheckOnce(t)
 			m.record(r)
 		}
 
 		// Per-target tickers tracked with a WaitGroup so Stop() waits for
 		// all goroutines to finish.
-		var wg sync.WaitGroup
 		for _, t := range m.targets {
 			t := t
 			interval := t.Interval
@@ -221,7 +268,9 @@ func (m *Monitor) record(r CheckResult) {
 	m.results[r.Target.Name] = r
 	m.mu.Unlock()
 
-	m.alerts.Process(r)
+	if err := m.alerts.Process(r); err != nil {
+		m.fail(fmt.Errorf("cannot persist health alerts: %w", err))
+	}
 
 	if m.StatePath != "" {
 		if err := m.SaveStateToDisk(); err != nil {

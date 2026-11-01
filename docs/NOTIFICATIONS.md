@@ -45,8 +45,46 @@ The credential mount's permissions can differ from a normal private file. The
 runtime copies keep strict provider file checks without depending on those modes.
 Use `RuntimeDirectoryMode=0700`; systemd removes these copies when the service stops.
 It sends health failures after the configured threshold and subsequent recoveries.
-Health-transition delivery is currently best effort; use the durable event relay
-below for host audit events. This is not an independent external uptime observer.
+Health transitions use the durable queue described below. Host audit events use
+the separate event relay. Neither is an independent external uptime observer.
+
+## Durable health alerts
+
+`monitor start` writes incident state and pending messages together before sending.
+By default the private queue is `<state-file>.alerts/state.json`. Override it with
+`--alert-state-file /var/lib/fleetdeck-monitor/alerts/state.json`. The containing
+directory must be mode `0700`; queue and lock files are `0600`. Include this path
+in the service's writable state directory and encrypted backups. Only one monitor
+may own a queue. Corrupt or unsupported state stops startup; do not delete the
+file to silence that error, because it contains outstanding notifications.
+
+Each channel acknowledges messages independently. Failed sends retry after 30
+seconds with exponential backoff capped at 15 minutes, including when every
+health check is healthy again. Outage and recovery messages keep their order per
+channel. Restarting preserves pending work, thresholds and open incidents. A
+removed channel's pending work remains until that channel is restored. Replacing
+credentials under the same channel name sends its backlog to the new destination;
+review that change before rotating destinations.
+
+Inspect counters without revealing message content, endpoints or credentials:
+
+```sh
+fleetdeck monitor deliveries \
+  --alert-state-file /var/lib/fleetdeck-monitor/state.json.alerts/state.json
+```
+
+The result shows pending alerts and per-channel failed deliveries and next retry
+times. Provider errors are recorded as a fixed `delivery_failed` code. The queue
+is bounded to 1,024 pending messages / 4 MiB. A storage failure or full queue stops
+the monitor unsuccessfully instead of silently acknowledging new incidents.
+Monitor process failure, stale health snapshots and backlog from another host.
+An external heartbeat must depend on successful fresh checks, not merely a timer
+firing. No local queue can report a powered-off VPS by itself.
+
+Delivery is **at least once**: a crash after remote acceptance but before the
+local checkpoint can duplicate a message. Provider acceptance is not proof that
+a person read it or that an email reached the inbox. The immediate `alert send`
+command remains a one-shot operation; callers must handle its nonzero exit.
 
 Test the configured destination explicitly:
 
@@ -133,8 +171,8 @@ After the configured failure threshold, a blocked probe sends a **warning** that
 application health is unknown. It does not assert a server outage or send a
 recovery notification. A subsequent expected response is required for recovery.
 A stable change from blocked to failed checks (or vice versa) updates the alert
-after the same threshold. Mixed failures still open an incident. Delivery remains
-best effort; this change does not introduce durable health notification retries.
+after the same threshold. Mixed failures still open an incident. The durable
+health queue preserves these transitions through temporary channel failures.
 
 Do not count a challenge as application uptime or broadly disable protection to
 make a monitor green. Keep separate public-edge and private application-readiness
