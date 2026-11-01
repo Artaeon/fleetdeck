@@ -14,3 +14,13 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: ci(deps)
+  - package-ecosystem: docker
+    directory: /deploy/postgres
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: fix(images)
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
