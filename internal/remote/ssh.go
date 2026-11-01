@@ -110,14 +110,12 @@ func NewClientTOFU(host, port, user string, privateKey []byte, passphrase []byte
 			if err == nil {
 				return nil // Host key matched.
 			}
-			// If the error is a key mismatch, reject it.
-			if _, ok := err.(*knownhosts.KeyError); ok {
-				ke := err.(*knownhosts.KeyError)
-				if len(ke.Want) > 0 {
-					return fmt.Errorf("host key mismatch for %s: %w", hostname, err)
-				}
+			// Only an absent host is eligible for trust on first use. Revocation
+			// and every other verification failure must remain a hard rejection.
+			ke, unknownHost := err.(*knownhosts.KeyError)
+			if !unknownHost || len(ke.Want) > 0 {
+				return fmt.Errorf("host key verification failed for %s: %w", hostname, err)
 			}
-			// Host not found in known_hosts; fall through to accept and save.
 		}
 
 		// Accept the key and append it to known_hosts.
