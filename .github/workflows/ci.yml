@@ -84,6 +84,8 @@ jobs:
           go-version-file: go.mod
       - name: Verify local Gatus observation import
         run: python3 -B -m unittest discover -s deploy/gatus -p "test_*.py"
+      - name: Verify optional host minimization recovery guards
+        run: python3 -B -m unittest discover -s deploy/minimize -p "test_*.py"
       - name: Validate shared proxy isolation policy
         run: python3 -B -m unittest discover -s deploy/isolation -p "test_*.py"
       - name: Run tests
