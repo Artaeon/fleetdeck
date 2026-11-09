@@ -1,6 +1,6 @@
 # Optional PostgreSQL 17 image for explicitly non-root deployments.
 # Review and scan a new upstream digest before updating this pin.
-FROM postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+FROM postgres:17-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
 USER root
 # The upstream entrypoint uses gosu only when started as root. This image always
 # starts as postgres, so the unused privilege-switching binary is unnecessary.
