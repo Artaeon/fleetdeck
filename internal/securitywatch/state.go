@@ -17,6 +17,7 @@ type State struct {
 	Version    int                 `json:"version"`
 	Report     Report              `json:"report"`
 	Deliveries map[string]delivery `json:"deliveries"`
+	History    []Observation       `json:"history,omitempty"`
 }
 
 func Load(path string) (State, error) {
@@ -112,7 +113,7 @@ func Notify(state *State, report Report, label string, providers []monitor.Alert
 		}
 		state.Deliveries[provider.Name()] = delivery{Digest: digest, Alerted: active}
 	}
-	state.Report = report
+	state.Record(report)
 	if failures > 0 {
 		return fmt.Errorf("security notification delivery failed for %d channel(s); pending deliveries will retry", failures)
 	}

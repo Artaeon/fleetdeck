@@ -65,7 +65,7 @@ var securityCheckCmd = &cobra.Command{
 			}
 			notificationErr = securitywatch.Notify(&state, report, label, providers)
 		} else {
-			state.Report = report
+			state.Record(report)
 		}
 		if path != "" {
 			if err := securitywatch.Save(path, state); err != nil {
