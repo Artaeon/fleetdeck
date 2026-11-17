@@ -1,0 +1,11 @@
+[Unit]
+Description=Check daily whether the weekly FleetDeck security report is due
+
+[Timer]
+OnCalendar=*-*-* 09:30:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=fleetdeck-security-report.service
+
+[Install]
+WantedBy=timers.target

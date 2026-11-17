@@ -51,6 +51,7 @@ before directing production traffic. See [the full workflow](docs/PROJECT_DEPLOY
 | Central overview | Opt-in workstation-only HTTPS panel with required device certificate + WebAuthn login, per-server summary/detail grants, and separate read-only mTLS observers. [Enrollment and limits](docs/FLEET_OVERVIEW.md). |
 | Monitoring | HTTP/service checks, Prometheus metrics, challenge-aware HTTP results, Telegram/email alerts and durable SSH/activity event relay. |
 | Security watcher | Scheduled release/package checks, Trivy scans of running image IDs and runtime-setting findings. Changed alerts only; incomplete checks stay unknown. |
+| Security reports | Optional periodic summaries of explicitly supplied private watcher states, with bounded trends, prioritized findings and explicit coverage gaps. No automatic cross-server access or updates. |
 | Workstation setup | Named servers, last observed server version/commit, SSH agent support and interactive SSH TOTP for enrolled hosts. |
 
 FleetDeck uses established tools: **Docker Compose, Traefik, Authelia, Trivy,

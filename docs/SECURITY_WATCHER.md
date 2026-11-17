@@ -125,6 +125,16 @@ ones. A crash between delivery and checkpoint can duplicate a message. Recovery
 is sent only after all checks complete without findings. Unknown is never recovery.
 The state/report files are private; preserve them to retain deduplication history.
 
+Notification identity excludes volatile container IDs and healthy-inventory
+ordering, but preserves affected image identity and increased affected replicas.
+Recreating the same affected workload alone should not repeatedly alert. Raw
+private evidence remains in the state. After upgrading from older digest logic,
+one notification can occur as the new identity is established.
+
+For a separate weekly summary with bounded observation history and explicit
+coverage gaps, see [security reports](SECURITY_REPORTS.md). This is opt-in and
+does not replace changed alerts or silently collect state from other servers.
+
 A root service with Docker access remains trusted host administration despite
 systemd hardening. Its failure or a total server outage may prevent notifications:
 monitor the service from outside the host. Alerts are outbound only and do not
