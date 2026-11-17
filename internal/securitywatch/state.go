@@ -1,13 +1,10 @@
 package securitywatch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/fleetdeck/fleetdeck/internal/monitor"
 )
@@ -81,14 +78,10 @@ func Notify(state *State, report Report, label string, providers []monitor.Alert
 	if state.Deliveries == nil {
 		state.Deliveries = map[string]delivery{}
 	}
-	canonical := report
-	canonical.CheckedAt = time.Time{}
-	data, err := json.Marshal(canonical)
+	digest, err := notificationDigest(report)
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256(data)
-	digest := hex.EncodeToString(sum[:])
 	critical, warning, unknown := report.Counts()
 	active := critical+warning+unknown > 0
 	level := "info"
