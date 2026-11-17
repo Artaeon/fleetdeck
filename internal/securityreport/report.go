@@ -78,18 +78,20 @@ func Build(inputs []Input, now time.Time, maxAge time.Duration) (Report, error) 
 
 func summarize(label string, s securitywatch.State, now time.Time, maxAge time.Duration) Node {
 	r := s.Report
-	n := Node{Label: label, Status: "unknown", CheckedAt: r.CheckedAt, Actions: []string{}}
+	n := Node{Label: label, Status: "unknown", CheckedAt: r.CheckedAt, RebootRequired: r.Host.RebootRequired, Actions: []string{}}
 	if r.CheckedAt.IsZero() || r.CheckedAt.After(now.Add(30*time.Second)) || now.Sub(r.CheckedAt) > maxAge {
 		n.Unknown = 1
 		n.Actions = append(n.Actions, "refresh_observation")
+		if n.RebootRequired {
+			n.Actions = append(n.Actions, "verify_pending_restart")
+		}
 		return n
 	}
 	n.Critical, n.Warnings, n.Unknown = r.Counts()
-	if r.Inventory.Status == "checked" && r.Inventory.Count != len(r.Containers) {
+	if r.Inventory.Status == "checked" && !completeInventory(r) {
 		n.Unknown++
 		n.Actions = append(n.Actions, "restore_inventory")
 	}
-	n.RebootRequired = r.Host.RebootRequired
 	for _, v := range []struct {
 		check  securitywatch.Check
 		action string
@@ -98,6 +100,9 @@ func summarize(label string, s securitywatch.State, now time.Time, maxAge time.D
 		switch v.check.Status {
 		case v.valid:
 		case "update_available":
+			if v.valid == "checked" {
+				n.Unknown++
+			}
 			n.Actions = append(n.Actions, v.action)
 		case "unknown":
 			n.Actions = append(n.Actions, "restore_observation")
@@ -152,6 +157,29 @@ func summarize(label string, s securitywatch.State, now time.Time, maxAge time.D
 	return n
 }
 
+// A successful inventory count alone does not prove that every running image
+// was scanned. Missing or ambiguous identities must never produce a clean report.
+func completeInventory(r securitywatch.Report) bool {
+	if r.Inventory.Count != len(r.Containers) {
+		return false
+	}
+	images := map[string]bool{}
+	for _, im := range r.Images {
+		if im.ID == "" || images[im.ID] {
+			return false
+		}
+		images[im.ID] = true
+	}
+	containers := map[string]bool{}
+	for _, c := range r.Containers {
+		if c.ID == "" || containers[c.ID] || !images[c.ImageID] {
+			return false
+		}
+		containers[c.ID] = true
+	}
+	return true
+}
+
 func (r Report) Level() string {
 	level := "info"
 	for _, n := range r.Nodes {
@@ -174,11 +202,38 @@ func (r Report) Text(language string, compact bool) string {
 		fmt.Fprintln(&b, "FleetDeck · Security report")
 	}
 	fmt.Fprintln(&b, r.GeneratedAt.Format(time.RFC3339))
-	limit := len(r.Nodes)
+	nodes := r.Nodes
+	limit := len(nodes)
 	if compact && limit > 8 {
 		limit = 8
+		// Copy before sorting: presentation must not change enrollment identity.
+		nodes = append([]Node(nil), nodes...)
+		sort.SliceStable(nodes, func(i, j int) bool {
+			a, b := nodes[i], nodes[j]
+			if a.Critical != b.Critical {
+				return a.Critical > b.Critical
+			}
+			if a.Unknown != b.Unknown {
+				return a.Unknown > b.Unknown
+			}
+			if a.Warnings != b.Warnings {
+				return a.Warnings > b.Warnings
+			}
+			return a.RebootRequired && !b.RebootRequired
+		})
+		var critical, warnings, unknown int
+		for _, n := range nodes {
+			critical += n.Critical
+			warnings += n.Warnings
+			unknown += n.Unknown
+		}
+		if de {
+			fmt.Fprintf(&b, "Gesamt über %d Server: %d kritisch, %d Hinweise, %d ungeklärt.\n", len(nodes), critical, warnings, unknown)
+		} else {
+			fmt.Fprintf(&b, "Total across %d nodes: %d critical, %d findings/updates, %d incomplete.\n", len(nodes), critical, warnings, unknown)
+		}
 	}
-	for _, n := range r.Nodes[:limit] {
+	for _, n := range nodes[:limit] {
 		if de {
 			fmt.Fprintf(&b, "\n%s: %d kritisch, %d Hinweise, %d ungeklärte Prüfungen\n", n.Label, n.Critical, n.Warnings, n.Unknown)
 		} else {
@@ -218,7 +273,11 @@ func (r Report) Text(language string, compact bool) string {
 		}
 	}
 	if limit < len(r.Nodes) {
-		fmt.Fprintf(&b, "\n+ %d nodes in full report.\n", len(r.Nodes)-limit)
+		if de {
+			fmt.Fprintf(&b, "\n+ %d Server im vollständigen Bericht. Höchste Priorität zuerst.\n", len(r.Nodes)-limit)
+		} else {
+			fmt.Fprintf(&b, "\n+ %d nodes in full report. Highest priority first.\n", len(r.Nodes)-limit)
+		}
 	}
 	if de {
 		fmt.Fprintln(&b, "\nNicht erfasst: SSH/MFA, externe Erreichbarkeit, Offsite-Sicherung/Wiederherstellung, Integrität des Hosters. Weniger Befunde allein belegen keine Behebung. Es wurde nichts aktualisiert.")
@@ -236,6 +295,7 @@ func actionText(code string, de bool) string {
 		"review_host_updates":        {"Review host updates and schedule maintenance.", "Systemupdates prüfen und Wartung planen."},
 		"restore_inventory":          {"Restore the container inventory check.", "Container-Inventarprüfung wiederherstellen."},
 		"plan_restart":               {"Plan the required restart with verified backup and recovery access.", "Fälligen Neustart mit geprüftem Backup und Wiederherstellungszugang planen."},
+		"verify_pending_restart":     {"Verify the previously reported pending restart; its status is stale.", "Zuvor gemeldeten Neustartbedarf prüfen; sein Stand ist veraltet."},
 		"restore_image_scan":         {"Restore the incomplete image scan.", "Unvollständige Image-Prüfung wiederherstellen."},
 		"triage_image_findings":      {"Review affected images, applicability and available fixes.", "Betroffene Images, tatsächliche Betroffenheit und verfügbare Korrekturen prüfen."},
 		"review_runtime_permissions": {"Review container privileges and isolation.", "Container-Rechte und Isolation prüfen."},

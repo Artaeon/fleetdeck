@@ -103,6 +103,74 @@ func TestInputsAndCompactSize(t *testing.T) {
 	}
 }
 
+func TestCompactReportPrioritizesRiskWithoutChangingEnrollment(t *testing.T) {
+	r := Report{GeneratedAt: time.Now()}
+	for i := 0; i < 12; i++ {
+		r.Nodes = append(r.Nodes, Node{Label: fmt.Sprintf("node-%02d", i), Status: "checked"})
+	}
+	r.Nodes[10].Critical = 2
+	r.Nodes[11].Unknown = 1
+	for _, language := range []string{"en", "de"} {
+		text := r.Text(language, true)
+		if !strings.Contains(text, "node-10: 2") || !strings.Contains(text, "node-11:") || strings.Contains(text, "node-09:") {
+			t.Fatalf("important nodes omitted: %s", text)
+		}
+		if !strings.Contains(text, "12") || !strings.Contains(text, "+ 4") {
+			t.Fatal("truncation or full-fleet total omitted")
+		}
+	}
+	for i, n := range r.Nodes {
+		if n.Label != fmt.Sprintf("node-%02d", i) {
+			t.Fatal("presentation changed notification enrollment order")
+		}
+	}
+}
+
+func TestIncompleteImageCoverageCannotLookClean(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []string{"missing-image", "duplicate-image", "duplicate-container", "empty-container", "invalid-inventory-status"} {
+		t.Run(tc, func(t *testing.T) {
+			in, s := fixture(t, now)
+			s.Report.Inventory.Count = 1
+			s.Report.Containers = []securitywatch.Container{{ID: "container-a", ImageID: "image-a"}}
+			s.Report.Images = []securitywatch.Image{{ID: "image-a", Status: "checked"}}
+			switch tc {
+			case "missing-image":
+				s.Report.Images[0].ID = "different-image"
+			case "duplicate-image":
+				s.Report.Images = append(s.Report.Images, s.Report.Images[0])
+			case "duplicate-container":
+				s.Report.Containers = append(s.Report.Containers, s.Report.Containers[0])
+				s.Report.Inventory.Count = 2
+			case "empty-container":
+				s.Report.Containers[0].ID = ""
+			case "invalid-inventory-status":
+				s.Report.Inventory.Status = "update_available"
+			}
+			if err := securitywatch.Save(in.Path, s); err != nil {
+				t.Fatal(err)
+			}
+			r, err := Build([]Input{in}, now, 26*time.Hour)
+			if err != nil || r.Nodes[0].Unknown == 0 || r.Level() == "info" {
+				t.Fatalf("incomplete coverage accepted: %+v %v", r, err)
+			}
+		})
+	}
+}
+
+func TestStaleObservationDoesNotClearPendingRestart(t *testing.T) {
+	now := time.Now()
+	in, s := fixture(t, now.Add(-27*time.Hour))
+	s.Report.Host.RebootRequired = true
+	if err := securitywatch.Save(in.Path, s); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Build([]Input{in}, now, 26*time.Hour)
+	if err != nil || !r.Nodes[0].RebootRequired || r.Nodes[0].Status != "unknown" || !strings.Contains(r.Text("en", true), "previously reported pending restart") {
+		t.Fatalf("stale restart silently cleared: %+v %v", r, err)
+	}
+}
+
 type testProvider struct {
 	name string
 	fail bool
