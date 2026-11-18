@@ -221,3 +221,24 @@ func Watch(ctx context.Context, path, label string, interval time.Duration, prov
 		}
 	}
 }
+
+func ReadBacklog(path string) (monitor.Backlog, error) {
+	b := monitor.Backlog{Coverage: "tracked", Items: []monitor.Waiting{}}
+	s, err := readState(path)
+	if err != nil || s.Pending == nil {
+		return b, err
+	}
+	p := s.Pending
+	if s.Version == 0 {
+		b.Coverage = "legacy_unknown_recipients"
+		b.Items = append(b.Items, monitor.WaitingFor(p.Alert, "host_activity", "", time.Time{}))
+		return b, nil
+	}
+	for name := range p.Destinations {
+		if !p.Delivered[name] {
+			b.Items = append(b.Items, monitor.WaitingFor(p.Alert, "host_activity", name, p.Alert.Timestamp))
+		}
+	}
+	b.Sort()
+	return b, nil
+}

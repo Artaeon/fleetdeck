@@ -175,7 +175,8 @@ func (am *AlertManager) send(alert Alert) {
 			for _, p := range am.providers {
 				delivery[p.Name()] = alertDelivery{}
 			}
-			am.outbox.state.Pending = append(am.outbox.state.Pending, queuedAlert{Alert: alert, Channels: delivery})
+			queuedAt := time.Now().UTC()
+			am.outbox.state.Pending = append(am.outbox.state.Pending, queuedAlert{QueuedAt: &queuedAt, Alert: alert, Channels: delivery})
 		}
 		return
 	}

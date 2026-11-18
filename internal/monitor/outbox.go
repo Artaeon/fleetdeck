@@ -26,6 +26,7 @@ type alertDelivery struct {
 }
 
 type queuedAlert struct {
+	QueuedAt *time.Time               `json:"queued_at,omitempty"`
 	Alert    Alert                    `json:"alert"`
 	Channels map[string]alertDelivery `json:"channels"`
 }
@@ -268,6 +269,7 @@ func (am *AlertManager) Close() error {
 }
 
 type DeliveryStatus struct {
+	Backlog
 	Pending  int                        `json:"pending_alerts"`
 	Channels map[string]ChannelDelivery `json:"channels"`
 }
@@ -277,19 +279,35 @@ type ChannelDelivery struct {
 	NextTry time.Time `json:"next_try,omitempty"`
 }
 
-// ReadDeliveryStatus exposes only counters and retry times, never alert content
+// ReadDeliveryStatus exposes queue metadata and retry times, never alert content
 // or credentials. A removed provider remains pending until restored by an operator.
 func ReadDeliveryStatus(path string) (DeliveryStatus, error) {
 	s, err := loadAlertState(path)
 	if err != nil {
 		return DeliveryStatus{}, err
 	}
-	out := DeliveryStatus{Pending: len(s.Pending), Channels: map[string]ChannelDelivery{}}
+	out := DeliveryStatus{Backlog: Backlog{Coverage: "tracked", Items: []Waiting{}}, Channels: map[string]ChannelDelivery{}}
 	for _, item := range s.Pending {
+		outstanding := false
+		kind := "health"
+		switch item.Alert.Level {
+		case "critical":
+			kind = "health_failure"
+		case "warning":
+			kind = "health_warning"
+		case "info":
+			kind = "health_recovery"
+		}
+		var since time.Time
+		if item.QueuedAt != nil {
+			since = *item.QueuedAt
+		}
 		for name, state := range item.Channels {
 			if state.Delivered {
 				continue
 			}
+			outstanding = true
+			out.Items = append(out.Items, WaitingFor(item.Alert, kind, name, since))
 			c := out.Channels[name]
 			c.Pending++
 			if state.LastError != "" {
@@ -300,6 +318,10 @@ func ReadDeliveryStatus(path string) (DeliveryStatus, error) {
 			}
 			out.Channels[name] = c
 		}
+		if outstanding {
+			out.Pending++
+		}
 	}
+	out.Sort()
 	return out, nil
 }
