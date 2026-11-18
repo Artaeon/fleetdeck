@@ -1,7 +1,10 @@
 package monitor
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -24,6 +27,7 @@ type Alert struct {
 
 // targetState tracks consecutive check outcomes for a single target.
 type targetState struct {
+	ProbeIdentity       string `json:"probe_identity,omitempty"`
 	ConsecutiveFailures int
 	ConsecutiveStatus   int
 	PendingStatus       string
@@ -74,17 +78,19 @@ func (am *AlertManager) Process(result CheckResult) error {
 }
 
 func (am *AlertManager) process(result CheckResult) {
-
+	identity := probeIdentity(result.Target)
 	state, exists := am.states[result.Target.Name]
-	if !exists {
-		state = &targetState{}
+	if !exists || state.ProbeIdentity != identity {
+		// Names can be reused for a different endpoint. Legacy unbound state
+		// cannot establish that a previous incident belongs to this probe.
+		state = &targetState{ProbeIdentity: identity}
 		am.states[result.Target.Name] = state
 	}
 
 	status := result.HealthStatus()
 	if status == "healthy" {
 		wasUnhealthy := state.AlertedStatus != ""
-		*state = targetState{}
+		*state = targetState{ProbeIdentity: identity}
 
 		if wasUnhealthy {
 			am.send(Alert{
@@ -143,6 +149,22 @@ func (am *AlertManager) process(result CheckResult) {
 			Timestamp: result.CheckedAt,
 		})
 	}
+}
+
+func probeIdentity(target Target) string {
+	method, status := target.Method, target.ExpectedStatus
+	if method == "" {
+		method = http.MethodGet
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	// Bind identity without copying potentially sensitive URLs into the outbox.
+	data, _ := json.Marshal(struct {
+		URL, Method string
+		Status      int
+	}{target.URL, method, status})
+	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
 // send dispatches an alert to all configured providers.
