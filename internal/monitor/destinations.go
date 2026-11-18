@@ -80,3 +80,63 @@ func bindDestinations(state *alertDiskState, current map[string]string) error {
 	}
 	return nil
 }
+
+// Destinations records the original channel names and recipient fingerprints.
+type Destinations map[string]string
+
+// BindProviders snapshots the routing configuration at enqueue time.
+func BindProviders(providers []AlertProvider) (Destinations, error) {
+
+	destinations := Destinations{}
+	if len(providers) > 32 {
+		return nil, fmt.Errorf("at most 32 notification channels are supported")
+	}
+	for _, p := range providers {
+		if !channelName.MatchString(p.Name()) || destinations[p.Name()] != "" {
+			return nil, fmt.Errorf("alert providers need distinct bounded channel names")
+		}
+
+		identity, err := providerDestination(p)
+		if err != nil {
+			return nil, err
+		}
+		destinations[p.Name()] = identity
+	}
+	return destinations, nil
+}
+
+// Validate checks the persisted recipient set before a send or status read.
+func (d Destinations) Validate() error {
+	if len(d) == 0 || len(d) > 32 {
+		return fmt.Errorf("invalid or unbound notification recipients")
+	}
+	for name, id := range d {
+		if !channelName.MatchString(name) || !validDestination(id) {
+			return fmt.Errorf("invalid notification recipient binding")
+		}
+	}
+	return nil
+}
+
+// Check refuses a configured recipient change before any send.
+// A channel missing from current must remain pending in the caller's checkpoint.
+func (d Destinations) Check(current Destinations) error {
+	if err := d.Validate(); err != nil {
+		return err
+	}
+	for name, id := range d {
+		if next, ok := current[name]; ok && id != next {
+			return fmt.Errorf("pending %s destination changed; restore its verified routing configuration", name)
+		}
+	}
+	return nil
+}
+
+// Verify checks the actual provider immediately before handing it a frozen message.
+func (d Destinations) Verify(p AlertProvider) error {
+	id, err := providerDestination(p)
+	if err != nil || d[p.Name()] != id {
+		return fmt.Errorf("pending notification recipient no longer matches its original destination")
+	}
+	return nil
+}

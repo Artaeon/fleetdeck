@@ -1,6 +1,7 @@
 package securityreport
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -172,13 +173,19 @@ func TestStaleObservationDoesNotClearPendingRestart(t *testing.T) {
 }
 
 type testProvider struct {
-	name string
-	fail bool
-	sent int
+	name      string
+	recipient string
+	alerts    []monitor.Alert
+	fail      bool
+	sent      int
 }
 
 func (p *testProvider) Name() string { return p.name }
-func (p *testProvider) Send(monitor.Alert) error {
+func (p *testProvider) DestinationIdentity() string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(p.name+p.recipient)))
+}
+func (p *testProvider) Send(a monitor.Alert) error {
+	p.alerts = append(p.alerts, a)
 	p.sent++
 	if p.fail {
 		return fmt.Errorf("private transport error")
@@ -239,5 +246,60 @@ func TestDeliveryRejectsPublicAndScannerState(t *testing.T) {
 	os.Chmod(dir, 0755)
 	if err := Deliver(filepath.Join(dir, "delivery.json"), r, "en", 7*24*time.Hour, providers); err == nil {
 		t.Fatal("public state directory accepted")
+	}
+}
+
+func TestReportRetryPreservesSnapshotAndRecipients(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0700)
+	path := filepath.Join(dir, "delivery.json")
+	now := time.Now().UTC()
+	r := Report{GeneratedAt: now, Nodes: []Node{{Label: "node-a"}}}
+	healthy, down, extra := &testProvider{name: "telegram"}, &testProvider{name: "email", fail: true}, &testProvider{name: "added"}
+	channels := []monitor.AlertProvider{healthy, down}
+	if Deliver(path, r, "en", 24*time.Hour, channels) == nil {
+		t.Fatal("failure hidden")
+	}
+	first := down.alerts[0]
+	r.GeneratedAt = now.Add(48 * time.Hour)
+	r.Nodes[0].Critical = 3
+	before, _ := os.ReadFile(path)
+	down.recipient = "replacement"
+	if Deliver(path, r, "de", 24*time.Hour, channels) == nil || healthy.sent != 1 || down.sent != 1 {
+		t.Fatal("sent with changed pending recipient")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("rewrote refused state")
+	}
+	if Deliver(path, r, "de", 24*time.Hour, []monitor.AlertProvider{healthy, extra}) == nil || extra.sent != 0 || healthy.sent != 2 {
+		t.Fatal("missing recipient lost or blocked independent cadence")
+	}
+	down.recipient = ""
+	down.fail = false
+	if err := Deliver(path, r, "de", 24*time.Hour, append(channels, extra)); err != nil {
+		t.Fatal(err)
+	}
+	if healthy.sent != 2 || extra.sent != 0 || down.sent != 2 || down.alerts[1] != first {
+		t.Fatal("retried a different report or recipient")
+	}
+}
+func TestLegacyReportKeepsItsInterval(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0700)
+	path := filepath.Join(dir, "report.json")
+	now := time.Now().UTC()
+	r := Report{GeneratedAt: now, Nodes: []Node{{Label: "node-a"}}}
+	raw, _ := json.Marshal(map[string]any{"version": 1, "labels": "node-a", "sent": map[string]time.Time{"telegram": now}})
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &testProvider{name: "telegram"}
+	if err := Deliver(path, r, "en", 24*time.Hour, []monitor.AlertProvider{p}); err != nil || p.sent != 0 {
+		t.Fatal("legacy interval lost", err)
+	}
+	s, err := readState(path)
+	if err != nil || s.Version != 2 || len(s.Pending) != 0 {
+		t.Fatal("migration failed", err)
 	}
 }
