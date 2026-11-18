@@ -31,9 +31,10 @@ type queuedAlert struct {
 }
 
 type alertDiskState struct {
-	Version int                     `json:"version"`
-	States  map[string]*targetState `json:"states"`
-	Pending []queuedAlert           `json:"pending"`
+	Version      int                     `json:"version"`
+	States       map[string]*targetState `json:"states"`
+	Pending      []queuedAlert           `json:"pending"`
+	Destinations map[string]string       `json:"destinations,omitempty"`
 }
 
 type alertOutbox struct {
@@ -49,11 +50,20 @@ func NewDurableAlertManager(providers []AlertProvider, threshold int, path strin
 		return nil, errors.New("alert state path must be absolute")
 	}
 	seen := map[string]bool{}
+	destinations := map[string]string{}
+	if len(providers) > 32 {
+		return nil, errors.New("at most 32 notification channels are supported")
+	}
 	for _, p := range providers {
 		if !channelName.MatchString(p.Name()) || seen[p.Name()] {
 			return nil, errors.New("alert providers need distinct bounded channel names")
 		}
 		seen[p.Name()] = true
+		identity, err := providerDestination(p)
+		if err != nil {
+			return nil, err
+		}
+		destinations[p.Name()] = identity
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -84,6 +94,10 @@ func NewDurableAlertManager(providers []AlertProvider, threshold int, path strin
 		lock.Close()
 		return nil, err
 	}
+	if err := bindDestinations(&state, destinations); err != nil {
+		lock.Close()
+		return nil, err
+	}
 	am := NewAlertManager(providers, threshold)
 	am.states = state.States
 	am.outbox = &alertOutbox{path: path, lock: lock, state: state}
@@ -109,12 +123,24 @@ func loadAlertState(path string) (alertDiskState, error) {
 	if err != nil || len(data) > maxAlertStateBytes || json.Unmarshal(data, &state) != nil || state.Version != 1 || state.States == nil {
 		return state, errors.New("invalid alert state; refusing to discard pending notifications")
 	}
-	if len(state.States) > 4096 || len(state.Pending) > maxQueuedAlerts {
+	if len(state.States) > 4096 || len(state.Pending) > maxQueuedAlerts || len(state.Destinations) > 64 {
 		return state, errors.New("alert state exceeds entry limits")
+	}
+	for name, identity := range state.Destinations {
+		if !channelName.MatchString(name) || !validDestination(identity) {
+			return state, errors.New("invalid persisted notification destination")
+		}
 	}
 	for _, s := range state.States {
 		if s == nil || s.ConsecutiveFailures < 0 || s.ConsecutiveStatus < 0 {
 			return state, errors.New("invalid persisted incident state")
+		}
+		if s.ProbeIdentity != "" && !validDestination(s.ProbeIdentity) {
+			return state, errors.New("invalid persisted probe identity")
+		}
+		validStatus := func(value string) bool { return value == "" || value == "unhealthy" || value == "blocked" }
+		if !validStatus(s.AlertedStatus) || !validStatus(s.PendingStatus) {
+			return state, errors.New("invalid persisted incident status")
 		}
 	}
 	for _, a := range state.Pending {
@@ -141,7 +167,7 @@ func cloneAlertStates(states map[string]*targetState) map[string]*targetState {
 
 func (am *AlertManager) saveOutbox() error {
 	am.outbox.state.States = am.states
-	if len(am.states) > 4096 || len(am.outbox.state.Pending) > maxQueuedAlerts {
+	if len(am.states) > 4096 || len(am.outbox.state.Pending) > maxQueuedAlerts || len(am.outbox.state.Destinations) > 64 {
 		return errors.New("alert queue full; restore delivery before restarting monitoring")
 	}
 	data, err := json.Marshal(am.outbox.state)
@@ -184,6 +210,10 @@ func (am *AlertManager) RetryPending(now time.Time) error {
 		return nil
 	}
 	for _, provider := range am.providers {
+		identity, err := providerDestination(provider)
+		if err != nil || identity != am.outbox.state.Destinations[provider.Name()] {
+			return fmt.Errorf("notification destination changed while monitoring; refusing to redirect pending alerts")
+		}
 		am.mu.Lock()
 		index := -1
 		var alert Alert
@@ -215,7 +245,7 @@ func (am *AlertManager) RetryPending(now time.Time) error {
 			status.NextTry = now.Add(min(delay, 15*time.Minute))
 		}
 		am.outbox.state.Pending[index].Channels[provider.Name()] = status
-		err := am.saveOutbox()
+		err = am.saveOutbox()
 		am.mu.Unlock()
 		if err != nil {
 			return fmt.Errorf("cannot checkpoint notification delivery: %w", err)

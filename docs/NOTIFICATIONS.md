@@ -62,9 +62,23 @@ Each channel acknowledges messages independently. Failed sends retry after 30
 seconds with exponential backoff capped at 15 minutes, including when every
 health check is healthy again. Outage and recovery messages keep their order per
 channel. Restarting preserves pending work, thresholds and open incidents. A
-removed channel's pending work remains until that channel is restored. Replacing
-credentials under the same channel name sends its backlog to the new destination;
-review that change before rotating destinations.
+removed channel's pending work remains until that channel is restored. Durable
+health queues bind channel names to destination fingerprints. Changing the
+recipient, webhook, Telegram bot/chat/topic, or SMTP route while that channel
+has undelivered messages refuses startup without changing the queue. Restore the
+previous verified configuration and finish its backlog before changing targets.
+SMTP password rotation and a Telegram token rotation for the same bot keep the
+destination. Fingerprints contain no plaintext addresses, webhook URLs or tokens;
+the private queue still contains alert text and must remain protected.
+
+Before upgrading a monitor with an older unbound queue, use `monitor deliveries`
+to confirm that all pending messages have been delivered using its existing
+verified configuration. An older nonempty queue cannot establish its intended
+destination and is not silently adopted by the new version. Preserve it and use
+the previous verified version/configuration to drain it. Empty queues migrate
+automatically. Never delete a queue to bypass this check. These bindings apply
+to durable health alerts; the separate host-event relay and security-report
+delivery state still require an operator review before destination changes.
 
 Incident state is bound to the probe URL, HTTP method and expected status, not
 only its display name. Reusing a name for a different probe starts a new incident
