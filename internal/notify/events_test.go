@@ -142,3 +142,45 @@ func TestWatchPreservesUnboundLegacyBatch(t *testing.T) {
 		t.Fatal("legacy batch changed", err)
 	}
 }
+
+func TestWatchQueuesNewActivityBeforeSendingAndResumesLegacyCursor(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "relay.json")
+	if err := os.WriteFile(path, []byte(`{"since":"start","cursor":"old"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	journal := `#!/bin/sh
+for arg do
+ if [ "$arg" = "--after-cursor=old" ]; then
+  printf '%s\n' '{"__CURSOR":"new","_UID":"0","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"Accepted publickey for fixture"}'
+  exit 0
+ fi
+done
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "journalctl"), []byte(journal), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	p := &fakeProvider{name: "telegram", fail: true}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := Watch(ctx, path, "fixture", time.Hour, []monitor.AlertProvider{p}); err == nil || p.sent != 1 {
+		t.Fatal("watch did not retain attempted delivery", err)
+	}
+	view, err := ReadBacklog(path)
+	if err != nil || len(view.Items) != 1 || view.Items[0].PendingSince == nil || view.Items[0].Channel != "telegram" {
+		t.Fatal(view, err)
+	}
+	p.fail = false
+	if err := Watch(ctx, path, "fixture", time.Hour, []monitor.AlertProvider{p}); err == nil || p.sent != 2 {
+		t.Fatal("restart did not retry original activity", err)
+	}
+	s, err := readState(path)
+	if err != nil || s.Cursor != "new" || s.Pending != nil {
+		t.Fatal("journal cursor advanced incorrectly", err)
+	}
+}
