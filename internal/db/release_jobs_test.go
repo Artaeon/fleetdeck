@@ -167,3 +167,51 @@ func TestReleaseJobCompletionRejectsContradictoryResults(t *testing.T) {
 		t.Fatal("failed result without error code accepted")
 	}
 }
+
+func TestReleaseCompletionMatchesReservedTargetAndArtifact(t *testing.T) {
+	database := openReleaseJobDB(t)
+	ctx := context.Background()
+	request := releaseJobRequest()
+	hash, err := releasejob.RequestSHA256(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := database.Reserve(ctx, request, hash, now); err != nil {
+		t.Fatal(err)
+	}
+	success := releasejob.Result{SchemaVersion: releasejob.SchemaVersion, JobID: request.JobID, IdempotencyKey: request.IdempotencyKey, ReleaseID: request.ReleaseID, TargetID: request.Target.ID, StartedAt: now, FinishedAt: &now, Status: "succeeded"}
+	for _, field := range []string{"release", "target"} {
+		bad := success
+		if field == "release" {
+			bad.ReleaseID = "another-release"
+		} else {
+			bad.TargetID = "other-target"
+		}
+		if err := database.CompleteSuccess(ctx, bad, request.ManifestDigest); err == nil {
+			t.Fatalf("accepted mismatched %s", field)
+		}
+		bad.Status, bad.ErrorCode = "failed", "HEALTH_FAILED"
+		if err := database.CompleteFailure(ctx, bad); err == nil {
+			t.Fatalf("recorded failure for mismatched %s", field)
+		}
+	}
+	if err := database.CompleteSuccess(ctx, success, "sha256:"+strings.Repeat("a", 64)); err == nil {
+		t.Fatal("accepted a different manifest")
+	}
+	for _, target := range []string{request.Target.ID, "other-target"} {
+		if id, err := database.CurrentRelease(ctx, target); err != nil || id != nil {
+			t.Fatalf("unexpected target change: %v %v", id, err)
+		}
+	}
+	if err := database.CompleteSuccess(ctx, success, request.ManifestDigest); err != nil {
+		t.Fatal(err)
+	}
+	// Jobs recorded by an older version must also match before being replayed.
+	if _, err := database.conn.ExecContext(ctx, `UPDATE release_jobs SET result_json = json_set(result_json, '$.target_id', ?) WHERE idempotency_key = ?`, "other-target", request.IdempotencyKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Reserve(ctx, request, hash, now); err == nil {
+		t.Fatal("replayed a mismatched stored result")
+	}
+}
