@@ -15,7 +15,8 @@ type retryProvider struct {
 	alerts []Alert
 }
 
-func (p *retryProvider) Name() string { return p.name }
+func (p *retryProvider) Name() string                { return p.name }
+func (p *retryProvider) DestinationIdentity() string { return destinationHash("test", p.name) }
 func (p *retryProvider) Send(a Alert) error {
 	p.alerts = append(p.alerts, a)
 	if p.fail {
