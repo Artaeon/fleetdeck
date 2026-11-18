@@ -215,3 +215,35 @@ func TestDurableAlertsQueueLimitRetainsExistingWork(t *testing.T) {
 		t.Fatal("overflow discarded or acknowledged work")
 	}
 }
+
+func TestBacklogRetainsQueueTimeAndOnlyShowsUnacknowledgedDeliveries(t *testing.T) {
+	path := queuePath(t)
+	p, q := &retryProvider{name: "one", fail: true}, &retryProvider{name: "two"}
+	m, err := NewDurableAlertManager([]AlertProvider{p, q}, 1, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := makeResult("site", false, 503)
+	observation.CheckedAt = time.Now().Add(-time.Hour)
+	if err := m.Process(observation); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := ReadDeliveryStatus(path)
+	if err != nil || len(queued.Items) != 2 || queued.Pending != 1 {
+		t.Fatal(queued, err)
+	}
+	item := queued.Items[0]
+	if item.PendingSince == nil || !item.PendingSince.After(observation.CheckedAt) || item.Reference != queued.Items[1].Reference {
+		t.Fatal("lost per-message queue time")
+	}
+	if err := m.RetryPending(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	queued, err = ReadDeliveryStatus(path)
+	if err != nil || len(queued.Items) != 1 || queued.Items[0].Channel != "one" || queued.Items[0].Reference != item.Reference || !queued.Items[0].PendingSince.Equal(*item.PendingSince) {
+		t.Fatal("age or reference changed on retry", err)
+	}
+}

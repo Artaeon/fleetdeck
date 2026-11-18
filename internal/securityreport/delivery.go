@@ -165,3 +165,20 @@ func Deliver(path string, r Report, language string, interval time.Duration, pro
 	}
 	return nil
 }
+
+func ReadBacklog(path string) (monitor.Backlog, error) {
+	b := monitor.Backlog{Coverage: "tracked", Items: []monitor.Waiting{}}
+	s, err := readState(path)
+	if err != nil {
+		return b, err
+	}
+	if s.Version == 1 {
+		b.Coverage = "legacy_successes_only"
+		return b, nil
+	}
+	for name, p := range s.Pending {
+		b.Items = append(b.Items, monitor.WaitingFor(p.Alert, "security_report", name, p.QueuedAt))
+	}
+	b.Sort()
+	return b, nil
+}
