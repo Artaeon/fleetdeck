@@ -62,6 +62,19 @@ already delivered. Changing the enrolled input labels requires reviewing the
 new input set and selecting a separate checkpoint. A crash after the provider
 accepts a message but before the checkpoint is written can still duplicate it.
 
+Each due channel stores a private copy of the compact report and its recipient
+fingerprint before any send. A retry delivers that same dated report, even when
+the next scan, language or severity has changed. A missing channel retains its
+copy while established working channels continue on their schedule. Changing
+a pending recipient stops the run. Restore the original routing configuration
+to finish that delivery. New channels can enroll on a run that starts with an
+empty backlog. Each channel retains one outstanding report and starts its next
+interval on successful handoff.
+
+Version 1 stored the last successful send per channel. Upgrading preserves those
+intervals. Historical failed sends had no saved content or recipient to recover.
+Inspect current outstanding reports with [the delivery overview](NOTIFICATIONS.md#inspect-outstanding-deliveries).
+
 Compact notifications show at most eight servers, prioritizing critical findings,
 unknown checks and warnings. When truncated, totals cover the complete input set
 and the message names the number of omitted servers. The full local report keeps

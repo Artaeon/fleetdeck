@@ -36,14 +36,13 @@ that a person read it. A local monitor cannot notify while its own host or netwo
 is unavailable; use independent external supervision and observe delivery backlog
 as well as endpoint health.
 
-The host-event relay and periodic security reports have separate delivery state.
-Their destination changes still require an operator review; the health-queue
-binding must not be represented as a universal notification guarantee. A useful
-next extension is a shared, narrowly scoped destination-binding contract for
-these remaining senders, with their own migration and failure tests.
+The host-event relay and periodic reports now bind pending sends to their
+original recipients. Regression tests cover a changed, missing and added
+channel, relay restart, legacy state, and frozen report content across periods.
+Operators can inspect [waiting channels and queue times](NOTIFICATIONS.md#inspect-outstanding-deliveries).
 
-Other priorities are a safe overview of delayed notifications, reproducible
-release promotion and periodically verified offsite restoration. They need
+Other priorities are reproducible release promotion and periodically verified
+offsite restoration. They need
 explicit evidence contracts: an empty backlog, a running process, an uploaded
 archive or a green package scan alone does not establish successful delivery,
 application readiness, restorability or complete host security.
