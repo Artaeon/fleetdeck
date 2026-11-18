@@ -66,6 +66,15 @@ removed channel's pending work remains until that channel is restored. Replacing
 credentials under the same channel name sends its backlog to the new destination;
 review that change before rotating destinations.
 
+Incident state is bound to the probe URL, HTTP method and expected status, not
+only its display name. Reusing a name for a different probe starts a new incident
+history; it cannot suppress that probe's first outage or claim that the previous
+application recovered. Changing only intervals/timeouts keeps the incident.
+Older state without a probe identity is treated as unverified on its first new
+observation. This may repeat an outage after the threshold, but never invents a
+recovery. Already queued messages remain intact. Current endpoint health is
+checked afresh at startup; saved observations are not proof of current health.
+
 Inspect counters without revealing message content, endpoints or credentials:
 
 ```sh

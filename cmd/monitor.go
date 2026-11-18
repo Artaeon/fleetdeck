@@ -171,10 +171,7 @@ Examples:
 		}
 		defer mon.CloseAlerts()
 
-		// Try to restore previous state from disk.
-		if prev, err := monitor.LoadState(statePath); err == nil {
-			ui.Info("Restored previous monitor state (saved %s)", prev.UpdatedAt.Format(time.RFC3339))
-		}
+		ui.Info("Notification queue loaded; endpoint health will be checked afresh")
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
