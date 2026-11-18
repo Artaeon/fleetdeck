@@ -49,21 +49,9 @@ func NewDurableAlertManager(providers []AlertProvider, threshold int, path strin
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("alert state path must be absolute")
 	}
-	seen := map[string]bool{}
-	destinations := map[string]string{}
-	if len(providers) > 32 {
-		return nil, errors.New("at most 32 notification channels are supported")
-	}
-	for _, p := range providers {
-		if !channelName.MatchString(p.Name()) || seen[p.Name()] {
-			return nil, errors.New("alert providers need distinct bounded channel names")
-		}
-		seen[p.Name()] = true
-		identity, err := providerDestination(p)
-		if err != nil {
-			return nil, err
-		}
-		destinations[p.Name()] = identity
+	destinations, err := BindProviders(providers)
+	if err != nil {
+		return nil, err
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {

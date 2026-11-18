@@ -1,109 +1,167 @@
 package securityreport
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/fleetdeck/fleetdeck/internal/deliverystate"
 	"github.com/fleetdeck/fleetdeck/internal/deploy"
 	"github.com/fleetdeck/fleetdeck/internal/monitor"
 )
 
+type pendingReport struct {
+	QueuedAt    time.Time     `json:"queued_at"`
+	Destination string        `json:"destination"`
+	Alert       monitor.Alert `json:"alert"`
+}
 type deliveryState struct {
-	Version int                  `json:"version"`
-	Labels  string               `json:"labels"`
-	Sent    map[string]time.Time `json:"sent"`
+	Version int                      `json:"version"`
+	Labels  string                   `json:"labels"`
+	Sent    map[string]time.Time     `json:"sent"`
+	Pending map[string]pendingReport `json:"pending"`
 }
 
-// Deliver checkpoints each provider separately. This file must never be the
-// scanner state. A crash after provider acceptance can still duplicate delivery.
+const reportStateLimit = 1 << 20
+
+func readState(path string) (deliveryState, error) {
+	var s deliveryState
+	if err := deliverystate.Read(path, &s, reportStateLimit); err != nil {
+		return s, err
+	}
+	if (s.Version != 1 && s.Version != 2) || s.Labels == "" || s.Sent == nil {
+		return s, errors.New("invalid report delivery state")
+	}
+	if s.Version == 1 {
+		if s.Pending != nil {
+			return s, errors.New("unexpected legacy pending state")
+		}
+		return s, nil
+	}
+	if s.Pending == nil || len(s.Pending) > 32 {
+		return s, errors.New("invalid pending report set")
+	}
+	if len(s.Pending) > 0 {
+		if err := s.destinations().Validate(); err != nil {
+			return s, err
+		}
+	}
+	for _, p := range s.Pending {
+		if p.QueuedAt.IsZero() || p.Alert.Timestamp.IsZero() || p.Alert.Title != "FleetDeck security report" || p.Alert.Target != "fleet" || p.Alert.Message == "" {
+			return s, errors.New("invalid pending report snapshot")
+		}
+	}
+	return s, nil
+}
+
+func (s deliveryState) destinations() monitor.Destinations {
+	d := monitor.Destinations{}
+	for name, p := range s.Pending {
+		d[name] = p.Destination
+	}
+	return d
+}
+
+// Deliver freezes each due channel's report before sending. Independent intervals
+// continue for working channels even while another channel retains an old report.
 func Deliver(path string, r Report, language string, interval time.Duration, providers []monitor.AlertProvider) error {
-	if path == "" || len(providers) == 0 || interval < 24*time.Hour || interval > 30*24*time.Hour {
-		return fmt.Errorf("delivery requires a private state, channels and a 1–30 day interval")
+	if path == "" || len(providers) == 0 || interval < 24*time.Hour || interval > 30*24*time.Hour || r.GeneratedAt.IsZero() || len(r.Nodes) == 0 {
+		return errors.New("delivery requires a dated report, private state, channels and a 1–30 day interval")
 	}
-	dir := filepath.Dir(path)
-	i, err := os.Lstat(dir)
-	if err != nil || !i.IsDir() || i.Mode().Perm()&0077 != 0 {
-		return fmt.Errorf("delivery state parent must be an existing private directory")
+	current, err := monitor.BindProviders(providers)
+	if err != nil {
+		return err
 	}
-	lock, err := deploy.AcquireLock(dir)
+	if err := deliverystate.PrivateDir(path); err != nil {
+		return err
+	}
+	lock, err := deploy.AcquireLock(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer lock.Release()
-	s := deliveryState{Version: 1, Sent: map[string]time.Time{}}
-	i, err = os.Lstat(path)
-	if err == nil {
-		if !i.Mode().IsRegular() || i.Mode().Perm()&0077 != 0 || i.Size() > 65536 {
-			return fmt.Errorf("invalid delivery state permissions or size")
-		}
-		b, e := os.ReadFile(path)
-		if e != nil {
-			return fmt.Errorf("cannot read delivery state")
-		}
-		if json.Unmarshal(b, &s) != nil || s.Version != 1 || s.Sent == nil || s.Labels == "" {
-			return fmt.Errorf("invalid delivery state")
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("cannot inspect delivery state")
+	s, err := readState(path)
+	if os.IsNotExist(err) {
+		s = deliveryState{Sent: map[string]time.Time{}}
+	} else if err != nil {
+		return err
 	}
-	labels := []string{}
+	labels := make([]string, 0, len(r.Nodes))
 	for _, n := range r.Nodes {
 		labels = append(labels, n.Label)
 	}
 	identity := strings.Join(labels, ",")
 	if s.Labels != "" && s.Labels != identity {
-		return fmt.Errorf("input set changed: review enrollment and use a separate delivery state")
+		return errors.New("input set changed: review enrollment and use a separate delivery state")
 	}
 	s.Labels = identity
 	for _, at := range s.Sent {
 		if at.After(r.GeneratedAt.Add(30 * time.Second)) {
-			return fmt.Errorf("delivery clock moved backwards")
+			return errors.New("delivery clock moved backwards")
 		}
 	}
-	failed := 0
-	for _, p := range providers {
-		last := s.Sent[p.Name()]
-		if !last.IsZero() && r.GeneratedAt.Sub(last) < interval {
+	if len(s.Pending) > 0 {
+		if err := s.destinations().Check(current); err != nil {
+			return err
+		}
+		for _, p := range s.Pending {
+			if p.Alert.Timestamp.After(r.GeneratedAt.Add(30 * time.Second)) {
+				return errors.New("delivery clock moved backwards")
+			}
+		}
+	}
+	// v1 recorded successful sends only. Its interval checkpoints still apply.
+	dirty := s.Version != 2
+	s.Version = 2
+	if s.Pending == nil {
+		s.Pending = map[string]pendingReport{}
+	}
+	hadBacklog := len(s.Pending) > 0
+	queuedAt := time.Now().UTC()
+	for name, id := range current {
+		if _, ok := s.Pending[name]; ok {
 			continue
 		}
-		if p.Send(monitor.Alert{Level: r.Level(), Title: "FleetDeck security report", Message: r.Text(language, true), Target: "fleet", Timestamp: r.GeneratedAt}) != nil {
-			failed++
+		if _, known := s.Sent[name]; hadBacklog && !known {
 			continue
 		}
-		s.Sent[p.Name()] = r.GeneratedAt
-		if err := writeState(path, s); err != nil {
+		if last := s.Sent[name]; !last.IsZero() && r.GeneratedAt.Sub(last) < interval {
+			continue
+		}
+		alert := monitor.Alert{Level: r.Level(), Title: "FleetDeck security report", Message: r.Text(language, true), Target: "fleet", Timestamp: r.GeneratedAt}
+		s.Pending[name] = pendingReport{QueuedAt: queuedAt, Destination: id, Alert: alert}
+		dirty = true
+	}
+	if len(s.Pending) > 32 {
+		return errors.New("too many outstanding report channels")
+	}
+	if dirty {
+		if err := deliverystate.Write(path, s, reportStateLimit); err != nil {
 			return err
 		}
 	}
-	if failed > 0 {
-		return fmt.Errorf("report delivery failed for %d channels; successful channels are checkpointed", failed)
+	for _, p := range providers {
+		item, ok := s.Pending[p.Name()]
+		if !ok {
+			continue
+		}
+		if err := (monitor.Destinations{p.Name(): item.Destination}).Verify(p); err != nil {
+			return err
+		}
+		if err := p.Send(item.Alert); err != nil {
+			continue
+		}
+		s.Sent[p.Name()] = r.GeneratedAt
+		delete(s.Pending, p.Name())
+		if err := deliverystate.Write(path, s, reportStateLimit); err != nil {
+			return err
+		}
+	}
+	if len(s.Pending) > 0 {
+		return fmt.Errorf("report delivery pending for %d channels; successful channels are checkpointed", len(s.Pending))
 	}
 	return nil
-}
-
-func writeState(path string, s deliveryState) error {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".report-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	e := f.Close()
-	if err != nil {
-		return err
-	}
-	if e != nil {
-		return e
-	}
-	return os.Rename(f.Name(), path)
 }

@@ -12,60 +12,85 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fleetdeck/fleetdeck/internal/deliverystate"
 	"github.com/fleetdeck/fleetdeck/internal/monitor"
 	"golang.org/x/sys/unix"
 )
 
 type pendingBatch struct {
-	Cursor    string          `json:"cursor"`
-	Alert     monitor.Alert   `json:"alert"`
-	Delivered map[string]bool `json:"delivered"`
+	Cursor       string               `json:"cursor"`
+	Alert        monitor.Alert        `json:"alert"`
+	Delivered    map[string]bool      `json:"acknowledged,omitempty"`
+	Destinations monitor.Destinations `json:"destinations"`
 }
 type relayState struct {
+	Version int           `json:"version,omitempty"`
 	Since   string        `json:"since"`
 	Cursor  string        `json:"cursor"`
 	Pending *pendingBatch `json:"pending,omitempty"`
 }
 
 func saveState(path string, state *relayState) error {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return err
+	return deliverystate.Write(path, state, 65536)
+}
+
+func readState(path string) (relayState, error) {
+	var s relayState
+	if err := deliverystate.Read(path, &s, 65536); err != nil {
+		return s, err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".alerts-*")
-	if err != nil {
-		return err
+	if s.Since == "" || (s.Version != 0 && s.Version != 2) {
+		return s, errors.New("invalid relay state")
 	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(data); err == nil {
-		err = f.Sync()
+	if p := s.Pending; p != nil {
+		if p.Cursor == "" {
+			return s, errors.New("missing pending journal cursor")
+		}
+		if s.Version == 2 {
+			if p.Alert.Timestamp.IsZero() {
+				return s, errors.New("missing host activity timestamp")
+			}
+			if err := p.Destinations.Validate(); err != nil {
+				return s, err
+			}
+			for name, done := range p.Delivered {
+				if p.Destinations[name] == "" || !done {
+					return s, errors.New("invalid host activity acknowledgement")
+				}
+			}
+		}
 	}
-	closeErr := f.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err = os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return s, nil
 }
 
 func deliver(path string, state *relayState, providers []monitor.AlertProvider) error {
-	if state.Pending == nil {
+	p := state.Pending
+	if p == nil {
 		return nil
+	}
+	if state.Version != 2 {
+		return errors.New("unbound legacy host activity; drain with the previous verified configuration and version")
+	}
+	current, err := monitor.BindProviders(providers)
+	if err != nil {
+		return err
+	}
+	for name := range p.Delivered {
+		delete(current, name)
+	}
+	if err := p.Destinations.Check(current); err != nil {
+		return err
+	}
+	if p.Delivered == nil {
+		p.Delivered = map[string]bool{}
 	}
 	failed := false
 	for _, provider := range providers {
-		if state.Pending.Delivered[provider.Name()] {
+		if p.Destinations[provider.Name()] == "" || p.Delivered[provider.Name()] {
 			continue
+		}
+		if err := p.Destinations.Verify(provider); err != nil {
+			return err
 		}
 		if provider.Send(state.Pending.Alert) != nil {
 			failed = true
@@ -76,7 +101,7 @@ func deliver(path string, state *relayState, providers []monitor.AlertProvider) 
 			return err
 		}
 	}
-	if failed {
+	if failed || len(p.Delivered) != len(p.Destinations) {
 		return errors.New("notification delivery failed; pending batch retained for retry")
 	}
 	state.Cursor = state.Pending.Cursor
@@ -137,9 +162,12 @@ func Watch(ctx context.Context, path, label string, interval time.Duration, prov
 	if !filepath.IsAbs(path) || len(providers) == 0 {
 		return errors.New("absolute private state path and notification providers required")
 	}
-	info, err := os.Stat(filepath.Dir(path))
-	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-		return errors.New("relay state directory must already exist with mode 0700")
+	if err := deliverystate.PrivateDir(path); err != nil {
+		return err
+	}
+	destinations, err := monitor.BindProviders(providers)
+	if err != nil {
+		return err
 	}
 	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW, 0600)
 	if err != nil {
@@ -149,23 +177,17 @@ func Watch(ctx context.Context, path, label string, interval time.Duration, prov
 	if unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB) != nil {
 		return errors.New("another alert relay owns this state file")
 	}
-	state := relayState{Since: time.Now().UTC().Format("2006-01-02 15:04:05 UTC")}
-	if st, err := os.Lstat(path); err == nil {
-		if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 || st.Size() > 65536 {
-			return errors.New("relay state must be a private regular file")
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
+	state, err := readState(path)
+	if os.IsNotExist(err) {
+		state = relayState{Version: 2, Since: time.Now().UTC().Format("2006-01-02 15:04:05 UTC")}
+		if err := saveState(path, &state); err != nil {
 			return err
 		}
-		if json.Unmarshal(data, &state) != nil || state.Since == "" || (state.Pending != nil && state.Pending.Delivered == nil) {
-			return errors.New("invalid relay state; refusing to discard cursor")
-		}
-	} else if !os.IsNotExist(err) {
+	} else if err != nil {
 		return err
 	}
-	if err := saveState(path, &state); err != nil {
-		return err
+	if state.Pending == nil {
+		state.Version = 2
 	}
 	for {
 		if err := deliver(path, &state, providers); err != nil {
@@ -181,7 +203,7 @@ func Watch(ctx context.Context, path, label string, interval time.Duration, prov
 		if len(entries) > 0 {
 			cursor := entries[len(entries)-1].Cursor
 			if alert := Summarize(entries, label); alert != nil {
-				state.Pending = &pendingBatch{Cursor: cursor, Alert: *alert, Delivered: map[string]bool{}}
+				state.Pending = &pendingBatch{Cursor: cursor, Alert: *alert, Destinations: destinations}
 			} else {
 				state.Cursor = cursor
 			}
