@@ -76,9 +76,7 @@ to confirm that all pending messages have been delivered using its existing
 verified configuration. An older nonempty queue cannot establish its intended
 destination and is not silently adopted by the new version. Preserve it and use
 the previous verified version/configuration to drain it. Empty queues migrate
-automatically. Never delete a queue to bypass this check. These bindings apply
-to durable health alerts; the separate host-event relay and security-report
-delivery state still require an operator review before destination changes.
+automatically. Never delete a queue to bypass this check.
 
 Incident state is bound to the probe URL, HTTP method and expected status, not
 only its display name. Reusing a name for a different probe starts a new incident
@@ -120,6 +118,33 @@ fleetdeck alert send --telegram-config /private/path/telegram.json \
 channel and exits unsuccessfully if any channel fails. Do not put credentials or
 raw command output in the message. Existing webhook, Slack and Discord health
 providers remain available through `monitor start`.
+
+## Inspect outstanding deliveries
+
+Pass the private state files used by your services. Each flag is optional.
+The example uses the sample relay and report service paths.
+
+```sh
+fleetdeck alert deliveries \
+  --relay-state /var/lib/fleetdeck-alerts/state.json \
+  --report-state /var/lib/fleetdeck-security-report/delivery.json
+```
+
+Add `--health-state` with the monitor's **alert queue** to include endpoint
+alerts. The command reads each requested file once and returns JSON grouped by
+source. Each item identifies one open channel delivery by message reference,
+kind, channel and UTC `pending_since`. Use the reference to correlate channels
+and repeated reads. Items with known queue times appear oldest first within
+each source. Acknowledged channels disappear. Health alerts also retain the
+observation time, which can precede entry into the queue.
+
+Check `coverage` before interpreting an empty list. Older reports tracked
+successes only (`legacy_successes_only`). Older pending relay batches lack a
+verified recipient set (`legacy_unknown_recipients`). Unknown queue times
+appear as `null`. An unreadable requested file makes the command fail. The view
+contains no raw journal messages, report bodies, addresses or credentials.
+Journal events still waiting to be read enter this view when the relay creates
+their batch.
 
 ## SSH and FleetDeck activity
 
@@ -168,6 +193,14 @@ before delivery; successful channels are checkpointed independently. Failed
 delivery exits the process so systemd retries after 30 seconds. Journal retention
 must cover delivery outages. A crash between provider acceptance and checkpoint
 can duplicate a message; delivery is at least once, not exactly once.
+
+The relay records the entire original recipient set before its first send. A
+removed channel keeps the batch and its journal cursor pending. Restoring the
+same destination resumes delivery. A newly added channel starts with the next
+batch. Changing a still-pending recipient makes the relay exit before sending
+or advancing the cursor. Before upgrading, drain any pending unbound legacy
+batch with its previous verified binary and routing configuration. An idle
+legacy relay keeps its cursor through the upgrade.
 
 The first start begins at the current time. Later starts resume the saved cursor.
 An invalid/expired cursor fails visibly rather than silently skipping history.
