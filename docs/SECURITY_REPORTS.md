@@ -94,3 +94,121 @@ credentials; it does not create a new remote administrator or expose a report
 endpoint. Use a dedicated service identity and narrowly scoped read permissions
 where practical. These process restrictions are not protection from a compromised
 host administrator or hosting provider.
+
+## Daily changes and weekly reviews
+
+Calendar editions share the existing recipient-bound delivery queue. Supply a
+separate state file per edition. The daily edition records a quiet first baseline,
+then sends at most one summary per local day when actionable findings or control
+coverage change, including recoveries. The first observation with outstanding
+risks sends immediately once the daily hour is reached. Scan timestamps alone
+do not produce messages. A failed handoff is retried even before the next period.
+New periods cannot replace an undelivered copy.
+
+The weekly edition covers seven **completed local dates** ending before the
+configured weekday. The headline counts describe the current assessment at the
+printed issue time. The evidence table counts the latest recorded scan of each
+reporting host per date. Missing observations have no numeric value. Findings
+count occurrences across the fleet; a lower count alone cannot prove a fix.
+English and German are available, including the PDF, dates, priorities, host
+coverage, control results, validity periods and references to private evidence.
+The report supports internal operational review. Formal certification requires
+a specified framework, scope and independent assessment.
+
+```sh
+umask 077
+fleetdeck security report --edition weekly --timezone Europe/Berlin \
+  --input node-a=/private/observations/node-a.json \
+  --format pdf > weekly-review.pdf
+```
+
+Use `--format json` to obtain the same dated coverage for automation.
+Use `--first-date YYYY-MM-DD` to start with a future period. The usual weekly
+delivery hour is Monday 08:00 and the daily hour is 18:00 in the configured
+timezone. For a delayed first installation, the weekly job catches up with the
+current eligible period. `--week-start` and `--hour` are configurable.
+The interval edition and its existing state retain their original behavior.
+
+### Recipients, scheduling and retention
+
+Use a private report-specific TOML file so changes to the audit email recipient
+do not reroute urgent alerts. Define `[monitoring]` with `smtp_config_file` and
+`email_to = ["security@example.org"]`. Use `telegram_config_file` for a daily
+Telegram summary. Existing SMTP transport requires authenticated TLS. Email attaches
+the frozen PDF and includes a short text summary. Telegram receives a short
+plain-text briefing. `--channel email` or `--channel telegram` selects only that
+route. A changed pending recipient blocks delivery. Already accepted channels
+keep their own checkpoints. Delivery records SMTP acceptance by the receiving
+mail server; delivery to an inbox is a separate event.
+
+Install the optional
+[calendar service](../deploy/security/fleetdeck-briefing@.service) and
+[timer](../deploy/security/fleetdeck-briefing@.timer). Create a root-owned,
+private `/etc/fleetdeck/reports/weekly.env` containing:
+
+```ini
+REPORT_CONFIG=/etc/fleetdeck/reports/notifications.toml
+REPORT_OPTIONS="--language en --timezone UTC --week-start Monday --hour 8 --channel email --input node-a=/var/lib/fleetdeck-security/state.json --archive-dir /var/lib/fleetdeck-briefing-weekly/archive"
+```
+
+Create the archive directory with mode 0700. For `daily.env`, select
+`--channel telegram --hour 18` and omit the archive. Pass explicit inputs for
+all expected nodes. Review a local preview, verify the units, then enable
+`fleetdeck-briefing@weekly.timer` and optionally `fleetdeck-briefing@daily.timer`.
+Hourly runs retry failures. The configured local hour and period select new
+deliveries. The service does not start scans, upgrade packages or restart
+workloads. Use a separate service identity with read access to its inputs and
+write access only to its state and archive where practical.
+
+`--archive-dir` creates the exact PDF queued for email with its period and full
+SHA-256 in the filename. A conflicting file blocks the send; retries never
+replace archived evidence. Use a separately administered offsite destination
+with versioning or retention for durable evidence. A local archive is writable
+by its host administrator. The operator selects the archive lifetime.
+
+### Dated control evidence
+
+Supply a private file with `--control-evidence`. A version 1 object contains
+a `records` array. Each entry requires `host`, `control`, a neutral `source`,
+`observed_at`, `expires_at`, `result` (pass, fail or unknown), and the lowercase
+SHA-256 of the retained evidence in `sha256`. Use the source label to identify
+the tested scope, for example one isolated database restore. Each host must be
+explicitly enrolled. The newest dated record wins; conflicting evidence at the
+same instant is rejected. Missing, expired, and clock-invalid proofs remain
+visible. A new scan cannot renew an independent restore or SSH test.
+
+| Control | Maximum evidence lifetime |
+| --- | --- |
+| `ssh_mfa` | 30 days |
+| `reachability` | 26 hours |
+| `offsite_backup` | 48 hours |
+| `restore_test` | 90 days |
+
+For signed evidence, pin an Ed25519 public key in a private PEM file and supply
+`--control-public-key` and `--control-signature`. The signature is the 64-byte
+Ed25519 signature over the exact bytes of the evidence file. Keep the signing
+identity outside the reporting host. Keep inputs and signature files in private
+directories. An invalid signature stops processing.
+
+### Existing fleet observers and independent checks
+
+To use the read-only [fleet observer](FLEET_OVERVIEW.md), fetch the snapshot over
+its existing mutually authenticated transport, including the pinned server
+identity. Pipe the authenticated JSON to
+`fleetdeck security capture-observer --node-id node-b --output /private/observations/node-b.json`.
+The CLI checks the source identity, clock, limits and schema. It retains up to
+56 dated count observations and discards project names, paths and other snapshot
+details. Use `--observer-input node-b=/private/observations/node-b.json` in the
+report. Keep one history per node, refresh it hourly, and check collectors
+independently. A missing or older-than-two-hours collection stays unknown; the
+underlying scan has its own maximum age. Existing observers expose aggregate
+image and runtime counts. Package and restart details stay unverified; changed
+findings with identical aggregate counts require the host's full watcher data.
+
+An independent monitor can run
+`fleetdeck security report-status --delivery-state /private/reports/weekly.json --max-age 2h`.
+It exits nonzero on a stale run, pending delivery or unreadable state. The JSON
+contains enqueue age and timestamps, without report contents, host labels or
+recipients. A quiet daily baseline updates the heartbeat even without a send.
+Run the liveness check from a second failure domain if it must detect complete
+loss of the reporting host.

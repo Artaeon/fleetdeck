@@ -1,0 +1,11 @@
+[Unit]
+Description=Check FleetDeck %i briefing and retry pending delivery
+
+[Timer]
+OnCalendar=hourly
+AccuracySec=1min
+Persistent=true
+Unit=fleetdeck-briefing@%i.service
+
+[Install]
+WantedBy=timers.target
