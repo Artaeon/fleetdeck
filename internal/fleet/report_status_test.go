@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -52,6 +53,19 @@ func TestReportReaderRouteIsSeparateFromFleetSnapshot(t *testing.T) {
 		}
 		if tc.code == 200 && tc.path == "/v1/report-status" && (strings.TrimSpace(res.Body.String()) != string(b) || res.Header().Get("Cache-Control") != "no-store") {
 			t.Fatal("unexpected disclosure", res.Body.String())
+		}
+	}
+	statusOnly := WithReportStatus(http.NotFoundHandler(), statusPath, pins(reader))
+	for _, tc := range []struct {
+		path string
+		code int
+	}{{"/v1/report-status", 200}, {"/v1/snapshot", 404}} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.TLS = &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{reader}}, PeerCertificates: []*x509.Certificate{reader}}
+		res := httptest.NewRecorder()
+		statusOnly.ServeHTTP(res, req)
+		if res.Code != tc.code {
+			t.Fatalf("status-only %s: got %d want %d", tc.path, res.Code, tc.code)
 		}
 	}
 	if err := os.Chmod(statusPath, 0664); err != nil {

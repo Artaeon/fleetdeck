@@ -36,7 +36,7 @@ var fleetSnapshotCmd = &cobra.Command{Use: "snapshot", Short: "Export sanitized 
 	}
 	return fleetexport.WriteSnapshot(out, s)
 }}
-var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snapshot over mutually authenticated TLS", Args: cobra.NoArgs,
+var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve authorized read-only projections over mutually authenticated TLS", Args: cobra.NoArgs,
 	// The unprivileged observer must not open the registry, load host secrets,
 	// start Docker probes, load templates or initialize root audit files.
 	PersistentPreRun: func(*cobra.Command, []string) {},
@@ -44,21 +44,24 @@ var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snaps
 		node, _ := cmd.Flags().GetString("node-id")
 		path, _ := cmd.Flags().GetString("snapshot")
 		addr, _ := cmd.Flags().GetString("addr")
-		if !fleet.ValidID(node) || path == "" || !fleet.PrivateAddress(addr) {
-			return fmt.Errorf("agent requires node ID, snapshot file and a literal private/loopback IP:port")
+		if !fleet.ValidID(node) || !fleet.PrivateAddress(addr) {
+			return fmt.Errorf("agent requires a node ID and a literal private/loopback IP:port")
 		}
 		cert, _ := cmd.Flags().GetString("tls-cert")
 		key, _ := cmd.Flags().GetString("tls-key")
 		ca, _ := cmd.Flags().GetString("client-ca")
 		clients, _ := cmd.Flags().GetStringArray("allow-client-cert")
-		if cert == "" || key == "" || ca == "" || len(clients) == 0 {
-			return fmt.Errorf("agent requires TLS and explicitly authorized client certificates")
+		if cert == "" || key == "" || ca == "" {
+			return fmt.Errorf("agent requires a TLS server identity and client trust anchor")
 		}
 		if err := fleet.PrivateKey(key); err != nil {
 			return err
 		}
 		reportPath, _ := cmd.Flags().GetString("report-status")
 		reportClients, _ := cmd.Flags().GetStringArray("allow-report-status-cert")
+		if (path == "") != (len(clients) == 0) || (path == "" && reportPath == "") {
+			return fmt.Errorf("configure a projection and its authorized client certificates")
+		}
 		if (reportPath == "") != (len(reportClients) == 0) {
 			return fmt.Errorf("report status requires its own projection and client certificate")
 		}
@@ -70,7 +73,10 @@ var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snaps
 		if err != nil {
 			return err
 		}
-		handler := fleet.Agent(node, path, allowed)
+		handler := http.NotFoundHandler()
+		if path != "" {
+			handler = fleet.Agent(node, path, allowed)
+		}
 		if reportPath != "" {
 			pins, err := fleetClientPins(reportClients)
 			if err != nil {
