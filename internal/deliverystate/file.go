@@ -20,23 +20,35 @@ func PrivateDir(path string) error {
 }
 
 func Read(path string, dst any, limit int64) error {
-	if err := PrivateDir(path); err != nil {
+	b, err := ReadBytes(path, limit)
+	if err != nil {
 		return err
+	}
+	if json.Unmarshal(b, dst) != nil {
+		return errors.New("invalid delivery state")
+	}
+	return nil
+}
+
+// ReadBytes applies the same privacy and size checks to detached evidence.
+func ReadBytes(path string, limit int64) ([]byte, error) {
+	if err := PrivateDir(path); err != nil {
+		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 	i, err := f.Stat()
 	if err != nil || !i.Mode().IsRegular() || i.Mode().Perm()&0077 != 0 || i.Size() > limit {
-		return errors.New("invalid delivery state permissions or size")
+		return nil, errors.New("invalid delivery state permissions or size")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil || int64(len(b)) > limit || json.Unmarshal(b, dst) != nil {
-		return errors.New("invalid delivery state")
+	if err != nil || int64(len(b)) > limit {
+		return nil, errors.New("cannot read private file")
 	}
-	return nil
+	return b, nil
 }
 
 // Write replaces the checkpoint before the next irreversible send.

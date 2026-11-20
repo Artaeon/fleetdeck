@@ -79,7 +79,7 @@ func Notify(state *State, report Report, label string, providers []monitor.Alert
 	if state.Deliveries == nil {
 		state.Deliveries = map[string]delivery{}
 	}
-	digest, err := notificationDigest(report)
+	digest, err := report.EvidenceDigest()
 	if err != nil {
 		return err
 	}

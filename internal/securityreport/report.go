@@ -16,14 +16,19 @@ var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type Input struct{ Label, Path string }
 type Node struct {
-	Label          string                     `json:"label"`
-	Status         string                     `json:"status"`
-	CheckedAt      time.Time                  `json:"checked_at"`
-	Critical       int                        `json:"critical"`
-	Warnings       int                        `json:"warnings"`
-	Unknown        int                        `json:"unknown"`
-	RebootRequired bool                       `json:"reboot_required"`
-	Actions        []string                   `json:"actions"`
+	Label          string            `json:"label"`
+	Status         string            `json:"status"`
+	CheckedAt      time.Time         `json:"checked_at"`
+	Critical       int               `json:"critical"`
+	Warnings       int               `json:"warnings"`
+	Unknown        int               `json:"unknown"`
+	RebootRequired bool              `json:"reboot_required"`
+	Actions        []string          `json:"actions"`
+	Source         string            `json:"source,omitempty"`
+	Version        string            `json:"observed_fleetdeck_version,omitempty"`
+	Controls       []ControlEvidence `json:"controls,omitempty"`
+	history        []securitywatch.Observation
+	evidence       string
 	Previous       *securitywatch.Observation `json:"previous_observation,omitempty"`
 }
 type Report struct {
@@ -52,6 +57,10 @@ func Inputs(values []string) ([]Input, error) {
 }
 
 func Build(inputs []Input, now time.Time, maxAge time.Duration) (Report, error) {
+	return BuildSources(inputs, nil, now, maxAge)
+}
+
+func BuildSources(inputs, observers []Input, now time.Time, maxAge time.Duration) (Report, error) {
 	if maxAge < time.Minute || maxAge > 26*time.Hour {
 		return Report{}, fmt.Errorf("max age must be between one minute and 26 hours")
 	}
@@ -60,12 +69,21 @@ func Build(inputs []Input, now time.Time, maxAge time.Duration) (Report, error) 
 	for _, in := range inputs {
 		values = append(values, in.Label+"="+in.Path)
 	}
+	observerSet := map[string]bool{}
+	for _, in := range observers {
+		values = append(values, in.Label+"="+in.Path)
+		observerSet[in.Label] = true
+	}
 	inputs, err := Inputs(values)
 	if err != nil {
 		return Report{}, err
 	}
 	r := Report{Schema: 1, GeneratedAt: now.UTC(), NotCovered: []string{"access_and_mfa", "external_reachability", "offsite_backup_and_restore", "hoster_integrity"}}
 	for _, in := range inputs {
+		if observerSet[in.Label] {
+			r.Nodes = append(r.Nodes, observerNode(in, now, maxAge))
+			continue
+		}
 		s, err := securitywatch.Load(in.Path)
 		n := Node{Label: in.Label, Status: "unknown", Unknown: 1, Actions: []string{"restore_observation"}}
 		if err == nil {
@@ -79,6 +97,7 @@ func Build(inputs []Input, now time.Time, maxAge time.Duration) (Report, error) 
 func summarize(label string, s securitywatch.State, now time.Time, maxAge time.Duration) Node {
 	r := s.Report
 	n := Node{Label: label, Status: "unknown", CheckedAt: r.CheckedAt, RebootRequired: r.Host.RebootRequired, Actions: []string{}}
+	n.history = s.History
 	if r.CheckedAt.IsZero() || r.CheckedAt.After(now.Add(30*time.Second)) || now.Sub(r.CheckedAt) > maxAge {
 		n.Unknown = 1
 		n.Actions = append(n.Actions, "refresh_observation")
@@ -87,6 +106,7 @@ func summarize(label string, s securitywatch.State, now time.Time, maxAge time.D
 		}
 		return n
 	}
+	n.evidence, _ = r.EvidenceDigest()
 	n.Critical, n.Warnings, n.Unknown = r.Counts()
 	if r.Inventory.Status == "checked" && !completeInventory(r) {
 		n.Unknown++
@@ -279,7 +299,17 @@ func (r Report) Text(language string, compact bool) string {
 			fmt.Fprintf(&b, "\n+ %d nodes in full report. Highest priority first.\n", len(r.Nodes)-limit)
 		}
 	}
-	if de {
+	if len(r.Nodes) > 0 && len(r.Nodes[0].Controls) > 0 {
+		for _, n := range r.Nodes {
+			if compact {
+				break
+			}
+			for _, c := range n.Controls {
+				fmt.Fprintf(&b, "%s · %s · %s\n", n.Label, c.Control, controlStatus(c.Result, de))
+			}
+		}
+		fmt.Fprintln(&b, words(de, "Hosting provider integrity remains unverified.", "Die Integrität des Hostinganbieters bleibt ungeprüft."))
+	} else if de {
 		fmt.Fprintln(&b, "\nNicht erfasst: SSH/MFA, externe Erreichbarkeit, Offsite-Sicherung/Wiederherstellung, Integrität des Hosters. Weniger Befunde allein belegen keine Behebung. Es wurde nichts aktualisiert.")
 	} else {
 		fmt.Fprintln(&b, "\nNot covered: SSH/MFA, external reachability, offsite backup/restore, provider integrity. Fewer findings alone do not prove remediation. No updates were installed.")
@@ -288,7 +318,14 @@ func (r Report) Text(language string, compact bool) string {
 }
 
 func actionText(code string, de bool) string {
+	for _, c := range controlNames {
+		if code == "check_"+c.key {
+			return words(de, "Verify evidence for "+c.en+".", "Nachweis prüfen für "+c.de+".")
+		}
+	}
 	values := map[string][2]string{
+		"review_observer_scope":      {"Check package and runtime details in the private host report.", "Paketstand und Laufzeitdetails im privaten Hostbericht prüfen."},
+		"review_observer_findings":   {"Review the image and runtime findings on this host.", "Image- und Laufzeitbefunde auf diesem Host prüfen."},
 		"restore_observation":        {"Restore the missing or incomplete check.", "Fehlende oder unvollständige Prüfung wiederherstellen."},
 		"refresh_observation":        {"Refresh stale, missing or clock-invalid observations.", "Veraltete, fehlende oder zeitlich ungültige Messung erneuern."},
 		"review_fleetdeck_update":    {"Review the available FleetDeck update.", "Verfügbares FleetDeck-Update prüfen."},
