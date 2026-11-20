@@ -7,10 +7,8 @@ import (
 	"sort"
 )
 
-// Compare actionable evidence, not container incarnation or enumeration order.
-// Image identity and repeated runtime findings remain significant: replacing an
-// artifact or adding another affected replica still requires review.
-func notificationDigest(report Report) (string, error) {
+// EvidenceDigest identifies changes in actionable findings without exposing private IDs.
+func (report Report) EvidenceDigest() (string, error) {
 	var evidence []string
 	add := func(scope string, value any) error {
 		b, err := json.Marshal(struct {
