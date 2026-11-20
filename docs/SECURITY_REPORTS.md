@@ -205,6 +205,8 @@ underlying scan has its own maximum age. Existing observers expose aggregate
 image and runtime counts. Package and restart details stay unverified; changed
 findings with identical aggregate counts require the host's full watcher data.
 
+For a report-only source, run `fleetdeck security export-observer --node-id node-b --security-state /private/watcher/state.json --output /private/export/report.json` on the source host. This command reads only the existing security state. It writes aggregate counts and retains the original scan time. It does not open the project registry. Publish from a protected directory every minute to meet the observer protocol's three-minute freshness limit. A separate SSH account can return this one precomputed file through a fixed read-only command. Restrict the key by source, bind it to that command, disable forwarding, and pin the source host key at the collector. Feed successful, bounded output to `capture-observer` as above. A failed fetch must not update the local observation history.
+
 An independent monitor can run
 `fleetdeck security report-status --delivery-state /private/reports/weekly.json --max-age 2h`.
 It exits nonzero on a stale run, pending delivery or unreadable state. The JSON
