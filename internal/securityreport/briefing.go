@@ -161,6 +161,20 @@ func (r Report) priorities() []Node {
 	return nodes
 }
 
+// currentCounts includes independent control findings while counting only fresh
+// watcher or observer evidence towards host scan coverage.
+func (r Report) currentCounts() (scanned, critical, warnings, incomplete int) {
+	for _, n := range r.Nodes {
+		if n.evidence != "" {
+			scanned++
+		}
+		critical += n.Critical
+		warnings += n.Warnings
+		incomplete += n.Unknown
+	}
+	return
+}
+
 func (r Report) briefingText(s Schedule, language string, changed map[string]bool) string {
 	de := language == "de"
 	var b strings.Builder
@@ -170,13 +184,12 @@ func (r Report) briefingText(s Schedule, language string, changed map[string]boo
 	} else {
 		fmt.Fprintf(&b, "%s · %s\n", r.GeneratedAt.In(s.Location).Format(time.DateOnly), s.Location)
 	}
-	var c, w, u int
-	for _, n := range r.Nodes {
-		c += n.Critical
-		w += n.Warnings
-		u += n.Unknown
+	scanned, critical, warnings, incomplete := r.currentCounts()
+	if scanned == 0 {
+		fmt.Fprintf(&b, words(de, "Current scans 0/%d · %d findings from additional controls · %d incomplete checks\n", "Aktuelle Scans 0/%d · %d Hinweise aus Zusatzkontrollen · %d ungeklärte Prüfungen\n"), len(r.Nodes), warnings, incomplete)
+	} else {
+		fmt.Fprintf(&b, words(de, "Current scans %d/%d · %d critical · %d findings/updates · %d incomplete\n", "Aktuelle Scans %d/%d · %d kritisch · %d Hinweise/Updates · %d ungeklärte Prüfungen\n"), scanned, len(r.Nodes), critical, warnings, incomplete)
 	}
-	fmt.Fprintf(&b, words(de, "%d hosts · %d critical · %d findings/updates · %d incomplete\n", "%d Hosts · %d kritisch · %d Hinweise/Updates · %d ungeklärte Prüfungen\n"), len(r.Nodes), c, w, u)
 	lines := 0
 	for _, n := range r.priorities() {
 		if changed != nil && !changed[n.Label] {

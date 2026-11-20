@@ -93,12 +93,15 @@ func (r Report) WeeklyPDF(s Schedule, language string) ([]byte, error) {
 		return p
 	}
 	p := newPage(tr("Weekly security review", "Wöchentlicher Sicherheitsbericht"))
-	var critical, warnings, incomplete, seen int
-	for _, n := range r.Nodes {
-		critical += n.Critical
-		warnings += n.Warnings
-		incomplete += n.Unknown
+	scanned, critical, warnings, incomplete := r.currentCounts()
+	criticalText, warningText := fmt.Sprint(critical), fmt.Sprint(warnings)
+	if scanned == 0 {
+		criticalText = "–"
+		if warnings == 0 {
+			warningText = "–"
+		}
 	}
+	var seen int
 	for _, d := range period.days {
 		seen += d.observed
 	}
@@ -106,11 +109,16 @@ func (r Report) WeeklyPDF(s Schedule, language string) ([]byte, error) {
 	p.text(42, 184, 10, false, muted, tr("Compiled ", "Erstellt ")+issued)
 	x := 42
 	for _, card := range []struct {
-		value int
+		value string
 		label string
-	}{{len(r.Nodes), tr("Enrolled hosts", "Erfasste Hosts")}, {critical, tr("Critical findings", "Kritische Befunde")}, {warnings, tr("Findings / updates", "Hinweise / Updates")}, {incomplete, tr("Incomplete checks", "Ungeklärte Prüfungen")}} {
+	}{
+		{fmt.Sprintf("%d/%d", scanned, len(r.Nodes)), tr("Current scans", "Aktuelle Scans")},
+		{criticalText, tr("Critical findings", "Kritische Befunde")},
+		{warningText, tr("Findings / updates", "Hinweise / Updates")},
+		{fmt.Sprint(incomplete), tr("Incomplete checks", "Ungeklärte Prüfungen")},
+	} {
 		p.rect(x, 203, 121, 65, "0.93 0.96 0.95")
-		p.text(x+9, 231, 21, true, teal, fmt.Sprint(card.value))
+		p.text(x+9, 231, 21, true, teal, card.value)
 		p.text(x+9, 252, 9, false, ink, card.label)
 		x += 130
 	}
@@ -171,10 +179,13 @@ func (r Report) WeeklyPDF(s Schedule, language string) ([]byte, error) {
 			status := map[string]string{"checked": tr("checked", "geprüft"), "unknown": tr("unknown", "ungeklärt"), "attention": tr("attention", "Handlungsbedarf")}[n.Status]
 			p.text(42, y+17, 10, false, muted, fmt.Sprintf("%s  ·  %s  ·  %d / 7 %s", at, status, period.byHost[n.Label], tr("days", "Tage")))
 			line := fmt.Sprintf(tr("%d critical  ·  %d findings / updates  ·  %d incomplete", "%d kritisch  ·  %d Hinweise / Updates  ·  %d ungeklärt"), n.Critical, n.Warnings, n.Unknown)
+			if n.evidence == "" {
+				line = fmt.Sprintf(tr("Scan findings unavailable  ·  %d incomplete checks", "Scanbefunde offen  ·  %d ungeklärte Prüfungen"), n.Unknown)
+			}
 			if n.RebootRequired {
 				line += "  ·  " + tr("restart indicated", "Neustart gemeldet")
 			}
-			if n.Source == "observer" {
+			if n.Source == "observer" && n.evidence != "" {
 				line += "  ·  " + tr("observer totals", "Beobachtersummen")
 			}
 			p.text(42, y+33, 10, false, ink, line)
