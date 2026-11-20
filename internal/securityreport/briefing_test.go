@@ -177,6 +177,41 @@ func TestControlEvidenceExpiresAndCannotBeRenewedByScan(t *testing.T) {
 	}
 }
 
+func TestBriefingsDistinguishCurrentMissingAndExpiredScans(t *testing.T) {
+	now := time.Now()
+	fresh, _ := fixture(t, now)
+	stale, _ := fixture(t, now.Add(-48*time.Hour))
+	stale.Label = "node-b"
+	missing := Input{Label: "node-c", Path: filepath.Join(t.TempDir(), "absent")}
+	weekly := calendar(t, "weekly")
+	for _, tc := range []struct {
+		inputs   []Input
+		coverage string
+	}{{[]Input{fresh, stale, missing}, "1/3"}, {[]Input{stale, missing}, "0/2"}} {
+		r, err := Build(tc.inputs, now, 26*time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := r.briefingText(weekly, "en", nil)
+		if !strings.Contains(message, "Current scans "+tc.coverage) {
+			t.Fatal(message)
+		}
+		pdf, err := r.WeeklyPDF(weekly, "en")
+		if err != nil {
+			t.Fatal(err)
+		}
+		inPDF := func(value string) bool {
+			return bytes.Contains(pdf, []byte(fmt.Sprintf("%x", value)))
+		}
+		if !inPDF(tc.coverage) || !inPDF("Scan findings unavailable") {
+			t.Fatal("missing host coverage in PDF")
+		}
+		if tc.coverage == "0/2" && (inPDF("0 critical") || strings.Contains(message, "0 critical")) {
+			t.Fatal("unobserved hosts reported zero critical findings")
+		}
+	}
+}
+
 func TestWeeklyPDFAllEnrolledHostsAndBoundedSize(t *testing.T) {
 	s := calendar(t, "weekly")
 	r := Report{GeneratedAt: time.Now()}
