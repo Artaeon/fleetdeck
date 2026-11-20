@@ -2,10 +2,12 @@
 package notify
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 
 type JournalEntry struct {
 	Cursor     string `json:"__CURSOR"`
+	Realtime   string `json:"__REALTIME_TIMESTAMP"`
 	UID        string `json:"_UID"`
 	Identifier string `json:"SYSLOG_IDENTIFIER"`
 	Message    string `json:"MESSAGE"`
@@ -54,9 +57,24 @@ func Classify(entry JournalEntry) string {
 
 func Summarize(entries []JournalEntry, label string) *monitor.Alert {
 	counts := map[string]int{}
+	var first, last time.Time
+	var lastCursor string
+	now := time.Now().UTC()
 	for _, entry := range entries {
 		if kind := Classify(entry); kind != "" {
 			counts[kind]++
+			lastCursor = entry.Cursor
+			if us, err := strconv.ParseInt(entry.Realtime, 10, 64); err == nil && us > 0 {
+				at := time.UnixMicro(us).UTC()
+				if !at.After(now.Add(30 * time.Second)) {
+					if first.IsZero() || at.Before(first) {
+						first = at
+					}
+					if at.After(last) {
+						last = at
+					}
+				}
+			}
 		}
 	}
 	if len(counts) == 0 {
@@ -76,6 +94,35 @@ func Summarize(entries []JournalEntry, label string) *monitor.Alert {
 	for _, key := range keys {
 		fmt.Fprintf(&text, "%s: %d\n", key, counts[key])
 	}
-	text.WriteString("Counts describe journal events, not unique people. Inspect the private server journal for details. This notification does not approve access.")
-	return &monitor.Alert{Level: level, Title: "Server activity", Message: text.String(), Target: label, Timestamp: time.Now().UTC()}
+	if !first.IsZero() {
+		fmt.Fprintf(&text, "Observed %s", first.Format(time.RFC3339))
+		if !last.Equal(first) {
+			fmt.Fprintf(&text, " – %s", last.Format(time.RFC3339))
+		}
+		text.WriteString("\n")
+	}
+	title := "Server activity"
+	switch {
+	case counts["fleetdeck.backup.restore.failed"] > 0:
+		level = "critical"
+		title = "Restore failed"
+		text.WriteString("Verify the last successful isolated restore and investigate the failed recovery.")
+	case counts["fleetdeck.backup.create.failed"] > 0:
+		title = "Backup failed"
+		text.WriteString("Check the last completed backup and the next scheduled retry.")
+	case counts["ssh.login.accepted"] > 0:
+		title = "SSH access accepted"
+		text.WriteString("Match the login time with planned access. Check the private SSH journal if unrecognized.")
+	case counts["ssh.authentication.rejected"] > 0:
+		title = "SSH authentication rejected"
+		text.WriteString("Check for repeated attempts in the private SSH journal.")
+	default:
+		text.WriteString("Review the private host audit for affected operations.")
+	}
+	a := &monitor.Alert{Level: level, Title: title, Message: text.String(), Target: label, Timestamp: now}
+	if lastCursor != "" {
+		sum := sha256.Sum256([]byte(label + "/" + lastCursor))
+		a.Incident = fmt.Sprintf("FD-%x", sum[:6])
+	}
+	return a
 }
