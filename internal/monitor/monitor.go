@@ -20,15 +20,19 @@ type Target struct {
 	Interval       time.Duration `json:"interval"`
 }
 
+// NotificationText is trusted local copy for a specific check transition.
+type NotificationText struct{ Level, Title, Message string }
+
 // CheckResult holds the outcome of a single health check.
 type CheckResult struct {
-	Target       Target        `json:"target"`
-	StatusCode   int           `json:"status_code"`
-	ResponseTime time.Duration `json:"response_time"`
-	Healthy      bool          `json:"healthy"`
-	FailureKind  string        `json:"failure_kind,omitempty"`
-	Error        string        `json:"error,omitempty"`
-	CheckedAt    time.Time     `json:"checked_at"`
+	Target       Target            `json:"target"`
+	StatusCode   int               `json:"status_code"`
+	ResponseTime time.Duration     `json:"response_time"`
+	Notification *NotificationText `json:"-"`
+	Healthy      bool              `json:"healthy"`
+	FailureKind  string            `json:"failure_kind,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	CheckedAt    time.Time         `json:"checked_at"`
 }
 
 const FailureCloudflareChallenge = "cloudflare_challenge"
