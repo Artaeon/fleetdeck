@@ -18,6 +18,7 @@ type AlertProvider interface {
 
 // Alert represents a notification about a health state change.
 type Alert struct {
+	Incident  string    `json:"incident,omitempty"`
 	Level     string    `json:"level"` // "info", "warning", "critical"
 	Title     string    `json:"title"`
 	Message   string    `json:"message"`
@@ -27,6 +28,7 @@ type Alert struct {
 
 // targetState tracks consecutive check outcomes for a single target.
 type targetState struct {
+	Incident            string `json:"incident,omitempty"`
 	ProbeIdentity       string `json:"probe_identity,omitempty"`
 	ConsecutiveFailures int
 	ConsecutiveStatus   int
@@ -90,10 +92,12 @@ func (am *AlertManager) process(result CheckResult) {
 	status := result.HealthStatus()
 	if status == "healthy" {
 		wasUnhealthy := state.AlertedStatus != ""
+		incident := state.Incident
 		*state = targetState{ProbeIdentity: identity}
 
 		if wasUnhealthy {
 			am.send(Alert{
+				Incident:  incident,
 				Level:     "info",
 				Title:     fmt.Sprintf("%s recovered", result.Target.Name),
 				Message:   fmt.Sprintf("%s is healthy again (status %d, %s)", result.Target.Name, result.StatusCode, result.ResponseTime),
@@ -120,12 +124,17 @@ func (am *AlertManager) process(result CheckResult) {
 	// stable new diagnosis before changing its severity, to avoid flapping.
 	if state.ConsecutiveFailures >= am.failureThreshold && state.AlertedStatus != status &&
 		(state.AlertedStatus == "" || state.ConsecutiveStatus >= am.failureThreshold) {
+		if state.Incident == "" {
+			sum := sha256.Sum256([]byte(identity + "/" + result.CheckedAt.UTC().Format(time.RFC3339Nano)))
+			state.Incident = fmt.Sprintf("FD-%x", sum[:6])
+		}
 		state.AlertedStatus = status
 		if status == "blocked" {
 			am.send(Alert{
+				Incident:  state.Incident,
 				Level:     "warning",
 				Title:     fmt.Sprintf("%s health check blocked", result.Target.Name),
-				Message:   "Cloudflare returned a browser challenge. Application health is unknown; this is not a successful check or proof of a server outage.",
+				Message:   "Cloudflare returned a browser challenge. Application health is unknown. Check the protected origin or an authenticated health endpoint.",
 				Target:    result.Target.Name,
 				Timestamp: result.CheckedAt,
 			})
@@ -142,9 +151,10 @@ func (am *AlertManager) process(result CheckResult) {
 		}
 
 		am.send(Alert{
+			Incident:  state.Incident,
 			Level:     "critical",
 			Title:     fmt.Sprintf("%s is down", result.Target.Name),
-			Message:   fmt.Sprintf("%s failed %d consecutive checks: %s", result.Target.Name, state.ConsecutiveFailures, errMsg),
+			Message:   fmt.Sprintf("%s failed %d consecutive checks: %s. Check the application and its upstream health.", result.Target.Name, state.ConsecutiveFailures, errMsg),
 			Target:    result.Target.Name,
 			Timestamp: result.CheckedAt,
 		})

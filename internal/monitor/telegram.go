@@ -58,7 +58,12 @@ func (p *TelegramProvider) Send(alert Alert) error {
 	if err := p.validate(); err != nil {
 		return err
 	}
-	text := fmt.Sprintf("FleetDeck [%s]\n%s\nTarget: %s\nTime: %s\n\n%s", strings.ToUpper(alert.Level), alert.Title, alert.Target, alert.Timestamp.UTC().Format(time.RFC3339), alert.Message)
+	heading := fmt.Sprintf("%s\nFleetDeck · %s · %s", alert.Title, strings.ToUpper(alert.Level), alert.Target)
+	when := alert.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC")
+	if alert.Incident != "" {
+		when += "  /  " + alert.Incident
+	}
+	text := heading + "\n" + when + "\n\n" + alert.Message
 	// Telegram measures entity offsets in UTF-16. This conservative limit also
 	// accommodates astral characters without splitting UTF-8 sequences.
 	var bounded strings.Builder

@@ -112,7 +112,7 @@ func deliver(path string, state *relayState, providers []monitor.AlertProvider) 
 func readJournal(ctx context.Context, state *relayState) ([]JournalEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	args := []string{"--no-pager", "--no-tail", "--output=json", "--output-fields=__CURSOR,_UID,SYSLOG_IDENTIFIER,MESSAGE", "_UID=0", "SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=fleetdeck-audit"}
+	args := []string{"--no-pager", "--no-tail", "--output=json", "--output-fields=__CURSOR,__REALTIME_TIMESTAMP,_UID,SYSLOG_IDENTIFIER,MESSAGE", "_UID=0", "SYSLOG_IDENTIFIER=sshd", "SYSLOG_IDENTIFIER=sshd-session", "SYSLOG_IDENTIFIER=fleetdeck-audit"}
 	if state.Cursor != "" {
 		args = append(args, "--after-cursor="+state.Cursor)
 	} else {
