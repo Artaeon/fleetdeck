@@ -110,6 +110,9 @@ func TestPrivateSMTPConfigAndHeaderValidation(t *testing.T) {
 	data, _ := json.Marshal(provider)
 	file := filepath.Join(t.TempDir(), "smtp.json")
 	os.WriteFile(file, data, 0644)
+	if err := os.Chmod(file, 0644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadEmailProvider(file, nil); err == nil {
 		t.Fatal("readable secret accepted")
 	}

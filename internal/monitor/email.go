@@ -1,12 +1,10 @@
 package monitor
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -81,7 +79,20 @@ func (p *EmailProvider) validate() error {
 func (p *EmailProvider) Send(alert Alert) error {
 	return p.send(alert, &tls.Config{ServerName: p.Host, MinVersion: tls.VersionTLS12})
 }
+
+// SendReportPDF uses the same authenticated, certificate-verified transport as alerts.
+func (p *EmailProvider) SendReportPDF(alert Alert, pdf []byte) error {
+	if err := ValidateReportPDF(pdf); err != nil {
+		return err
+	}
+	return p.sendMessage(alert, &tls.Config{ServerName: p.Host, MinVersion: tls.VersionTLS12}, pdf)
+}
+
 func (p *EmailProvider) send(alert Alert, config *tls.Config) error {
+	return p.sendMessage(alert, config, nil)
+}
+
+func (p *EmailProvider) sendMessage(alert Alert, config *tls.Config, pdf []byte) error {
 	if err := p.validate(); err != nil {
 		return err
 	}
@@ -89,8 +100,10 @@ func (p *EmailProvider) send(alert Alert, config *tls.Config) error {
 		return fmt.Errorf("invalid notification subject")
 	}
 	from, _ := mail.ParseAddress(p.From)
-	var msg bytes.Buffer
-	fmt.Fprintf(&msg, "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nTarget: %s\r\nLevel: %s\r\n\r\n%s\r\n", from.String(), strings.Join(p.To, ", "), mime.QEncoding.Encode("utf-8", fmt.Sprintf("[FleetDeck/%s] %s", strings.ToUpper(alert.Level), alert.Title)), alert.Timestamp.Format(time.RFC1123Z), alert.Target, alert.Level, alert.Message)
+	msg, err := p.message(alert, from, pdf)
+	if err != nil {
+		return err
+	}
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(p.Host, strconv.Itoa(p.Port)), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("connecting to SMTP server: %w", err)
@@ -135,7 +148,7 @@ func (p *EmailProvider) send(alert Alert, config *tls.Config) error {
 	if err != nil {
 		return fmt.Errorf("SMTP message rejected")
 	}
-	if _, err := writer.Write(msg.Bytes()); err != nil {
+	if _, err := writer.Write(msg); err != nil {
 		return fmt.Errorf("SMTP message transfer failed")
 	}
 	if err := writer.Close(); err != nil {
