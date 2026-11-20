@@ -57,19 +57,33 @@ var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snaps
 		if err := fleet.PrivateKey(key); err != nil {
 			return err
 		}
-		tlsConfig, err := (server.ListenerOptions{CertFile: cert, KeyFile: key, ClientCAFile: ca, AllowedClients: clients}).TLSConfig(addr)
+		reportPath, _ := cmd.Flags().GetString("report-status")
+		reportClients, _ := cmd.Flags().GetStringArray("allow-report-status-cert")
+		if (reportPath == "") != (len(reportClients) == 0) {
+			return fmt.Errorf("report status requires its own projection and client certificate")
+		}
+		tlsConfig, err := (server.ListenerOptions{CertFile: cert, KeyFile: key, ClientCAFile: ca, AllowedClients: append(clients, reportClients...)}).TLSConfig(addr)
 		if err != nil {
 			return err
 		}
-		allowed := map[[32]byte]bool{}
-		for _, p := range clients {
-			leaf, err := fleet.Leaf(p)
+		allowed, err := fleetClientPins(clients)
+		if err != nil {
+			return err
+		}
+		handler := fleet.Agent(node, path, allowed)
+		if reportPath != "" {
+			pins, err := fleetClientPins(reportClients)
 			if err != nil {
 				return err
 			}
-			allowed[sha256.Sum256(leaf.Raw)] = true
+			for pin := range pins {
+				if allowed[pin] {
+					return fmt.Errorf("a report-status identity must be separate from snapshot clients")
+				}
+			}
+			handler = fleet.WithReportStatus(handler, reportPath, pins)
 		}
-		s := &http.Server{Addr: addr, TLSConfig: tlsConfig, Handler: fleet.Agent(node, path, allowed), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 16384}
+		s := &http.Server{Addr: addr, TLSConfig: tlsConfig, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 16384}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		go func() {
@@ -87,6 +101,18 @@ var fleetAgentCmd = &cobra.Command{Use: "agent", Short: "Serve a sanitized snaps
 	},
 }
 
+func fleetClientPins(paths []string) (map[[32]byte]bool, error) {
+	pins := make(map[[32]byte]bool, len(paths))
+	for _, path := range paths {
+		leaf, err := fleet.Leaf(path)
+		if err != nil {
+			return nil, err
+		}
+		pins[sha256.Sum256(leaf.Raw)] = true
+	}
+	return pins, nil
+}
+
 func init() {
 	fleetSnapshotCmd.Flags().String("node-id", "", "Stable enrolled node identifier")
 	fleetSnapshotCmd.Flags().String("output", "", "Private export file in an existing operator-owned directory")
@@ -98,6 +124,8 @@ func init() {
 	fleetAgentCmd.Flags().String("tls-key", "", "Observer private key")
 	fleetAgentCmd.Flags().String("client-ca", "", "Management client CA")
 	fleetAgentCmd.Flags().StringArray("allow-client-cert", nil, "Authorized workstation client leaf certificate (repeatable)")
+	fleetAgentCmd.Flags().String("report-status", "", "Private file with only daily and weekly evaluation times and pending counts")
+	fleetAgentCmd.Flags().StringArray("allow-report-status-cert", nil, "Client leaf certificate limited to report status (repeatable)")
 	fleetCmd.AddCommand(fleetSnapshotCmd, fleetAgentCmd)
 	rootCmd.AddCommand(fleetCmd)
 }
