@@ -16,11 +16,12 @@ var alertCmd = &cobra.Command{Use: "alert", Short: "Send operational notificatio
 
 func alertProviders(cmd *cobra.Command) ([]monitor.AlertProvider, error) {
 	var providers []monitor.AlertProvider
+	channel, _ := cmd.Flags().GetString("channel")
 	telegram, _ := cmd.Flags().GetString("telegram-config")
 	if telegram == "" {
 		telegram = cfg.Monitoring.TelegramConfigFile
 	}
-	if telegram != "" {
+	if telegram != "" && channel != "email" {
 		p, err := monitor.LoadTelegramProvider(telegram)
 		if err != nil {
 			return nil, err
@@ -31,7 +32,7 @@ func alertProviders(cmd *cobra.Command) ([]monitor.AlertProvider, error) {
 	if smtp == "" {
 		smtp = cfg.Monitoring.SMTPConfigFile
 	}
-	if smtp != "" {
+	if smtp != "" && channel != "telegram" {
 		p, err := monitor.LoadEmailProvider(smtp, cfg.Monitoring.EmailTo)
 		if err != nil {
 			return nil, err
