@@ -96,7 +96,7 @@ func (am *AlertManager) process(result CheckResult) {
 		*state = targetState{ProbeIdentity: identity}
 
 		if wasUnhealthy {
-			am.send(Alert{
+			am.sendResult(result, Alert{
 				Incident:  incident,
 				Level:     "info",
 				Title:     fmt.Sprintf("%s recovered", result.Target.Name),
@@ -130,7 +130,7 @@ func (am *AlertManager) process(result CheckResult) {
 		}
 		state.AlertedStatus = status
 		if status == "blocked" {
-			am.send(Alert{
+			am.sendResult(result, Alert{
 				Incident:  state.Incident,
 				Level:     "warning",
 				Title:     fmt.Sprintf("%s health check blocked", result.Target.Name),
@@ -150,7 +150,7 @@ func (am *AlertManager) process(result CheckResult) {
 			errMsg = fmt.Sprintf("status %d", result.StatusCode)
 		}
 
-		am.send(Alert{
+		am.sendResult(result, Alert{
 			Incident:  state.Incident,
 			Level:     "critical",
 			Title:     fmt.Sprintf("%s is down", result.Target.Name),
@@ -159,6 +159,15 @@ func (am *AlertManager) process(result CheckResult) {
 			Timestamp: result.CheckedAt,
 		})
 	}
+}
+
+// A caller may supply local, pre-reviewed copy for its own probe. The
+// threshold, incident identity and recipient binding still use the same outbox.
+func (am *AlertManager) sendResult(result CheckResult, alert Alert) {
+	if text := result.Notification; text != nil {
+		alert.Level, alert.Title, alert.Message = text.Level, text.Title, text.Message
+	}
+	am.send(alert)
 }
 
 func probeIdentity(target Target) string {
