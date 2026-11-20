@@ -212,3 +212,20 @@ contains enqueue age and timestamps, without report contents, host labels or
 recipients. A quiet daily baseline updates the heartbeat even without a send.
 Run the liveness check from a second failure domain if it must detect complete
 loss of the reporting host.
+
+### Detect loss of the reporting host
+
+Run the notification check on a second host that can reach the notification provider independently. On the reporting host, use `security export-report-status --daily-state PATH --weekly-state PATH` as the report service account. Write successful output atomically to a private file readable by the fleet observer. The projection contains one evaluation timestamp and one pending count for each edition. Keep the underlying report checkpoints private to their owner.
+
+On the observer, add `--report-status PATH --allow-report-status-cert CLIENT.pem` and include the dedicated client certificate's issuer in the existing TLS trust. The new identity can read only `GET /v1/report-status`. Its certificate must differ from every snapshot reader. Retain the loopback listener, existing snapshot pins, and any restrictions on the transport. Authenticate the server using the configured trust anchor and server pin.
+
+On the independent host, pipe the response to the check. Invoke the check with empty input if the authenticated fetch fails. Reusing an earlier response or skipping a failed fetch conceals loss of the reporting host.
+
+```sh
+fleetdeck --config /etc/fleetdeck/report-watch.toml security check-report-delivery \\
+  --node-id reporting-host --max-age 2h --failure-threshold 2 \\
+  --alert-state /var/lib/fleetdeck-report-watch/alerts.json \\
+  --channel telegram --telegram-config /run/credentials/telegram.json
+```
+
+With a five-minute timer, two consecutive failures raise one incident. An unreachable observer, an overdue evaluation and a pending handoff have distinct messages. A healthy result sends one recovery. The private alert state preserves the incident and undelivered notifications across process restarts. Omit `--alert-state` to test sample input locally without sending notifications. The check reports the provider handoff state; successful delivery to a person's inbox or device requires a separate acknowledgement.
