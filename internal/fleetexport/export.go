@@ -60,55 +60,69 @@ func Export(database *db.DB, node, version, commit, monitorPath, securityPath st
 		}
 	}
 	if state, err := securitywatch.Load(securityPath); securityPath != "" && err == nil {
-		r := state.Report
-		v := fleet.Security{Status: "unknown"}
-		if !r.CheckedAt.IsZero() {
-			v.CheckedAt = &r.CheckedAt
-		}
-		if !r.CheckedAt.IsZero() && !r.CheckedAt.After(now.Add(30*time.Second)) && now.Sub(r.CheckedAt) <= 26*time.Hour {
-			v.Status = "ok"
-			for _, c := range []securitywatch.Check{r.Host, r.Release, r.Inventory} {
-				switch c.Status {
-				case "up_to_date", "checked":
-				case "update_available":
-					v.Status = "attention"
-				default:
-					v.Unknown++
-				}
-				if c.RebootRequired {
-					v.Status = "attention"
-				}
-			}
-			for _, im := range r.Images {
-				if im.Status != "checked" {
-					v.Unknown++
-				}
-				for _, f := range im.Findings {
-					switch strings.ToUpper(f.Severity) {
-					case "CRITICAL":
-						v.Critical++
-					case "HIGH":
-						v.High++
-					default:
-						v.Status = "attention"
-					}
-				}
-			}
-			for _, c := range r.Containers {
-				v.RuntimeFindings += len(c.Findings)
-			}
-			if v.Critical+v.High+v.RuntimeFindings > 0 {
-				v.Status = "attention"
-			}
-			// Keep known findings actionable even when another check is incomplete.
-			// Unknown counts remain visible; stale reports never enter this branch.
-			if v.Unknown > 0 && v.Status != "attention" {
-				v.Status = "unknown"
-			}
-		}
-		s.Security = v
+		s.Security = summarizeSecurity(state.Report, now)
 	}
 	return s, s.Validate(node, now)
+}
+
+// ReportSnapshot supplies only watcher counts and the original scan time.
+func ReportSnapshot(node, path string, now time.Time) (fleet.Snapshot, error) {
+	s := fleet.Snapshot{Schema: 1, NodeID: node, GeneratedAt: now.UTC(), Projects: []fleet.Project{}, Monitoring: fleet.Checks{Status: "unknown"}}
+	state, err := securitywatch.Load(path)
+	if err != nil || state.Report.CheckedAt.IsZero() || state.Report.CheckedAt.After(now.Add(30*time.Second)) {
+		return s, fmt.Errorf("a readable watcher state with a valid scan time is required")
+	}
+	s.Security = summarizeSecurity(state.Report, now)
+	return s, s.Validate(node, now)
+}
+
+func summarizeSecurity(r securitywatch.Report, now time.Time) fleet.Security {
+	v := fleet.Security{Status: "unknown"}
+	if !r.CheckedAt.IsZero() {
+		v.CheckedAt = &r.CheckedAt
+	}
+	if !r.CheckedAt.IsZero() && !r.CheckedAt.After(now.Add(30*time.Second)) && now.Sub(r.CheckedAt) <= 26*time.Hour {
+		v.Status = "ok"
+		for _, c := range []securitywatch.Check{r.Host, r.Release, r.Inventory} {
+			switch c.Status {
+			case "up_to_date", "checked":
+			case "update_available":
+				v.Status = "attention"
+			default:
+				v.Unknown++
+			}
+			if c.RebootRequired {
+				v.Status = "attention"
+			}
+		}
+		for _, im := range r.Images {
+			if im.Status != "checked" {
+				v.Unknown++
+			}
+			for _, f := range im.Findings {
+				switch strings.ToUpper(f.Severity) {
+				case "CRITICAL":
+					v.Critical++
+				case "HIGH":
+					v.High++
+				default:
+					v.Status = "attention"
+				}
+			}
+		}
+		for _, c := range r.Containers {
+			v.RuntimeFindings += len(c.Findings)
+		}
+		if v.Critical+v.High+v.RuntimeFindings > 0 {
+			v.Status = "attention"
+		}
+		// Keep known findings actionable even when another check is incomplete.
+		// Unknown counts remain visible; stale reports never enter this branch.
+		if v.Unknown > 0 && v.Status != "attention" {
+			v.Status = "unknown"
+		}
+	}
+	return v
 }
 
 // WriteSnapshot atomically replaces a sanitized export. The pre-created parent
