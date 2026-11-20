@@ -35,6 +35,8 @@ For a combined read-only panel, use the separately configured
 automatically enrolled as observers. The central panel uses narrowly scoped mTLS
 identities instead of SSH administrator keys and does not read this registry.
 
+For a project-specific production publishing identity and an inventory usable from a laptop or an agent, see [static project publication](PROJECT_PUBLICATION.md). Hosts may appear in the publication catalog without granting a deployment action.
+
 Keep environment secrets in the password manager and private deployment files.
 A repository may contain a generic Compose file, Dockerfile and documented build
 settings; do not commit your personal server inventory, bot tokens or SMTP data.
