@@ -52,6 +52,10 @@ func (db *DB) Reserve(
 		if err := json.Unmarshal([]byte(resultJSON.String), &result); err != nil {
 			return releasejob.Reservation{}, fmt.Errorf("decode stored release job result: %w", err)
 		}
+		if result.JobID != request.JobID || result.IdempotencyKey != request.IdempotencyKey ||
+			result.ReleaseID != request.ReleaseID || result.TargetID != request.Target.ID || result.Status != status {
+			return releasejob.Reservation{}, errors.New("stored release result does not match its reservation")
+		}
 		return releasejob.Reservation{State: releasejob.ReservationReplay, Result: &result}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -132,8 +136,10 @@ func (db *DB) CompleteSuccess(
 
 	updated, err := tx.ExecContext(ctx,
 		`UPDATE release_jobs SET status = 'succeeded', result_json = ?, finished_at = ?
-		 WHERE idempotency_key = ? AND job_id = ? AND status = 'running'`,
+		 WHERE idempotency_key = ? AND job_id = ? AND release_id = ? AND target_id = ?
+		   AND manifest_digest = ? AND status = 'running'`,
 		string(resultJSON), result.FinishedAt, result.IdempotencyKey, result.JobID,
+		result.ReleaseID, result.TargetID, manifestDigest,
 	)
 	if err != nil {
 		return err
@@ -166,8 +172,8 @@ func (db *DB) CompleteFailure(ctx context.Context, result releasejob.Result) err
 	}
 	updated, err := db.conn.ExecContext(ctx,
 		`UPDATE release_jobs SET status = 'failed', result_json = ?, finished_at = ?
-		 WHERE idempotency_key = ? AND job_id = ? AND status = 'running'`,
-		string(resultJSON), result.FinishedAt, result.IdempotencyKey, result.JobID,
+		 WHERE idempotency_key = ? AND job_id = ? AND release_id = ? AND target_id = ? AND status = 'running'`,
+		string(resultJSON), result.FinishedAt, result.IdempotencyKey, result.JobID, result.ReleaseID, result.TargetID,
 	)
 	if err != nil {
 		return err
